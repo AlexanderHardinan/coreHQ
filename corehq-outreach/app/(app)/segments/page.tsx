@@ -42,19 +42,21 @@ function Toast({
   );
 }
 
+type Contact = {
+  id: string;
+  email: string;
+  full_name: string | null;
+  company: string | null;
+  country: string | null;
+  created_at: string;
+};
+
 type SegmentRow = {
   contact_id: string;
   tags: string[] | null;
   opt_in_status: string | null;
   last_engagement_at: string | null;
-  contacts: {
-    id: string;
-    email: string;
-    full_name: string | null;
-    company: string | null;
-    country: string | null;
-    created_at: string;
-  };
+  contacts: Contact[]; // IMPORTANT: PostgREST join returns an array
 };
 
 type EngagementFilter = "any" | "open" | "click";
@@ -132,7 +134,6 @@ export default function SegmentsPage() {
     const list = (data as Brand[]) ?? [];
     setBrands(list);
 
-    // Default brand selection if none set
     if (!brandId && list.length > 0) {
       setBrandId(list[0].id);
     }
@@ -146,8 +147,6 @@ export default function SegmentsPage() {
   }, []);
 
   const buildBaseQuery = () => {
-    // Brand required for Phase 4.4 segments (brand-level segmentation).
-    // contact_brands is the linking + tags + last_engagement_at source.
     let q = supabase
       .from("contact_brands")
       .select(
@@ -155,22 +154,18 @@ export default function SegmentsPage() {
       )
       .eq("brand_id", brandId);
 
-    // Tags filter
+    // Tags
     if (tags.length > 0) {
       if (tagMode === "all") q = q.contains("tags", tags);
       else q = q.overlaps("tags", tags);
     }
 
-    // Country filter (against contacts table)
+    // Country (contacts table)
     const c = country.trim();
-    if (c) {
-      // case-insensitive contains match
-      q = q.ilike("contacts.country", `%${c}%`);
-    }
+    if (c) q = q.ilike("contacts.country", `%${c}%`);
 
-    // Last activity since (brand-scoped last_engagement_at)
+    // Last activity since
     if (lastSince) {
-      // Convert YYYY-MM-DD to ISO date start (UTC-ish)
       const sinceIso = new Date(`${lastSince}T00:00:00.000Z`).toISOString();
       q = q.gte("last_engagement_at", sinceIso);
     }
@@ -186,13 +181,9 @@ export default function SegmentsPage() {
     if (wanted === "any") return new Set(baseContactIds);
     if (baseContactIds.length === 0) return new Set<string>();
 
-    // To keep this robust for internal use, we cap the in() payload.
-    // If you ever exceed this, we will move engagement preview to an RPC for server-side filtering.
     const MAX_IDS = 5000;
     const ids = baseContactIds.slice(0, MAX_IDS);
 
-    // Filter email_events by event type + brand via join:
-    // email_events.email_id -> emails.id -> emails.campaign_id -> campaigns.id -> campaigns.brand_id
     const { data, error } = await supabase
       .from("email_events")
       .select("contact_id, emails!inner(campaign_id, campaigns!inner(brand_id))")
@@ -222,23 +213,21 @@ export default function SegmentsPage() {
     setHint("Computing live preview…");
 
     try {
-      // 1) Base filtered set (brand + tags + country + lastSince)
       const baseQ = buildBaseQuery().order("last_engagement_at", { ascending: false }).limit(5000);
 
       const baseRes = await baseQ;
       if (baseRes.error) throw baseRes.error;
 
-      const baseRows = (baseRes.data as SegmentRow[]) ?? [];
+      // FIX: treat as unknown first, then SegmentRow[]
+      const baseRows = ((baseRes.data ?? []) as unknown) as SegmentRow[];
+
       const baseIds = baseRows.map((r) => r.contact_id);
 
-      // 2) Engagement refinement (open/click) brand-scoped through emails->campaigns
       const engagedSet = await fetchEngagedContactIdSet(baseIds, engagement, brandId);
 
-      // 3) Final count
       const finalCount = engagedSet.size;
       setPreviewCount(finalCount);
 
-      // 4) Preview list (first 50 rows, filtered by engagement set)
       const filteredForPreview =
         engagement === "any"
           ? baseRows.slice(0, 50)
@@ -246,7 +235,6 @@ export default function SegmentsPage() {
 
       setRows(filteredForPreview);
 
-      // Hint messaging for large sets (internal guidance)
       if (baseIds.length > 5000) {
         setHint("Preview capped at 5,000 contacts for engagement evaluation. Counts may require RPC at scale.");
       } else {
@@ -262,7 +250,6 @@ export default function SegmentsPage() {
     }
   };
 
-  // Debounced live preview on filter change
   const debounceRef = useRef<number | null>(null);
   useEffect(() => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
@@ -647,7 +634,6 @@ export default function SegmentsPage() {
           </div>
 
           <div className="grid">
-            {/* Brand */}
             <div className="field col12" style={{ gridColumn: "span 4" }}>
               <div className="label">Brand (required)</div>
               <select
@@ -668,7 +654,6 @@ export default function SegmentsPage() {
               </select>
             </div>
 
-            {/* Engagement */}
             <div className="field col12" style={{ gridColumn: "span 4" }}>
               <div className="label">Engagement</div>
               <select
@@ -683,7 +668,6 @@ export default function SegmentsPage() {
               </select>
             </div>
 
-            {/* Last activity since */}
             <div className="field col12" style={{ gridColumn: "span 4" }}>
               <div className="label">Last activity since (brand scoped)</div>
               <input
@@ -695,7 +679,6 @@ export default function SegmentsPage() {
               />
             </div>
 
-            {/* Tags */}
             <div className="field col12" style={{ gridColumn: "span 8" }}>
               <div className="label">Tags (comma-separated)</div>
               <input
@@ -708,7 +691,6 @@ export default function SegmentsPage() {
               />
             </div>
 
-            {/* Tag mode */}
             <div className="field col12" style={{ gridColumn: "span 4" }}>
               <div className="label">Tag match</div>
               <div className="segToggle">
@@ -731,7 +713,6 @@ export default function SegmentsPage() {
               </div>
             </div>
 
-            {/* Country */}
             <div className="field col12" style={{ gridColumn: "span 6" }}>
               <div className="label">Country (contains match)</div>
               <input
@@ -744,7 +725,6 @@ export default function SegmentsPage() {
               />
             </div>
 
-            {/* Quick info */}
             <div className="field col12" style={{ gridColumn: "span 6" }}>
               <div className="label">Parsed tags</div>
               <div style={{ paddingTop: 2 }}>
@@ -778,7 +758,6 @@ export default function SegmentsPage() {
             <div className="hint">{hint}</div>
           </div>
 
-          {/* Preview list */}
           <div style={{ marginTop: 6 }}>
             {previewLoading && rows.length === 0 && (
               <div style={{ marginTop: 14 }}>
@@ -809,28 +788,31 @@ export default function SegmentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.contact_id}>
-                      <td className="email">{r.contacts.email}</td>
-                      <td>{r.contacts.full_name || "—"}</td>
-                      <td>{r.contacts.company || "—"}</td>
-                      <td>{r.contacts.country || "—"}</td>
-                      <td>
-                        {(r.tags ?? []).length === 0 ? (
-                          "—"
-                        ) : (
-                          <div style={{ display: "flex", flexWrap: "wrap" }}>
-                            {(r.tags ?? []).slice(0, 12).map((t) => (
-                              <span key={t} className="tagPill">
-                                {t}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td>{fmtDate(r.last_engagement_at)}</td>
-                    </tr>
-                  ))}
+                  {rows.map((r) => {
+                    const c = r.contacts?.[0]; // FIX: joined row is array
+                    return (
+                      <tr key={r.contact_id}>
+                        <td className="email">{c?.email || "—"}</td>
+                        <td>{c?.full_name || "—"}</td>
+                        <td>{c?.company || "—"}</td>
+                        <td>{c?.country || "—"}</td>
+                        <td>
+                          {(r.tags ?? []).length === 0 ? (
+                            "—"
+                          ) : (
+                            <div style={{ display: "flex", flexWrap: "wrap" }}>
+                              {(r.tags ?? []).slice(0, 12).map((t) => (
+                                <span key={t} className="tagPill">
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td>{fmtDate(r.last_engagement_at)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
