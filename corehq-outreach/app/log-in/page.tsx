@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "../../src/lib/supabaseClient";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -54,7 +54,10 @@ export default function LoginPage() {
       >
         <h1 style={{ marginBottom: 24 }}>CoreHQ – Admin Login</h1>
 
-        <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <form
+          onSubmit={handleLogin}
+          style={{ display: "flex", flexDirection: "column", gap: 16 }}
+        >
           <input
             type="email"
             placeholder="Email"
@@ -85,11 +88,7 @@ export default function LoginPage() {
             }}
           />
 
-          {error && (
-            <div style={{ color: "#ff4d4f", fontSize: 14 }}>
-              {error}
-            </div>
-          )}
+          {error && <div style={{ color: "#ff4d4f", fontSize: 14 }}>{error}</div>}
 
           <button
             type="submit"
