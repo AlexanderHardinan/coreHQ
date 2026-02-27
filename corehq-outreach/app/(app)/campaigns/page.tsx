@@ -39,6 +39,13 @@ export default function CampaignsPage() {
           pointer-events:none;
         }
 
+        .top{
+          display:flex;
+          align-items:flex-start;
+          justify-content:space-between;
+          gap:16px;
+        }
+
         .title{
           margin:0;
           font-size:18px;
@@ -53,6 +60,51 @@ export default function CampaignsPage() {
           line-height: 1.6;
         }
 
+        .actions{
+          display:flex;
+          flex-direction:column;
+          align-items:flex-end;
+          gap:8px;
+          min-width: 220px;
+        }
+
+        .btn{
+          border: 1px solid rgba(255,255,255,0.14);
+          background: rgba(255,255,255,0.08);
+          color: rgba(255,255,255,0.92);
+          padding: 10px 14px;
+          border-radius: 12px;
+          font-size: 13px;
+          font-weight: 800;
+          letter-spacing: 0.2px;
+          cursor: pointer;
+          transition: transform 140ms ease, background 140ms ease, border-color 140ms ease, opacity 140ms ease;
+          user-select:none;
+          width: 100%;
+        }
+
+        .btn:hover{
+          transform: translateY(-1px);
+          background: rgba(255,255,255,0.12);
+          border-color: rgba(255,255,255,0.22);
+        }
+
+        .btn:active{
+          transform: translateY(0px);
+        }
+
+        .btn:disabled{
+          cursor:not-allowed;
+          opacity: 0.55;
+        }
+
+        .hint{
+          font-size: 12px;
+          color: rgba(255,255,255,0.62);
+          line-height: 1.4;
+          text-align:right;
+        }
+
         @keyframes cardIn{
           from{ transform: translateY(14px) scale(0.98); opacity: 0; }
           to{ transform: translateY(0px) scale(1); opacity: 1; }
@@ -62,18 +114,37 @@ export default function CampaignsPage() {
           to{ transform: rotate(360deg); }
         }
 
+        @media (max-width: 720px){
+          .top{ flex-direction:column; align-items:stretch; }
+          .actions{ align-items:stretch; min-width: 0; }
+          .hint{ text-align:left; }
+        }
+
         @media (prefers-reduced-motion: reduce){
           .card, .shine { animation: none !important; }
           .card{ opacity: 1; transform: none; }
+          .btn{ transition: none !important; }
         }
       `}</style>
 
       <div className="card">
         <div className="shine" />
-        <h1 className="title">Campaigns</h1>
-        <p className="sub">
-          Phase 5 will implement the offer-based campaign builder with primary banner, CTAs, featured URL, optional YouTube preview, and structured email rendering.
-        </p>
+
+        <div className="top">
+          <div>
+            <h1 className="title">Campaigns</h1>
+            <p className="sub">
+              Phase 5 will implement the offer-based campaign builder with primary banner, CTAs, featured URL, optional YouTube preview, and structured email rendering.
+            </p>
+          </div>
+
+          <div className="actions">
+            <button className="btn" disabled title="Phase 5 builder route not created yet">
+              + New Campaign
+            </button>
+            <div className="hint">Builder not wired yet (Phase 5). Next file will create the builder route.</div>
+          </div>
+        </div>
       </div>
     </div>
   );
