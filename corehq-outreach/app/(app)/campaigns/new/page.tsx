@@ -486,6 +486,13 @@ export default function NewCampaignPage() {
               <Link className="btn" href="/campaigns">
                 ← Back
               </Link>
+
+              {campaignId ? (
+                <Link className="btn" href={`/campaigns/preview?id=${campaignId}`}>
+                  Preview
+                </Link>
+              ) : null}
+
               <button
                 className="btn btnPrimary"
                 onClick={handleSaveDraft}
