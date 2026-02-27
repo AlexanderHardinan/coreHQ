@@ -61,6 +61,10 @@ export default function NewCampaignPage() {
   const [ctaSecondaryText, setCtaSecondaryText] = useState("");
   const [ctaSecondaryUrl, setCtaSecondaryUrl] = useState("");
 
+  // Phase 5.4 fields (Optional Extra Banners)
+  const [extraBannerUrl1, setExtraBannerUrl1] = useState("");
+  const [extraBannerUrl2, setExtraBannerUrl2] = useState("");
+
   const [saving, setSaving] = useState(false);
 
   const [toastOpen, setToastOpen] = useState(false);
@@ -161,6 +165,10 @@ export default function NewCampaignPage() {
         cta_primary_url: normalizeTextOrNull(ctaPrimaryUrl),
         cta_secondary_text: normalizeTextOrNull(ctaSecondaryText),
         cta_secondary_url: normalizeTextOrNull(ctaSecondaryUrl),
+
+        // Phase 5.4 extra banners
+        extra_banner_url_1: normalizeTextOrNull(extraBannerUrl1),
+        extra_banner_url_2: normalizeTextOrNull(extraBannerUrl2),
 
         updated_at: new Date().toISOString(),
       };
@@ -625,8 +633,41 @@ export default function NewCampaignPage() {
             </div>
           </div>
 
+          <div className="sectionTitle">Phase 5.4 — Extra Banners (Optional)</div>
+          <div className="grid" aria-label="Extra banners form">
+            <div className="field">
+              <label className="label" htmlFor="extra_banner_url_1">
+                Extra banner URL #1 (optional)
+              </label>
+              <input
+                id="extra_banner_url_1"
+                className="input"
+                value={extraBannerUrl1}
+                onChange={(e) => setExtraBannerUrl1(e.target.value)}
+                placeholder="https://your-cdn.com/extra-banner-1.png"
+                autoComplete="off"
+                inputMode="url"
+              />
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="extra_banner_url_2">
+                Extra banner URL #2 (optional)
+              </label>
+              <input
+                id="extra_banner_url_2"
+                className="input"
+                value={extraBannerUrl2}
+                onChange={(e) => setExtraBannerUrl2(e.target.value)}
+                placeholder="https://your-cdn.com/extra-banner-2.png"
+                autoComplete="off"
+                inputMode="url"
+              />
+            </div>
+          </div>
+
           <div className="help">
-            Next (Phase 5.4): optional extra banners (extra_banner_url_1, extra_banner_url_2). After that: optional YouTube preview (youtube_url).
+            Next (Phase 5.5): optional YouTube preview URL (youtube_url) with safe trimming. Then Phase 5.6: footer + compliance fields.
           </div>
         </div>
       </div>
