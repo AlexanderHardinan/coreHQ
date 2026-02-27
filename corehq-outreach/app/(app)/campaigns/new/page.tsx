@@ -55,6 +55,12 @@ export default function NewCampaignPage() {
   const [featuredUrl, setFeaturedUrl] = useState("");
   const [primaryBannerUrl, setPrimaryBannerUrl] = useState("");
 
+  // Phase 5.3 fields (CTA Block)
+  const [ctaPrimaryText, setCtaPrimaryText] = useState("");
+  const [ctaPrimaryUrl, setCtaPrimaryUrl] = useState("");
+  const [ctaSecondaryText, setCtaSecondaryText] = useState("");
+  const [ctaSecondaryUrl, setCtaSecondaryUrl] = useState("");
+
   const [saving, setSaving] = useState(false);
 
   const [toastOpen, setToastOpen] = useState(false);
@@ -149,6 +155,12 @@ export default function NewCampaignPage() {
         // Phase 5.2 offer content
         featured_url: normalizeTextOrNull(featuredUrl),
         primary_banner_url: normalizeTextOrNull(primaryBannerUrl),
+
+        // Phase 5.3 CTA block
+        cta_primary_text: normalizeTextOrNull(ctaPrimaryText),
+        cta_primary_url: normalizeTextOrNull(ctaPrimaryUrl),
+        cta_secondary_text: normalizeTextOrNull(ctaSecondaryText),
+        cta_secondary_url: normalizeTextOrNull(ctaSecondaryUrl),
 
         updated_at: new Date().toISOString(),
       };
@@ -552,8 +564,69 @@ export default function NewCampaignPage() {
             </div>
           </div>
 
+          <div className="sectionTitle">Phase 5.3 — CTA Block (Primary + Secondary)</div>
+          <div className="grid" aria-label="CTA block form">
+            <div className="field">
+              <label className="label" htmlFor="cta_primary_text">
+                Primary CTA Text (required when publishing)
+              </label>
+              <input
+                id="cta_primary_text"
+                className="input"
+                value={ctaPrimaryText}
+                onChange={(e) => setCtaPrimaryText(e.target.value)}
+                placeholder="Example: Claim Offer"
+                autoComplete="off"
+              />
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="cta_primary_url">
+                Primary CTA URL (required when publishing)
+              </label>
+              <input
+                id="cta_primary_url"
+                className="input"
+                value={ctaPrimaryUrl}
+                onChange={(e) => setCtaPrimaryUrl(e.target.value)}
+                placeholder="https://your-primary-cta-link.com"
+                autoComplete="off"
+                inputMode="url"
+              />
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="cta_secondary_text">
+                Secondary CTA Text (required when publishing)
+              </label>
+              <input
+                id="cta_secondary_text"
+                className="input"
+                value={ctaSecondaryText}
+                onChange={(e) => setCtaSecondaryText(e.target.value)}
+                placeholder="Example: Learn More"
+                autoComplete="off"
+              />
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="cta_secondary_url">
+                Secondary CTA URL (required when publishing)
+              </label>
+              <input
+                id="cta_secondary_url"
+                className="input"
+                value={ctaSecondaryUrl}
+                onChange={(e) => setCtaSecondaryUrl(e.target.value)}
+                placeholder="https://your-secondary-cta-link.com"
+                autoComplete="off"
+                inputMode="url"
+              />
+            </div>
+          </div>
+
           <div className="help">
-            Next (Phase 5.3): mandatory CTAs (primary + secondary). After that: optional extra banners, optional YouTube preview, then compliance footer fields (Phase 5.6).
+            Next (Phase 5.4): optional extra banners (extra_banner_url_1, extra_banner_url_2). After that: optional YouTube preview (youtube_url).
           </div>
         </div>
       </div>
