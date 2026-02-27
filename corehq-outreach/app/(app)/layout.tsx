@@ -67,7 +67,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [checking, setChecking] = useState(true);
   const [email, setEmail] = useState<string | null>(null);
 
-  const [brand, setBrand] = useState("Tipsy — CoreHQ");
+  const BRAND_STORAGE_KEY = "corehq.activeBrand";
+  const DEFAULT_BRAND = "Tipsy — CoreHQ";
+
+  const [brand, setBrand] = useState(DEFAULT_BRAND);
 
   const [toastOpen, setToastOpen] = useState(false);
   const [toastKind, setToastKind] = useState<ToastKind>("info");
@@ -88,6 +91,35 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       if (toastTimer.current) window.clearTimeout(toastTimer.current);
     };
   }, []);
+
+  // Hydrate active brand from localStorage (persisted brand context)
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(BRAND_STORAGE_KEY);
+      if (saved && typeof saved === "string") setBrand(saved);
+    } catch {
+      // ignore (storage blocked)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist + broadcast brand changes for other pages/components
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(BRAND_STORAGE_KEY, brand);
+    } catch {
+      // ignore (storage blocked)
+    }
+
+    try {
+      window.dispatchEvent(
+        new CustomEvent("corehq:brand", { detail: { brand } })
+      );
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brand]);
 
   // Auth guard for all authenticated app routes
   useEffect(() => {
