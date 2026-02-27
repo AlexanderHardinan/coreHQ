@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "../../../../src/lib/supabaseClient";
 
 type ToastKind = "success" | "error" | "info";
 
@@ -41,10 +42,16 @@ export default function NewCampaignPage() {
 
   const [activeBrand, setActiveBrand] = useState<string>("(loading brand…)");
 
-  // Phase 5.1 fields (UI-only for now)
+  // Campaign identity (insert once, then update)
+  const [campaignId, setCampaignId] = useState<string | null>(null);
+
+  // Phase 5.1 fields
+  const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
   const [previewText, setPreviewText] = useState("");
-  const [scheduleAt, setScheduleAt] = useState(""); // ISO-local string
+  const [scheduleAt, setScheduleAt] = useState(""); // datetime-local string
+
+  const [saving, setSaving] = useState(false);
 
   const [toastOpen, setToastOpen] = useState(false);
   const [toastKind, setToastKind] = useState<ToastKind>("info");
@@ -84,9 +91,82 @@ export default function NewCampaignPage() {
     return () => window.removeEventListener("corehq:brand", onBrand as any);
   }, []);
 
+  const resolveBrandId = async (brandName: string) => {
+    const { data, error } = await supabase
+      .from("brands")
+      .select("id")
+      .eq("name", brandName)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message || "Failed to resolve brand.");
+    if (!data?.id) throw new Error(`Brand not found in DB: ${brandName}`);
+    return data.id as string;
+  };
+
+  const normalizeScheduledAt = (value: string) => {
+    if (!value) return null;
+    // datetime-local is local time; convert to ISO for timestamptz
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString();
+  };
+
+  const validate = () => {
+    if (!name.trim()) return "Campaign name is required.";
+    if (!subject.trim()) return "Subject is required.";
+    // preview_text optional in your roadmap; keep as optional
+    return null;
+  };
+
   const handleSaveDraft = async () => {
-    // Intentionally not writing to DB until you provide locked schema for campaigns/emails.
-    showToast("info", "UI saved locally (DB wiring begins after campaigns schema is provided).");
+    const err = validate();
+    if (err) {
+      showToast("error", err);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const brandId = await resolveBrandId(activeBrand);
+
+      const payload = {
+        brand_id: brandId,
+        name: name.trim(),
+        subject: subject.trim(),
+        preview_text: previewText.trim() || null,
+        scheduled_at: normalizeScheduledAt(scheduleAt),
+        status: "draft" as any,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (!campaignId) {
+        const { data, error } = await supabase
+          .from("campaigns")
+          .insert({
+            ...payload,
+            created_at: new Date().toISOString(),
+          })
+          .select("id")
+          .single();
+
+        if (error) throw new Error(error.message || "Failed to create campaign.");
+        setCampaignId(data.id);
+        showToast("success", "Draft campaign created.");
+      } else {
+        const { error } = await supabase
+          .from("campaigns")
+          .update(payload)
+          .eq("id", campaignId);
+
+        if (error) throw new Error(error.message || "Failed to update campaign.");
+        showToast("success", "Draft campaign updated.");
+      }
+    } catch (e: any) {
+      showToast("error", e?.message || "Save failed.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -153,17 +233,12 @@ export default function NewCampaignPage() {
           line-height: 1.6;
         }
 
-        .pill{
-          display:inline-flex;
-          align-items:center;
-          gap: 8px;
-          padding: 8px 10px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.12);
-          background: rgba(0,0,0,0.28);
-          color: rgba(255,255,255,0.82);
+        .idLine{
+          margin: 8px 0 0 0;
           font-size: 12px;
-          white-space: nowrap;
+          color: rgba(255,255,255,0.62);
+          line-height: 1.5;
+          word-break: break-all;
         }
 
         .actions{
@@ -336,26 +411,47 @@ export default function NewCampaignPage() {
               <p className="meta">
                 Active brand: <b>{activeBrand}</b>
               </p>
-              <p className="meta">
-                Phase 5.1 (Meta) is staged here. DB wiring begins after you provide the locked
-                <b> campaigns </b> table schema/columns.
-              </p>
+              {campaignId ? (
+                <p className="idLine">
+                  Draft campaign ID: <b>{campaignId}</b>
+                </p>
+              ) : (
+                <p className="idLine">Not saved yet — click Save Draft to create it.</p>
+              )}
             </div>
 
             <div className="actions">
               <Link className="btn" href="/campaigns">
                 ← Back
               </Link>
-              <button className="btn btnPrimary" onClick={handleSaveDraft}>
-                Save Draft
+              <button
+                className="btn btnPrimary"
+                onClick={handleSaveDraft}
+                disabled={saving}
+              >
+                {saving ? "Saving…" : "Save Draft"}
               </button>
             </div>
           </div>
 
           <div className="grid" aria-label="Campaign meta form">
             <div className="field">
+              <label className="label" htmlFor="name">
+                Campaign name (required)
+              </label>
+              <input
+                id="name"
+                className="input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Example: Tipsy February Offer"
+                autoComplete="off"
+              />
+            </div>
+
+            <div className="field">
               <label className="label" htmlFor="subject">
-                Subject (Phase 5.1)
+                Subject (required)
               </label>
               <input
                 id="subject"
@@ -369,7 +465,7 @@ export default function NewCampaignPage() {
 
             <div className="field">
               <label className="label" htmlFor="preview">
-                Preview text (Phase 5.1)
+                Preview text (optional)
               </label>
               <input
                 id="preview"
@@ -383,7 +479,7 @@ export default function NewCampaignPage() {
 
             <div className="field">
               <label className="label" htmlFor="schedule">
-                Schedule (optional) (Phase 5.1)
+                Schedule (optional)
               </label>
               <input
                 id="schedule"
@@ -395,14 +491,14 @@ export default function NewCampaignPage() {
             </div>
 
             <div className="field">
-              <label className="label">Status (Phase 5.1)</label>
-              <input className="input" value="draft (UI-only)" disabled />
+              <label className="label">Status</label>
+              <input className="input" value="draft" disabled />
             </div>
           </div>
 
           <div className="help">
-            Next in Phase 5: Offer content + CTAs + banners + optional YouTube preview + compliance footer.
-            Those will be added after DB mapping is locked, so save/load is stable and not guessed.
+            Next (Phase 5.2+): featured URL, primary banner, mandatory CTAs, optional extra banners, optional YouTube preview, and compliance footer.
+            After this draft save is stable, we expand the same campaign row with those fields.
           </div>
         </div>
       </div>
