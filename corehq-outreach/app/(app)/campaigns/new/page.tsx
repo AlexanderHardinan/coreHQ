@@ -65,6 +65,14 @@ export default function NewCampaignPage() {
   const [extraBannerUrl1, setExtraBannerUrl1] = useState("");
   const [extraBannerUrl2, setExtraBannerUrl2] = useState("");
 
+  // Phase 5.5 fields (Optional YouTube)
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+
+  // Phase 5.6 fields (Footer + compliance + unsubscribe)
+  const [footerText, setFooterText] = useState("");
+  const [complianceText, setComplianceText] = useState("");
+  const [unsubscribeUrl, setUnsubscribeUrl] = useState("");
+
   const [saving, setSaving] = useState(false);
 
   const [toastOpen, setToastOpen] = useState(false);
@@ -169,6 +177,14 @@ export default function NewCampaignPage() {
         // Phase 5.4 extra banners
         extra_banner_url_1: normalizeTextOrNull(extraBannerUrl1),
         extra_banner_url_2: normalizeTextOrNull(extraBannerUrl2),
+
+        // Phase 5.5 YouTube
+        youtube_url: normalizeTextOrNull(youtubeUrl),
+
+        // Phase 5.6 Footer + compliance + unsubscribe
+        footer_text: normalizeTextOrNull(footerText),
+        compliance_text: normalizeTextOrNull(complianceText),
+        unsubscribe_url: normalizeTextOrNull(unsubscribeUrl),
 
         updated_at: new Date().toISOString(),
       };
@@ -345,7 +361,7 @@ export default function NewCampaignPage() {
           letter-spacing: 0.2px;
         }
 
-        .input{
+        .input, .textarea{
           width:100%;
           padding: 11px 12px;
           border-radius: 12px;
@@ -355,10 +371,14 @@ export default function NewCampaignPage() {
           outline: none;
           transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
         }
-        .input:focus{
+        .input:focus, .textarea:focus{
           border-color: rgba(59,130,246,0.55);
           box-shadow: 0 0 0 4px rgba(59,130,246,0.16);
           transform: translateY(-1px);
+        }
+        .textarea{
+          min-height: 96px;
+          resize: vertical;
         }
 
         .help{
@@ -436,7 +456,7 @@ export default function NewCampaignPage() {
         @media (prefers-reduced-motion: reduce){
           .card, .shine, .toastOpen, .toastClose { animation: none !important; }
           .card{ opacity: 1; transform: none; }
-          .btn, .input{ transition: none !important; }
+          .btn, .input, .textarea{ transition: none !important; }
           .toast{ opacity: 1; transform:none; }
         }
       `}</style>
@@ -666,8 +686,70 @@ export default function NewCampaignPage() {
             </div>
           </div>
 
+          <div className="sectionTitle">Phase 5.5 — YouTube Preview (Optional)</div>
+          <div className="grid" aria-label="YouTube preview form">
+            <div className="field">
+              <label className="label" htmlFor="youtube_url">
+                YouTube URL (optional)
+              </label>
+              <input
+                id="youtube_url"
+                className="input"
+                value={youtubeUrl}
+                onChange={(e) => setYoutubeUrl(e.target.value)}
+                placeholder="https://www.youtube.com/watch?v=..."
+                autoComplete="off"
+                inputMode="url"
+              />
+            </div>
+          </div>
+
+          <div className="sectionTitle">Phase 5.6 — Footer + Compliance</div>
+          <div className="grid" aria-label="Footer and compliance form">
+            <div className="field">
+              <label className="label" htmlFor="footer_text">
+                Footer text (optional)
+              </label>
+              <textarea
+                id="footer_text"
+                className="textarea"
+                value={footerText}
+                onChange={(e) => setFooterText(e.target.value)}
+                placeholder="Brand footer / address / contact info..."
+              />
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="compliance_text">
+                Compliance text (optional)
+              </label>
+              <textarea
+                id="compliance_text"
+                className="textarea"
+                value={complianceText}
+                onChange={(e) => setComplianceText(e.target.value)}
+                placeholder="Why they received this email, consent line, etc..."
+              />
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="unsubscribe_url">
+                Unsubscribe URL (optional for draft)
+              </label>
+              <input
+                id="unsubscribe_url"
+                className="input"
+                value={unsubscribeUrl}
+                onChange={(e) => setUnsubscribeUrl(e.target.value)}
+                placeholder="https://corehq.io/unsubscribe?..."
+                autoComplete="off"
+                inputMode="url"
+              />
+            </div>
+          </div>
+
           <div className="help">
-            Next (Phase 5.5): optional YouTube preview URL (youtube_url) with safe trimming. Then Phase 5.6: footer + compliance fields.
+            Phase 5 is now fully represented in the builder UI (5.1 → 5.6). Next (Phase 6): structured data → HTML email rendering + snapshots saved into `emails`.
           </div>
         </div>
       </div>
