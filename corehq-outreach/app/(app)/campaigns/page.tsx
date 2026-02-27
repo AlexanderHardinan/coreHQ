@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 export default function CampaignsPage() {
   return (
     <div className="page">
@@ -81,6 +83,10 @@ export default function CampaignsPage() {
           transition: transform 140ms ease, background 140ms ease, border-color 140ms ease, opacity 140ms ease;
           user-select:none;
           width: 100%;
+          text-decoration: none;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
         }
 
         .btn:hover{
@@ -91,11 +97,6 @@ export default function CampaignsPage() {
 
         .btn:active{
           transform: translateY(0px);
-        }
-
-        .btn:disabled{
-          cursor:not-allowed;
-          opacity: 0.55;
         }
 
         .hint{
@@ -139,10 +140,10 @@ export default function CampaignsPage() {
           </div>
 
           <div className="actions">
-            <button className="btn" disabled title="Phase 5 builder route not created yet">
+            <Link className="btn" href="/campaigns/new" title="Create a new offer-style campaign">
               + New Campaign
-            </button>
-            <div className="hint">Builder not wired yet (Phase 5). Next file will create the builder route.</div>
+            </Link>
+            <div className="hint">Builder ready (Phase 5). Start by saving a Draft.</div>
           </div>
         </div>
       </div>
