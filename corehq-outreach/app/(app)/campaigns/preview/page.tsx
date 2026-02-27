@@ -64,12 +64,44 @@ type CampaignRow = {
   unsubscribe_url: string | null;
 };
 
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function isStringOrNull(v: unknown) {
+  return typeof v === "string" || v === null;
+}
+
 function isCampaignRow(v: unknown): v is CampaignRow {
-  if (!v || typeof v !== "object") return false;
-  const o = v as any;
-  // minimal structural checks (keeps scope tight; avoids rewriting logic)
-  if (typeof o.id !== "string") return false;
-  if (!(typeof o.brand_id === "string" || o.brand_id === null)) return false;
+  if (!isObject(v)) return false;
+
+  // Required
+  if (typeof v.id !== "string") return false;
+  if (!isStringOrNull(v.brand_id)) return false;
+
+  // Nullable strings
+  const keys: (keyof Omit<CampaignRow, "id" | "brand_id">)[] = [
+    "name",
+    "subject",
+    "preview_text",
+    "featured_url",
+    "primary_banner_url",
+    "cta_primary_text",
+    "cta_primary_url",
+    "cta_secondary_text",
+    "cta_secondary_url",
+    "extra_banner_url_1",
+    "extra_banner_url_2",
+    "youtube_url",
+    "footer_text",
+    "compliance_text",
+    "unsubscribe_url",
+  ];
+
+  for (const k of keys) {
+    if (!isStringOrNull((v as any)[k])) return false;
+  }
+
   return true;
 }
 
@@ -95,15 +127,12 @@ function tryGetYouTubeId(url: string) {
   const u = url.trim();
   if (!u) return "";
 
-  // handle youtu.be/<id>
   const mShort = u.match(/youtu\.be\/([a-zA-Z0-9_-]{6,})/);
   if (mShort?.[1]) return mShort[1];
 
-  // handle v=...
   const mV = u.match(/[?&]v=([a-zA-Z0-9_-]{6,})/);
   if (mV?.[1]) return mV[1];
 
-  // handle /embed/<id>
   const mEmbed = u.match(/\/embed\/([a-zA-Z0-9_-]{6,})/);
   if (mEmbed?.[1]) return mEmbed[1];
 
@@ -132,8 +161,6 @@ function buildEmailHtml(c: CampaignRow, brandName: string) {
   const compliance = safeText(c.compliance_text);
   const unsub = normalizeUrlOrEmpty(c.unsubscribe_url);
 
-  // Email-client safe: table layout + inline styles only
-  // Preheader hidden block included.
   const preheader = preview ? escHtml(preview) : escHtml(`New offer from ${brandName}`);
 
   const buttonStyle =
@@ -288,7 +315,16 @@ function buildEmailHtml(c: CampaignRow, brandName: string) {
 </body>
 </html>`;
 
-  return wrapStart + bannerBlock + featuredBlock + ctaBlock + extraBlock + youtubeBlock + footerBlock + wrapEnd;
+  return (
+    wrapStart +
+    bannerBlock +
+    featuredBlock +
+    ctaBlock +
+    extraBlock +
+    youtubeBlock +
+    footerBlock +
+    wrapEnd
+  );
 }
 
 function buildEmailText(c: CampaignRow, brandName: string) {
@@ -407,7 +443,7 @@ export default function CampaignPreviewPage() {
       try {
         const { data, error } = await supabase
           .from("campaigns")
-          .select<CampaignRow>(
+          .select(
             [
               "id",
               "brand_id",
@@ -432,7 +468,10 @@ export default function CampaignPreviewPage() {
           .single();
 
         if (error) throw new Error(error.message || "Failed to load campaign.");
-        if (!isCampaignRow(data)) throw new Error("Loaded campaign row shape is invalid.");
+
+        if (!isCampaignRow(data)) {
+          throw new Error("Campaign row shape mismatch. Check campaigns columns/select list.");
+        }
 
         const row = data;
 
@@ -492,7 +531,6 @@ export default function CampaignPreviewPage() {
 
     setSaving(true);
     try {
-      // NOTE: This assumes these columns exist in `emails`.
       const payload = {
         campaign_id: campaign.id,
         brand_id: campaign.brand_id,
@@ -863,14 +901,17 @@ export default function CampaignPreviewPage() {
 
               <div className="hint">
                 Notes:
-                <br />• This is an internal preview using email-safe table layout + inline styles.
+                <br />• This is an internal preview using email-safe table layout + inline
+                styles.
                 <br />• “Save Snapshots” writes into <b>emails</b> table using columns:
                 <br />
                 <b>
-                  campaign_id, brand_id, subject, preview_text, html_snapshot, text_snapshot
+                  campaign_id, brand_id, subject, preview_text, html_snapshot,
+                  text_snapshot
                 </b>
                 <br />
-                • If your emails schema differs, the toast error message will show the missing column name.
+                • If your emails schema differs, the toast error message will show the
+                missing column name.
               </div>
             </>
           )}
