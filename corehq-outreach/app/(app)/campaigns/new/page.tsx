@@ -51,6 +51,10 @@ export default function NewCampaignPage() {
   const [previewText, setPreviewText] = useState("");
   const [scheduleAt, setScheduleAt] = useState(""); // datetime-local string
 
+  // Phase 5.2 fields (Offer Content)
+  const [featuredUrl, setFeaturedUrl] = useState("");
+  const [primaryBannerUrl, setPrimaryBannerUrl] = useState("");
+
   const [saving, setSaving] = useState(false);
 
   const [toastOpen, setToastOpen] = useState(false);
@@ -112,6 +116,11 @@ export default function NewCampaignPage() {
     return d.toISOString();
   };
 
+  const normalizeTextOrNull = (value: string) => {
+    const v = value.trim();
+    return v ? v : null;
+  };
+
   const validate = () => {
     if (!name.trim()) return "Campaign name is required.";
     if (!subject.trim()) return "Subject is required.";
@@ -133,9 +142,14 @@ export default function NewCampaignPage() {
         brand_id: brandId,
         name: name.trim(),
         subject: subject.trim(),
-        preview_text: previewText.trim() || null,
+        preview_text: normalizeTextOrNull(previewText),
         scheduled_at: normalizeScheduledAt(scheduleAt),
         status: "draft" as any,
+
+        // Phase 5.2 offer content
+        featured_url: normalizeTextOrNull(featuredUrl),
+        primary_banner_url: normalizeTextOrNull(primaryBannerUrl),
+
         updated_at: new Date().toISOString(),
       };
 
@@ -282,8 +296,17 @@ export default function NewCampaignPage() {
           opacity: 0.55;
         }
 
+        .sectionTitle{
+          margin: 18px 0 8px 0;
+          font-size: 12px;
+          font-weight: 900;
+          letter-spacing: 0.24px;
+          color: rgba(255,255,255,0.86);
+          text-transform: uppercase;
+        }
+
         .grid{
-          margin-top: 18px;
+          margin-top: 12px;
           display:grid;
           grid-template-columns: 1fr 1fr;
           gap: 14px;
@@ -433,6 +456,7 @@ export default function NewCampaignPage() {
             </div>
           </div>
 
+          <div className="sectionTitle">Phase 5.1 — Campaign Meta</div>
           <div className="grid" aria-label="Campaign meta form">
             <div className="field">
               <label className="label" htmlFor="name">
@@ -495,9 +519,41 @@ export default function NewCampaignPage() {
             </div>
           </div>
 
+          <div className="sectionTitle">Phase 5.2 — Offer Content</div>
+          <div className="grid" aria-label="Offer content form">
+            <div className="field">
+              <label className="label" htmlFor="featured_url">
+                Featured URL (optional for draft)
+              </label>
+              <input
+                id="featured_url"
+                className="input"
+                value={featuredUrl}
+                onChange={(e) => setFeaturedUrl(e.target.value)}
+                placeholder="https://your-offer-link.com"
+                autoComplete="off"
+                inputMode="url"
+              />
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="primary_banner_url">
+                Primary banner URL (optional for draft)
+              </label>
+              <input
+                id="primary_banner_url"
+                className="input"
+                value={primaryBannerUrl}
+                onChange={(e) => setPrimaryBannerUrl(e.target.value)}
+                placeholder="https://your-cdn.com/banner.png"
+                autoComplete="off"
+                inputMode="url"
+              />
+            </div>
+          </div>
+
           <div className="help">
-            Next (Phase 5.2+): featured URL, primary banner, mandatory CTAs, optional extra banners, optional YouTube preview, and compliance footer.
-            After this draft save is stable, we expand the same campaign row with those fields.
+            Next (Phase 5.3): mandatory CTAs (primary + secondary). After that: optional extra banners, optional YouTube preview, then compliance footer fields (Phase 5.6).
           </div>
         </div>
       </div>
