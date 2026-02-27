@@ -115,7 +115,6 @@ export default function NewCampaignPage() {
   const validate = () => {
     if (!name.trim()) return "Campaign name is required.";
     if (!subject.trim()) return "Subject is required.";
-    // preview_text optional in your roadmap; keep as optional
     return null;
   };
 
