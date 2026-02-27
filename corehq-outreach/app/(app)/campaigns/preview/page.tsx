@@ -64,6 +64,15 @@ type CampaignRow = {
   unsubscribe_url: string | null;
 };
 
+function isCampaignRow(v: unknown): v is CampaignRow {
+  if (!v || typeof v !== "object") return false;
+  const o = v as any;
+  // minimal structural checks (keeps scope tight; avoids rewriting logic)
+  if (typeof o.id !== "string") return false;
+  if (!(typeof o.brand_id === "string" || o.brand_id === null)) return false;
+  return true;
+}
+
 function safeText(v: any) {
   return typeof v === "string" ? v : "";
 }
@@ -129,8 +138,7 @@ function buildEmailHtml(c: CampaignRow, brandName: string) {
 
   const buttonStyle =
     "display:inline-block;padding:12px 16px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;";
-  const btnPrimary =
-    buttonStyle + "background:#3B82F6;color:#ffffff;";
+  const btnPrimary = buttonStyle + "background:#3B82F6;color:#ffffff;";
   const btnSecondary =
     buttonStyle + "background:#111827;color:#ffffff;border:1px solid #374151;";
 
@@ -180,7 +188,9 @@ function buildEmailHtml(c: CampaignRow, brandName: string) {
          <td style="padding:14px 18px 0 18px;font-family:Arial,Helvetica,sans-serif;color:#D1D5DB;">
            <div style="font-size:14px;line-height:1.6;">
              Featured link:
-             <a href="${escHtml(featuredUrl)}" style="color:#60A5FA;text-decoration:none;font-weight:700;">${escHtml(featuredUrl)}</a>
+             <a href="${escHtml(featuredUrl)}" style="color:#60A5FA;text-decoration:none;font-weight:700;">${escHtml(
+        featuredUrl
+      )}</a>
            </div>
          </td>
        </tr>`
@@ -235,7 +245,7 @@ function buildEmailHtml(c: CampaignRow, brandName: string) {
          </tr>`
       : "";
 
-  const footerBlock = (footer || compliance || unsub)
+  const footerBlock = footer || compliance || unsub
     ? `<tr>
          <td style="padding:18px;font-family:Arial,Helvetica,sans-serif;">
            <div style="border-top:1px solid #1F2937;margin-top:6px;padding-top:14px;">
@@ -278,16 +288,7 @@ function buildEmailHtml(c: CampaignRow, brandName: string) {
 </body>
 </html>`;
 
-  return (
-    wrapStart +
-    bannerBlock +
-    featuredBlock +
-    ctaBlock +
-    extraBlock +
-    youtubeBlock +
-    footerBlock +
-    wrapEnd
-  );
+  return wrapStart + bannerBlock + featuredBlock + ctaBlock + extraBlock + youtubeBlock + footerBlock + wrapEnd;
 }
 
 function buildEmailText(c: CampaignRow, brandName: string) {
@@ -406,7 +407,7 @@ export default function CampaignPreviewPage() {
       try {
         const { data, error } = await supabase
           .from("campaigns")
-          .select(
+          .select<CampaignRow>(
             [
               "id",
               "brand_id",
@@ -431,8 +432,9 @@ export default function CampaignPreviewPage() {
           .single();
 
         if (error) throw new Error(error.message || "Failed to load campaign.");
+        if (!isCampaignRow(data)) throw new Error("Loaded campaign row shape is invalid.");
 
-        const row = data as CampaignRow;
+        const row = data;
 
         let brandLabel = "CoreHQ Brand";
         if (row.brand_id) {
