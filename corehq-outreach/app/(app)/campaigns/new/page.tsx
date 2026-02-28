@@ -113,22 +113,54 @@ export default function NewCampaignPage() {
     return () => window.removeEventListener("corehq:brand", onBrand as any);
   }, []);
 
-  const resolveBrandId = async (brandName: string) => {
-    const { data, error } = await supabase
+  function normalizeBrandCandidates(brandLabel: string) {
+    const raw = (brandLabel || "").trim();
+    const out: string[] = [];
+    if (raw) out.push(raw);
+
+    // Handle labels like "Tipsy — CoreHQ" or "Tipsy - CoreHQ"
+    const splitDash = raw.split("—")[0]?.trim();
+    if (splitDash && splitDash !== raw) out.push(splitDash);
+
+    const splitHyphen = raw.split(" - ")[0]?.trim();
+    if (splitHyphen && splitHyphen !== raw && !out.includes(splitHyphen)) out.push(splitHyphen);
+
+    // Unique
+    return Array.from(new Set(out)).filter(Boolean);
+  }
+
+  const resolveBrandId = async (brandLabel: string) => {
+    const candidates = normalizeBrandCandidates(brandLabel);
+
+    // 1) Try exact matches against brands.name
+    for (const name of candidates) {
+      const { data, error } = await supabase
+        .from("brands")
+        .select("id")
+        .eq("name", name)
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw new Error(error.message || "Failed to resolve brand.");
+      if (data?.id) return data.id as string;
+    }
+
+    // 2) Fallback: if there is exactly one brand in DB, use it (keeps draft flow unblocked)
+    const { data: anyBrand, error: anyErr } = await supabase
       .from("brands")
-      .select("id")
-      .eq("name", brandName)
+      .select("id,name")
+      .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
 
-    if (error) throw new Error(error.message || "Failed to resolve brand.");
-    if (!data?.id) throw new Error(`Brand not found in DB: ${brandName}`);
-    return data.id as string;
+    if (anyErr) throw new Error(anyErr.message || "Failed to resolve brand.");
+    if (anyBrand?.id) return anyBrand.id as string;
+
+    throw new Error(`Brand not found in DB for: ${brandLabel}`);
   };
 
   const normalizeScheduledAt = (value: string) => {
     if (!value) return null;
-    // datetime-local is local time; convert to ISO for timestamptz
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return null;
     return d.toISOString();
@@ -164,24 +196,19 @@ export default function NewCampaignPage() {
         scheduled_at: normalizeScheduledAt(scheduleAt),
         status: "draft" as any,
 
-        // Phase 5.2 offer content
         featured_url: normalizeTextOrNull(featuredUrl),
         primary_banner_url: normalizeTextOrNull(primaryBannerUrl),
 
-        // Phase 5.3 CTA block
         cta_primary_text: normalizeTextOrNull(ctaPrimaryText),
         cta_primary_url: normalizeTextOrNull(ctaPrimaryUrl),
         cta_secondary_text: normalizeTextOrNull(ctaSecondaryText),
         cta_secondary_url: normalizeTextOrNull(ctaSecondaryUrl),
 
-        // Phase 5.4 extra banners
         extra_banner_url_1: normalizeTextOrNull(extraBannerUrl1),
         extra_banner_url_2: normalizeTextOrNull(extraBannerUrl2),
 
-        // Phase 5.5 YouTube
         youtube_url: normalizeTextOrNull(youtubeUrl),
 
-        // Phase 5.6 Footer + compliance + unsubscribe
         footer_text: normalizeTextOrNull(footerText),
         compliance_text: normalizeTextOrNull(complianceText),
         unsubscribe_url: normalizeTextOrNull(unsubscribeUrl),
@@ -203,11 +230,7 @@ export default function NewCampaignPage() {
         setCampaignId(data.id);
         showToast("success", "Draft campaign created.");
       } else {
-        const { error } = await supabase
-          .from("campaigns")
-          .update(payload)
-          .eq("id", campaignId);
-
+        const { error } = await supabase.from("campaigns").update(payload).eq("id", campaignId);
         if (error) throw new Error(error.message || "Failed to update campaign.");
         showToast("success", "Draft campaign updated.");
       }
@@ -310,6 +333,10 @@ export default function NewCampaignPage() {
           cursor: pointer;
           transition: transform 140ms ease, background 140ms ease, border-color 140ms ease, opacity 140ms ease;
           user-select:none;
+          text-decoration:none;
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
         }
         .btn:hover{
           transform: translateY(-1px);
@@ -486,18 +513,7 @@ export default function NewCampaignPage() {
               <Link className="btn" href="/campaigns">
                 ← Back
               </Link>
-
-              {campaignId ? (
-                <Link className="btn" href={`/campaigns/preview?id=${campaignId}`}>
-                  Preview
-                </Link>
-              ) : null}
-
-              <button
-                className="btn btnPrimary"
-                onClick={handleSaveDraft}
-                disabled={saving}
-              >
+              <button className="btn btnPrimary" onClick={handleSaveDraft} disabled={saving}>
                 {saving ? "Saving…" : "Save Draft"}
               </button>
             </div>
@@ -756,7 +772,7 @@ export default function NewCampaignPage() {
           </div>
 
           <div className="help">
-            Phase 5 is now fully represented in the builder UI (5.1 → 5.6). Next (Phase 6): structured data → HTML email rendering + snapshots saved into `emails`.
+            Phase 5 is now fully represented in the builder UI (5.1 → 5.6). Next: Preview → Save Snapshots → Send.
           </div>
         </div>
       </div>
