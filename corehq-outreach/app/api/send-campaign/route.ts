@@ -42,9 +42,7 @@ function asStringArray(input: unknown): string[] {
 export async function POST(req: Request) {
   try {
     const RESEND_API_KEY = pickEnv("RESEND_API_KEY");
-    if (!RESEND_API_KEY) {
-      return jsonError("Missing RESEND_API_KEY env var.", 500);
-    }
+    if (!RESEND_API_KEY) return jsonError("Missing RESEND_API_KEY env var.", 500);
 
     const SUPABASE_URL = pickEnv("NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = pickEnv("SUPABASE_SERVICE_ROLE_KEY");
@@ -69,9 +67,7 @@ export async function POST(req: Request) {
     });
 
     const body = await req.json().catch(() => null);
-    if (!body || typeof body !== "object") {
-      return jsonError("Invalid JSON body.");
-    }
+    if (!body || typeof body !== "object") return jsonError("Invalid JSON body.");
 
     const campaignId =
       typeof (body as any).campaignId === "string"
@@ -81,6 +77,7 @@ export async function POST(req: Request) {
         : "";
 
     const to = asStringArray((body as any).to);
+
     if (!campaignId) return jsonError("campaignId is required.");
     if (!to.length) return jsonError("to is required (string or string[]).");
 
@@ -106,9 +103,7 @@ export async function POST(req: Request) {
       .limit(1)
       .maybeSingle<EmailSnapshotRow>();
 
-    if (error) {
-      return jsonError(error.message || "Failed to load email snapshots.", 500);
-    }
+    if (error) return jsonError(error.message || "Failed to load email snapshots.", 500);
     if (!data) {
       return jsonError(
         "No email snapshots found for this campaign. Open Preview and click “Save Snapshots” first.",
@@ -140,17 +135,26 @@ export async function POST(req: Request) {
 
     const resend = new Resend(RESEND_API_KEY);
 
-    // IMPORTANT (Resend v2 typings):
-    // Do not include `tags` unless you also use `template`.
-    // Including tags can force the template overload and break TS.
-    const sendRes = await resend.emails.send({
-      from: from as string,
-      to: to as string[],
-      subject: subject as string,
-      ...(replyTo ? { replyTo: replyTo as string } : {}),
-      ...(html ? { html: html as string } : {}),
-      ...(text ? { text: text as string } : {}),
-    });
+    // Resend typings are a strict union:
+    // - HTML variant requires `html` (text optional)
+    // - TEXT variant requires `text`
+    // Avoid optional html/text in the same object (that breaks TS).
+    const sendRes = html
+      ? await resend.emails.send({
+          from,
+          to,
+          subject,
+          ...(replyTo ? { replyTo } : {}),
+          html,
+          ...(text ? { text } : {}),
+        })
+      : await resend.emails.send({
+          from,
+          to,
+          subject,
+          ...(replyTo ? { replyTo } : {}),
+          text,
+        });
 
     return NextResponse.json({
       ok: true,
@@ -160,6 +164,7 @@ export async function POST(req: Request) {
       snapshotEmailId: data.id,
       usedFrom: from,
       usedSubject: subject,
+      usedMode: html ? "html" : "text",
     });
   } catch (e: any) {
     return jsonError(e?.message || "Unexpected server error.", 500);
