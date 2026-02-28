@@ -1,3 +1,4 @@
+// app/api/send-campaign/route.ts
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { createClient } from "@supabase/supabase-js";
@@ -122,12 +123,12 @@ export async function POST(req: Request) {
 
     const html =
       (typeof (body as any).html === "string" && (body as any).html.trim()
-        ? (body as any).html
+        ? String((body as any).html)
         : data.html_snapshot) || "";
 
     const text =
       (typeof (body as any).text === "string" && (body as any).text.trim()
-        ? (body as any).text
+        ? String((body as any).text)
         : data.text_snapshot) || "";
 
     if (!html && !text) {
@@ -139,15 +140,16 @@ export async function POST(req: Request) {
 
     const resend = new Resend(RESEND_API_KEY);
 
+    // IMPORTANT (Resend v2 typings):
+    // Do not include `tags` unless you also use `template`.
+    // Including tags can force the template overload and break TS.
     const sendRes = await resend.emails.send({
-      from,
-      to,
-      subject,
-      ...(replyTo ? { replyTo } : {}),
-      ...(html ? { html } : {}),
-      ...(text ? { text } : {}),
-      // Optional: set a small tag to help tracking in Resend dashboard
-      tags: [{ name: "campaign_id", value: campaignId }],
+      from: from as string,
+      to: to as string[],
+      subject: subject as string,
+      ...(replyTo ? { replyTo: replyTo as string } : {}),
+      ...(html ? { html: html as string } : {}),
+      ...(text ? { text: text as string } : {}),
     });
 
     return NextResponse.json({
