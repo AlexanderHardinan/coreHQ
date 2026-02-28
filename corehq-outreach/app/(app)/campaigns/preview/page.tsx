@@ -64,47 +64,6 @@ type CampaignRow = {
   unsubscribe_url: string | null;
 };
 
-function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
-}
-
-function isStringOrNull(v: unknown) {
-  return typeof v === "string" || v === null;
-}
-
-function isCampaignRow(v: unknown): v is CampaignRow {
-  if (!isObject(v)) return false;
-
-  // Required
-  if (typeof v.id !== "string") return false;
-  if (!isStringOrNull(v.brand_id)) return false;
-
-  // Nullable strings
-  const keys: (keyof Omit<CampaignRow, "id" | "brand_id">)[] = [
-    "name",
-    "subject",
-    "preview_text",
-    "featured_url",
-    "primary_banner_url",
-    "cta_primary_text",
-    "cta_primary_url",
-    "cta_secondary_text",
-    "cta_secondary_url",
-    "extra_banner_url_1",
-    "extra_banner_url_2",
-    "youtube_url",
-    "footer_text",
-    "compliance_text",
-    "unsubscribe_url",
-  ];
-
-  for (const k of keys) {
-    if (!isStringOrNull((v as any)[k])) return false;
-  }
-
-  return true;
-}
-
 function safeText(v: any) {
   return typeof v === "string" ? v : "";
 }
@@ -293,7 +252,9 @@ function buildEmailHtml(c: CampaignRow, brandName: string) {
              ${
                unsub
                  ? `<div style="margin-top:12px;font-size:12px;line-height:1.6;color:#9CA3AF;">
-                      <a href="${escHtml(unsub)}" style="color:#60A5FA;text-decoration:none;font-weight:800;">Unsubscribe</a>
+                      <a href="${escHtml(
+                        unsub
+                      )}" style="color:#60A5FA;text-decoration:none;font-weight:800;">Unsubscribe</a>
                     </div>`
                  : ""
              }
@@ -395,6 +356,24 @@ function buildEmailText(c: CampaignRow, brandName: string) {
   return lines.join("\n");
 }
 
+function parseRecipients(input: string) {
+  const raw = input
+    .split(/[\n,;]+/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const uniq: string[] = [];
+  const seen = new Set<string>();
+  for (const e of raw) {
+    const k = e.toLowerCase();
+    if (!seen.has(k)) {
+      seen.add(k);
+      uniq.push(e);
+    }
+  }
+  return uniq;
+}
+
 export default function CampaignPreviewPage() {
   const params = useSearchParams();
   const campaignId = (params.get("id") || "").trim();
@@ -408,6 +387,17 @@ export default function CampaignPreviewPage() {
   const [text, setText] = useState<string>("");
 
   const [saving, setSaving] = useState(false);
+
+  // Phase 8 send UI
+  const SEND_TO_KEY = "corehq.preview.sendTo";
+  const SEND_FROM_KEY = "corehq.preview.sendFrom";
+  const SEND_REPLYTO_KEY = "corehq.preview.replyTo";
+
+  const [sendToInput, setSendToInput] = useState("");
+  const [sendFrom, setSendFrom] = useState("CoreHQ <onboarding@resend.dev>");
+  const [sendReplyTo, setSendReplyTo] = useState("");
+
+  const [sending, setSending] = useState(false);
 
   const [toastOpen, setToastOpen] = useState(false);
   const [toastKind, setToastKind] = useState<ToastKind>("info");
@@ -428,6 +418,36 @@ export default function CampaignPreviewPage() {
       if (toastTimer.current) window.clearTimeout(toastTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    // restore send fields
+    try {
+      const t = window.localStorage.getItem(SEND_TO_KEY);
+      const f = window.localStorage.getItem(SEND_FROM_KEY);
+      const r = window.localStorage.getItem(SEND_REPLYTO_KEY);
+      if (typeof t === "string") setSendToInput(t);
+      if (typeof f === "string" && f.trim()) setSendFrom(f);
+      if (typeof r === "string") setSendReplyTo(r);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SEND_TO_KEY, sendToInput);
+    } catch {}
+  }, [sendToInput]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SEND_FROM_KEY, sendFrom);
+    } catch {}
+  }, [sendFrom]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SEND_REPLYTO_KEY, sendReplyTo);
+    } catch {}
+  }, [sendReplyTo]);
 
   useEffect(() => {
     let mounted = true;
@@ -469,11 +489,9 @@ export default function CampaignPreviewPage() {
 
         if (error) throw new Error(error.message || "Failed to load campaign.");
 
-        if (!isCampaignRow(data)) {
-          throw new Error("Campaign row shape mismatch. Check campaigns columns/select list.");
-        }
-
-        const row = data;
+        // Hard runtime guard (prevents TS weirdness + protects from unexpected shapes)
+        const row = (data as unknown as CampaignRow) || ({} as CampaignRow);
+        if (!row?.id) throw new Error("Campaign row missing id.");
 
         let brandLabel = "CoreHQ Brand";
         if (row.brand_id) {
@@ -549,6 +567,51 @@ export default function CampaignPreviewPage() {
       showToast("error", e?.message || "Save failed.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const sendCampaign = async () => {
+    if (!campaignId) {
+      showToast("error", "Missing campaign id.");
+      return;
+    }
+
+    const to = parseRecipients(sendToInput);
+    if (!to.length) {
+      showToast("error", "Add at least one recipient email in Send To.");
+      return;
+    }
+
+    const from = (sendFrom || "").trim() || "CoreHQ <onboarding@resend.dev>";
+    const replyTo = (sendReplyTo || "").trim();
+
+    setSending(true);
+    try {
+      const res = await fetch("/api/send-campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          campaignId,
+          to,
+          from,
+          ...(replyTo ? { replyTo } : {}),
+        }),
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok || !json?.ok) {
+        const msg =
+          (json && typeof json.error === "string" && json.error) ||
+          `Send failed (HTTP ${res.status}).`;
+        throw new Error(msg);
+      }
+
+      showToast("success", `Sent to ${to.length} recipient(s).`);
+    } catch (e: any) {
+      showToast("error", e?.message || "Send failed.");
+    } finally {
+      setSending(false);
     }
   };
 
@@ -739,6 +802,38 @@ export default function CampaignPreviewPage() {
           line-height: 1.55;
         }
 
+        .field{
+          display:flex;
+          flex-direction:column;
+          gap: 8px;
+          margin-bottom: 10px;
+        }
+        .label{
+          font-size: 12px;
+          color: rgba(255,255,255,0.70);
+          font-weight: 800;
+          letter-spacing: 0.2px;
+        }
+        .input, .textarea{
+          width:100%;
+          padding: 11px 12px;
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,0.10);
+          background: rgba(0,0,0,0.38);
+          color: rgba(255,255,255,0.92);
+          outline: none;
+          transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+        }
+        .input:focus, .textarea:focus{
+          border-color: rgba(59,130,246,0.55);
+          box-shadow: 0 0 0 4px rgba(59,130,246,0.16);
+          transform: translateY(-1px);
+        }
+        .textarea{
+          min-height: 92px;
+          resize: vertical;
+        }
+
         /* Toast */
         .toast{
           position: fixed;
@@ -802,7 +897,7 @@ export default function CampaignPreviewPage() {
         @media (prefers-reduced-motion: reduce){
           .card, .shine, .toastOpen, .toastClose { animation: none !important; }
           .card{ opacity: 1; transform: none; }
-          .btn{ transition: none !important; }
+          .btn, .input, .textarea{ transition: none !important; }
           .toast{ opacity: 1; transform:none; }
         }
       `}</style>
@@ -815,7 +910,7 @@ export default function CampaignPreviewPage() {
 
           <div className="top">
             <div>
-              <h1 className="title">Campaign Preview (Phase 6)</h1>
+              <h1 className="title">Campaign Preview (Phase 6) + Send (Phase 8)</h1>
               <p className="meta">
                 {campaignId ? (
                   <>
@@ -831,18 +926,10 @@ export default function CampaignPreviewPage() {
               <Link className="btn" href="/campaigns">
                 ← Back
               </Link>
-              <button
-                className="btn"
-                onClick={() => copy(html, "HTML")}
-                disabled={!html || loading}
-              >
+              <button className="btn" onClick={() => copy(html, "HTML")} disabled={!html || loading}>
                 Copy HTML
               </button>
-              <button
-                className="btn"
-                onClick={() => copy(text, "Text")}
-                disabled={!text || loading}
-              >
+              <button className="btn" onClick={() => copy(text, "Text")} disabled={!text || loading}>
                 Copy Text
               </button>
               <button
@@ -879,39 +966,85 @@ export default function CampaignPreviewPage() {
                 </div>
 
                 <div className="panel">
-                  <p className="panelTitle">Plain text</p>
+                  <p className="panelTitle">Phase 8 — Send (uses /api/send-campaign)</p>
+
+                  <div className="field">
+                    <label className="label" htmlFor="send_to">
+                      Send To (comma / newline separated)
+                    </label>
+                    <textarea
+                      id="send_to"
+                      className="textarea"
+                      value={sendToInput}
+                      onChange={(e) => setSendToInput(e.target.value)}
+                      placeholder={"test@example.com\nsecond@example.com"}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label className="label" htmlFor="send_from">
+                      From
+                    </label>
+                    <input
+                      id="send_from"
+                      className="input"
+                      value={sendFrom}
+                      onChange={(e) => setSendFrom(e.target.value)}
+                      placeholder="CoreHQ <onboarding@resend.dev>"
+                      autoComplete="off"
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label className="label" htmlFor="reply_to">
+                      Reply-To (optional)
+                    </label>
+                    <input
+                      id="reply_to"
+                      className="input"
+                      value={sendReplyTo}
+                      onChange={(e) => setSendReplyTo(e.target.value)}
+                      placeholder="support@corehq.io"
+                      autoComplete="off"
+                      inputMode="email"
+                    />
+                  </div>
+
                   <div className="row">
-                    <button className="btn" onClick={() => copy(text, "Text")}>
+                    <button
+                      className="btn btnPrimary"
+                      onClick={sendCampaign}
+                      disabled={sending || !campaignId}
+                      title="Sends latest saved snapshots (emails table) via Resend"
+                    >
+                      {sending ? "Sending…" : "Send Campaign"}
+                    </button>
+
+                    <button className="btn" onClick={() => copy(text, "Text")} disabled={!text}>
                       Copy Text
                     </button>
+                    <button className="btn" onClick={() => copy(html, "HTML")} disabled={!html}>
+                      Copy HTML
+                    </button>
                   </div>
+
+                  <p className="panelTitle" style={{ marginTop: 14 }}>
+                    Plain text
+                  </p>
                   <pre className="code">{text}</pre>
 
                   <p className="panelTitle" style={{ marginTop: 14 }}>
                     HTML source
                   </p>
-                  <div className="row">
-                    <button className="btn" onClick={() => copy(html, "HTML")}>
-                      Copy HTML
-                    </button>
-                  </div>
                   <pre className="code">{html}</pre>
                 </div>
               </div>
 
               <div className="hint">
                 Notes:
-                <br />• This is an internal preview using email-safe table layout + inline
-                styles.
-                <br />• “Save Snapshots” writes into <b>emails</b> table using columns:
-                <br />
-                <b>
-                  campaign_id, brand_id, subject, preview_text, html_snapshot,
-                  text_snapshot
-                </b>
-                <br />
-                • If your emails schema differs, the toast error message will show the
-                missing column name.
+                <br />• Send uses the latest snapshot row in <b>emails</b> for this campaign.
+                <br />• If “Send Campaign” says “No email snapshots found…”, click <b>Save Snapshots</b> first.
+                <br />• Default From uses Resend dev domain: <b>onboarding@resend.dev</b>.
               </div>
             </>
           )}
