@@ -56,7 +56,7 @@ type SegmentRow = {
   tags: string[] | null;
   opt_in_status: string | null;
   last_engagement_at: string | null;
-  contacts: Contact[]; // IMPORTANT: PostgREST join returns an array
+  contacts: Contact | null;
 };
 
 type EngagementFilter = "any" | "open" | "click";
@@ -81,21 +81,18 @@ export default function SegmentsPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [brandsLoading, setBrandsLoading] = useState(true);
 
-  // Filters
   const [brandId, setBrandId] = useState("");
   const [engagement, setEngagement] = useState<EngagementFilter>("any");
   const [tagMode, setTagMode] = useState<TagMode>("any");
   const [tagsRaw, setTagsRaw] = useState("");
   const [country, setCountry] = useState("");
-  const [lastSince, setLastSince] = useState(""); // YYYY-MM-DD
+  const [lastSince, setLastSince] = useState("");
 
-  // Preview state
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [rows, setRows] = useState<SegmentRow[]>([]);
   const [hint, setHint] = useState<string>("Select a brand to preview segment size.");
 
-  // Toast
   const [toastOpen, setToastOpen] = useState(false);
   const [toastKind, setToastKind] = useState<ToastKind>("info");
   const [toastMsg, setToastMsg] = useState("");
@@ -154,17 +151,14 @@ export default function SegmentsPage() {
       )
       .eq("brand_id", brandId);
 
-    // Tags
     if (tags.length > 0) {
       if (tagMode === "all") q = q.contains("tags", tags);
       else q = q.overlaps("tags", tags);
     }
 
-    // Country (contacts table)
     const c = country.trim();
     if (c) q = q.ilike("contacts.country", `%${c}%`);
 
-    // Last activity since
     if (lastSince) {
       const sinceIso = new Date(`${lastSince}T00:00:00.000Z`).toISOString();
       q = q.gte("last_engagement_at", sinceIso);
@@ -218,9 +212,7 @@ export default function SegmentsPage() {
       const baseRes = await baseQ;
       if (baseRes.error) throw baseRes.error;
 
-      // FIX: treat as unknown first, then SegmentRow[]
       const baseRows = ((baseRes.data ?? []) as unknown) as SegmentRow[];
-
       const baseIds = baseRows.map((r) => r.contact_id);
 
       const engagedSet = await fetchEngagedContactIdSet(baseIds, engagement, brandId);
@@ -251,6 +243,7 @@ export default function SegmentsPage() {
   };
 
   const debounceRef = useRef<number | null>(null);
+
   useEffect(() => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
@@ -524,7 +517,6 @@ export default function SegmentsPage() {
           animation: shimmer 1.2s infinite;
         }
 
-        /* Toast */
         .toast{
           position: fixed;
           right: 16px;
@@ -622,8 +614,8 @@ export default function SegmentsPage() {
             <div>
               <h1 className="title">Segments</h1>
               <p className="sub">
-                Phase 4.4: brand-level segmentation with required live preview count. Filters: Brand, Engagement (open/click),
-                Tags, Country, Last activity date.
+                Phase 4.4: brand-level segmentation with required live preview count. Filters: Brand, Engagement
+                (open/click), Tags, Country, Last activity date.
               </p>
             </div>
 
@@ -789,7 +781,8 @@ export default function SegmentsPage() {
                 </thead>
                 <tbody>
                   {rows.map((r) => {
-                    const c = r.contacts?.[0]; // FIX: joined row is array
+                    const c = r.contacts;
+
                     return (
                       <tr key={r.contact_id}>
                         <td className="email">{c?.email || "—"}</td>
