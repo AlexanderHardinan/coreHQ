@@ -101,6 +101,7 @@ export default function SegmentsPage() {
   const [toastKind, setToastKind] = useState<ToastKind>("info");
   const [toastMsg, setToastMsg] = useState("");
   const toastTimer = useRef<number | null>(null);
+  const previewRunRef = useRef(0);
 
   const showToast = (kind: ToastKind, msg: string) => {
     setToastKind(kind);
@@ -147,42 +148,55 @@ export default function SegmentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const buildBaseQuery = () => {
-    let q = supabase
-      .from("contact_brands")
-      .select(
-        "contact_id,tags,opt_in_status,last_engagement_at,contacts!inner(id,email,full_name,company,country,created_at)",
-      )
-      .eq("brand_id", brandId);
+  const applyFilters = (q: any) => {
+    let query = q.eq("brand_id", brandId);
 
     if (tags.length > 0) {
-      if (tagMode === "all") q = q.contains("tags", tags);
-      else q = q.overlaps("tags", tags);
+      if (tagMode === "all") query = query.contains("tags", tags);
+      else query = query.overlaps("tags", tags);
     }
 
     if (optInStatus !== "any") {
-      q = q.eq("opt_in_status", optInStatus);
+      query = query.eq("opt_in_status", optInStatus);
     }
 
     const c = country.trim();
-    if (c) q = q.ilike("contacts.country", `%${c}%`);
+    if (c) query = query.ilike("contacts.country", `%${c}%`);
 
     if (createdFrom) {
       const fromIso = new Date(`${createdFrom}T00:00:00.000Z`).toISOString();
-      q = q.gte("contacts.created_at", fromIso);
+      query = query.gte("contacts.created_at", fromIso);
     }
 
     if (createdTo) {
       const toIso = new Date(`${createdTo}T23:59:59.999Z`).toISOString();
-      q = q.lte("contacts.created_at", toIso);
+      query = query.lte("contacts.created_at", toIso);
     }
 
     if (lastSince) {
       const sinceIso = new Date(`${lastSince}T00:00:00.000Z`).toISOString();
-      q = q.gte("last_engagement_at", sinceIso);
+      query = query.gte("last_engagement_at", sinceIso);
     }
 
-    return q;
+    return query;
+  };
+
+  const buildBaseQuery = () => {
+    return applyFilters(
+      supabase
+        .from("contact_brands")
+        .select(
+          "contact_id,tags,opt_in_status,last_engagement_at,contacts!inner(id,email,full_name,company,country,created_at)",
+        ),
+    );
+  };
+
+  const buildBaseCountQuery = () => {
+    return applyFilters(
+      supabase
+        .from("contact_brands")
+        .select("contact_id,contacts!inner(id)", { count: "exact", head: true }),
+    );
   };
 
   const fetchEngagedContactIdSet = async (
@@ -214,6 +228,9 @@ export default function SegmentsPage() {
   };
 
   const runPreview = async () => {
+    const runId = previewRunRef.current + 1;
+    previewRunRef.current = runId;
+
     if (!brandId) {
       setPreviewCount(null);
       setRows([]);
@@ -225,38 +242,62 @@ export default function SegmentsPage() {
     setHint("Computing live preview…");
 
     try {
+      if (engagement === "any") {
+        const countRes = await buildBaseCountQuery();
+
+        if (countRes.error) throw countRes.error;
+        if (previewRunRef.current !== runId) return;
+
+        const rowRes = await buildBaseQuery()
+          .order("last_engagement_at", { ascending: false })
+          .limit(50);
+
+        if (rowRes.error) throw rowRes.error;
+        if (previewRunRef.current !== runId) return;
+
+        const nextRows = ((rowRes.data ?? []) as unknown) as SegmentRow[];
+
+        setPreviewCount(countRes.count ?? 0);
+        setRows(nextRows);
+        setHint((countRes.count ?? 0) === 0 ? "No matches for current filters." : "Live preview updated.");
+        return;
+      }
+
       const baseQ = buildBaseQuery().order("last_engagement_at", { ascending: false }).limit(5000);
 
       const baseRes = await baseQ;
       if (baseRes.error) throw baseRes.error;
+      if (previewRunRef.current !== runId) return;
 
       const baseRows = ((baseRes.data ?? []) as unknown) as SegmentRow[];
       const baseIds = baseRows.map((r) => r.contact_id);
 
       const engagedSet = await fetchEngagedContactIdSet(baseIds, engagement, brandId);
+      if (previewRunRef.current !== runId) return;
 
       const finalCount = engagedSet.size;
       setPreviewCount(finalCount);
 
-      const filteredForPreview =
-        engagement === "any"
-          ? baseRows.slice(0, 50)
-          : baseRows.filter((r) => engagedSet.has(r.contact_id)).slice(0, 50);
+      const filteredForPreview = baseRows.filter((r) => engagedSet.has(r.contact_id)).slice(0, 50);
 
       setRows(filteredForPreview);
 
-      if (baseIds.length > 5000) {
+      if (baseIds.length >= 5000) {
         setHint("Preview capped at 5,000 contacts for engagement evaluation. Counts may require RPC at scale.");
       } else {
         setHint(finalCount === 0 ? "No matches for current filters." : "Live preview updated.");
       }
     } catch (err: any) {
+      if (previewRunRef.current !== runId) return;
+
       setPreviewCount(null);
       setRows([]);
       setHint("Preview failed.");
       showToast("error", err?.message || "Failed to compute preview.");
     } finally {
-      setPreviewLoading(false);
+      if (previewRunRef.current === runId) {
+        setPreviewLoading(false);
+      }
     }
   };
 
