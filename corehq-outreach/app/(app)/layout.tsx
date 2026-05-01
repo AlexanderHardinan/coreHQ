@@ -67,6 +67,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [checking, setChecking] = useState(true);
   const [email, setEmail] = useState<string | null>(null);
 
+  const ADMIN_EMAIL = "blackchef.alex@gmail.com";
+
   const BRAND_STORAGE_KEY = "corehq.activeBrand";
   const DEFAULT_BRAND = "Tipsy — CoreHQ";
 
@@ -92,36 +94,29 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Hydrate active brand from localStorage (persisted brand context)
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(BRAND_STORAGE_KEY);
       if (saved && typeof saved === "string") setBrand(saved);
     } catch {
-      // ignore (storage blocked)
+      // ignore
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Persist + broadcast brand changes for other pages/components
   useEffect(() => {
     try {
       window.localStorage.setItem(BRAND_STORAGE_KEY, brand);
     } catch {
-      // ignore (storage blocked)
+      // ignore
     }
 
     try {
-      window.dispatchEvent(
-        new CustomEvent("corehq:brand", { detail: { brand } })
-      );
+      window.dispatchEvent(new CustomEvent("corehq:brand", { detail: { brand } }));
     } catch {
       // ignore
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brand]);
 
-  // Auth guard for all authenticated app routes
   useEffect(() => {
     let mounted = true;
 
@@ -135,7 +130,15 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         return;
       }
 
-      setEmail(data.session.user.email ?? null);
+      const userEmail = data.session.user.email ?? null;
+
+      if (userEmail !== ADMIN_EMAIL) {
+        await supabase.auth.signOut();
+        router.replace("/log-in");
+        return;
+      }
+
+      setEmail(userEmail);
       setChecking(false);
     };
 
@@ -144,8 +147,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [router]);
 
   const handleLogout = async () => {
     showToast("info", "Signing out…");
@@ -235,6 +237,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           font-weight: 800;
           letter-spacing: 0.2px;
         }
+
         .brandSub{
           margin: 6px 0 0 0;
           font-size: 12px;
@@ -253,6 +256,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           outline: none;
           transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
         }
+
         .brandSelect:focus{
           border-color: rgba(59,130,246,0.55);
           box-shadow: 0 0 0 4px rgba(59,130,246,0.16);
@@ -278,11 +282,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           text-decoration:none;
           transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
         }
+
         .navItem:hover{
           transform: translateY(-1px);
           border-color: rgba(255,255,255,0.12);
           background: rgba(0,0,0,0.28);
         }
+
         .navItemActive{
           border-color: rgba(59,130,246,0.32);
           background: rgba(59,130,246,0.12);
@@ -296,6 +302,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           box-shadow: 0 0 0 4px rgba(255,255,255,0.06);
           flex: 0 0 auto;
         }
+
         .navItemActive .navDot{
           background: rgba(59,130,246,1);
           box-shadow: 0 0 0 4px rgba(59,130,246,0.16);
@@ -333,12 +340,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           gap: 4px;
           min-width: 0;
         }
+
         .topTitle{
           margin:0;
           font-size: 14px;
           font-weight: 900;
           letter-spacing: 0.2px;
         }
+
         .topMeta{
           font-size: 12px;
           color: rgba(255,255,255,0.62);
@@ -366,6 +375,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           font-size: 12px;
           white-space: nowrap;
         }
+
         .dot{
           width: 8px;
           height: 8px;
@@ -386,11 +396,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           box-shadow: 0 16px 40px rgba(239,68,68,0.14);
           transition: transform 160ms ease, filter 160ms ease, box-shadow 160ms ease;
         }
+
         .btn:hover{
           filter: brightness(1.05);
           transform: translateY(-1px);
           box-shadow: 0 22px 48px rgba(168,85,247,0.16);
         }
+
         .btn:active{
           transform: translateY(0px);
           filter: brightness(0.98);
@@ -401,7 +413,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           min-height: calc(100vh - 64px);
         }
 
-        /* Checking screen */
         .checking{
           min-height:100vh;
           display:flex;
@@ -409,6 +420,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           justify-content:center;
           padding: 28px 16px;
         }
+
         .checkingCard{
           width: min(520px, 100%);
           border-radius: 18px;
@@ -423,18 +435,21 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           opacity: 0;
           animation: cardIn 650ms cubic-bezier(.2,.9,.2,1) forwards;
         }
+
         .checkingTitle{
           margin:0;
           font-size: 14px;
           font-weight: 900;
           letter-spacing: 0.2px;
         }
+
         .checkingSub{
           margin: 8px 0 0 0;
           font-size: 12px;
           color: rgba(255,255,255,0.62);
           line-height: 1.55;
         }
+
         .bar{
           margin-top: 12px;
           height: 10px;
@@ -443,6 +458,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           overflow:hidden;
           position:relative;
         }
+
         .bar::after{
           content:"";
           position:absolute;
@@ -452,7 +468,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           animation: shimmer 1.2s ease-in-out infinite;
         }
 
-        /* Toast */
         .toast{
           position: fixed;
           right: 16px;
@@ -469,16 +484,20 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           pointer-events:none;
           z-index: 9999;
         }
+
         .toastOpen{
           animation: toastIn 260ms cubic-bezier(.2,.9,.2,1) forwards;
           pointer-events:auto;
         }
+
         .toastClose{
           animation: toastOut 220ms ease forwards;
           pointer-events:none;
         }
+
         .toastBar{ height: 3px; background: var(--toastAccent); }
         .toastBody{ display:flex; gap: 10px; padding: 12px; align-items:flex-start; }
+
         .toastDot{
           margin-top: 3px;
           height: 10px;
@@ -488,24 +507,29 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           box-shadow: 0 0 0 4px color-mix(in srgb, var(--toastAccent) 25%, transparent);
           flex: 0 0 auto;
         }
+
         .toastText{ font-size: 13px; color: rgba(255,255,255,0.88); line-height: 1.45; }
 
         @keyframes cardIn{
           from{ transform: translateY(14px) scale(0.98); opacity: 0; }
           to{ transform: translateY(0px) scale(1); opacity: 1; }
         }
+
         @keyframes spin{
           from{ transform: rotate(0deg); }
           to{ transform: rotate(360deg); }
         }
+
         @keyframes shimmer{
           from{ transform: translateX(-60%); }
           to{ transform: translateX(60%); }
         }
+
         @keyframes toastIn{
           from{ transform: translateY(-10px); opacity: 0; }
           to{ transform: translateY(0px); opacity: 1; }
         }
+
         @keyframes toastOut{
           from{ transform: translateY(0px); opacity: 1; }
           to{ transform: translateY(-10px); opacity: 0; }
