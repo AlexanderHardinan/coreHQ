@@ -103,6 +103,10 @@ export default function SegmentsPage() {
   const toastTimer = useRef<number | null>(null);
   const previewRunRef = useRef(0);
 
+  // ✅ ADDED — Phase 5.4 save segment state only
+  const [segmentName, setSegmentName] = useState("");
+  const [savingSegment, setSavingSegment] = useState(false);
+
   const showToast = (kind: ToastKind, msg: string) => {
     setToastKind(kind);
     setToastMsg(msg);
@@ -147,6 +151,50 @@ export default function SegmentsPage() {
     loadBrands();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ✅ ADDED — Phase 5.4 save current filters to segments table only
+  const handleSaveSegment = async () => {
+    const cleanName = segmentName.trim();
+
+    if (!brandId) {
+      showToast("error", "Select a brand before saving a segment.");
+      return;
+    }
+
+    if (!cleanName) {
+      showToast("error", "Segment name is required.");
+      return;
+    }
+
+    setSavingSegment(true);
+
+    const rules = {
+      engagement,
+      tagMode,
+      tags,
+      country: country.trim(),
+      optInStatus,
+      createdFrom,
+      createdTo,
+      lastSince,
+    };
+
+    const { error } = await supabase.from("segments").insert({
+      name: cleanName,
+      brand_id: brandId,
+      rules,
+    });
+
+    setSavingSegment(false);
+
+    if (error) {
+      showToast("error", error.message || "Failed to save segment.");
+      return;
+    }
+
+    setSegmentName("");
+    showToast("success", "Segment saved.");
+  };
 
   const applyFilters = (q: any) => {
     let query = q.eq("brand_id", brandId);
@@ -571,6 +619,29 @@ export default function SegmentsPage() {
               </tbody>
             </table>
           )}
+
+          {/* ✅ ADDED — Phase 5.4 Save Segment UI only */}
+          <div style={{ marginTop: 20 }}>
+            <div className="label">Save Segment</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                className="input"
+                type="text"
+                placeholder="Segment name"
+                value={segmentName}
+                onChange={(e) => setSegmentName(e.target.value)}
+                disabled={!brandId || savingSegment}
+              />
+              <button
+                className="segOpt segOptActive"
+                type="button"
+                onClick={handleSaveSegment}
+                disabled={!brandId || savingSegment}
+              >
+                {savingSegment ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
