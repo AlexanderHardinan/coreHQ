@@ -28,9 +28,7 @@ function pickEnv(...keys: string[]) {
 
 function asStringArray(input: unknown): string[] {
   if (Array.isArray(input)) {
-    return input
-      .map((v) => (typeof v === "string" ? v.trim() : ""))
-      .filter(Boolean);
+    return input.map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean);
   }
   if (typeof input === "string") {
     const v = input.trim();
@@ -40,6 +38,10 @@ function asStringArray(input: unknown): string[] {
 }
 
 export async function POST(req: Request) {
+  let campaignId = "";
+  let snapshotEmailId: string | null = null;
+  let recipients: string[] = [];
+
   try {
     const RESEND_API_KEY = pickEnv("RESEND_API_KEY");
     if (!RESEND_API_KEY) return jsonError("Missing RESEND_API_KEY env var.", 500);
@@ -52,10 +54,7 @@ export async function POST(req: Request) {
 
     const supabaseKey = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
     if (!supabaseKey) {
-      return jsonError(
-        "Missing Supabase key env var. Provide SUPABASE_SERVICE_ROLE_KEY (recommended) or NEXT_PUBLIC_SUPABASE_ANON_KEY.",
-        500
-      );
+      return jsonError("Missing Supabase key env var.", 500);
     }
 
     const supabase = createClient(SUPABASE_URL, supabaseKey, {
@@ -65,7 +64,7 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") return jsonError("Invalid JSON body.");
 
-    const campaignId =
+    campaignId =
       typeof (body as any).campaignId === "string"
         ? (body as any).campaignId.trim()
         : typeof (body as any).campaign_id === "string"
@@ -73,6 +72,7 @@ export async function POST(req: Request) {
         : "";
 
     const to = asStringArray((body as any).to);
+    recipients = to;
 
     if (!campaignId) return jsonError("campaignId is required.");
     if (!to.length) return jsonError("to is required (string or string[]).");
@@ -104,6 +104,8 @@ export async function POST(req: Request) {
       );
     }
 
+    snapshotEmailId = data.id;
+
     const subject =
       (typeof (body as any).subject === "string" && (body as any).subject.trim()
         ? (body as any).subject.trim()
@@ -120,19 +122,12 @@ export async function POST(req: Request) {
         : data.text_snapshot) || "";
 
     if (!html && !text) {
-      return jsonError(
-        "Snapshot is missing html_snapshot/text_snapshot. Regenerate Preview and Save Snapshots again.",
-        400
-      );
+      return jsonError("Snapshot is missing html_snapshot/text_snapshot.", 400);
     }
 
-    // ✅ Phase 8 status tracking: sending
     await supabase
       .from("campaigns")
-      .update({
-        status: "sending",
-        updated_at: new Date().toISOString(),
-      })
+      .update({ status: "sending", updated_at: new Date().toISOString() })
       .eq("id", campaignId);
 
     const resend = new Resend(RESEND_API_KEY);
@@ -155,14 +150,19 @@ export async function POST(req: Request) {
             text,
           });
 
-      // ✅ Phase 8 status tracking: sent
       await supabase
         .from("campaigns")
-        .update({
-          status: "sent",
-          updated_at: new Date().toISOString(),
-        })
+        .update({ status: "sent", updated_at: new Date().toISOString() })
         .eq("id", campaignId);
+
+      await supabase.from("campaign_logs").insert({
+        campaign_id: campaignId,
+        email_snapshot_id: data.id,
+        recipients: to,
+        status: "sent",
+        resend_id: (sendRes as any)?.data?.id || null,
+        error: null,
+      });
 
       return NextResponse.json({
         ok: true,
@@ -175,14 +175,19 @@ export async function POST(req: Request) {
         usedMode: html ? "html" : "text",
       });
     } catch (sendError: any) {
-      // ✅ Phase 8 status tracking: failed
       await supabase
         .from("campaigns")
-        .update({
-          status: "failed",
-          updated_at: new Date().toISOString(),
-        })
+        .update({ status: "failed", updated_at: new Date().toISOString() })
         .eq("id", campaignId);
+
+      await supabase.from("campaign_logs").insert({
+        campaign_id: campaignId,
+        email_snapshot_id: snapshotEmailId,
+        recipients,
+        status: "failed",
+        resend_id: null,
+        error: sendError?.message || "Send failed.",
+      });
 
       return jsonError(sendError?.message || "Send failed.", 500);
     }
