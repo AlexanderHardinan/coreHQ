@@ -12,6 +12,21 @@ type Campaign = {
   created_at: string;
 };
 
+function getStatusClass(status: string) {
+  switch (status) {
+    case "scheduled":
+      return "statusBlue";
+    case "sending":
+      return "statusPurple";
+    case "sent":
+      return "statusGreen";
+    case "failed":
+      return "statusRed";
+    default:
+      return "statusDefault";
+  }
+}
+
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,13 +112,40 @@ export default function CampaignsPage() {
         .actions{
           display:flex;
           gap:8px;
+          align-items:center;
         }
 
+        /* ✅ Status styles */
         .status{
           font-size:11px;
-          padding:4px 8px;
-          border-radius:8px;
+          padding:5px 10px;
+          border-radius:999px;
+          font-weight:800;
+          text-transform:capitalize;
+        }
+
+        .statusDefault{
           background: rgba(255,255,255,0.1);
+        }
+
+        .statusBlue{
+          background: rgba(59,130,246,0.2);
+          color: rgba(147,197,253,1);
+        }
+
+        .statusPurple{
+          background: rgba(168,85,247,0.2);
+          color: rgba(216,180,254,1);
+        }
+
+        .statusGreen{
+          background: rgba(34,197,94,0.2);
+          color: rgba(134,239,172,1);
+        }
+
+        .statusRed{
+          background: rgba(239,68,68,0.2);
+          color: rgba(252,165,165,1);
         }
       `}</style>
 
@@ -132,7 +174,9 @@ export default function CampaignsPage() {
                 </div>
 
                 <div className="actions">
-                  <div className="status">{c.status}</div>
+                  <div className={`status ${getStatusClass(c.status)}`}>
+                    {c.status}
+                  </div>
 
                   <Link href={`/campaigns/new?id=${c.id}`} className="btn">
                     Edit
