@@ -59,6 +59,23 @@ type SegmentRow = {
   contacts: Contact | null;
 };
 
+type SavedSegment = {
+  id: string;
+  name: string;
+  brand_id: string;
+  rules: {
+    engagement?: EngagementFilter;
+    tagMode?: TagMode;
+    tags?: string[];
+    country?: string;
+    optInStatus?: OptInFilter;
+    createdFrom?: string;
+    createdTo?: string;
+    lastSince?: string;
+  } | null;
+  created_at: string | null;
+};
+
 type EngagementFilter = "any" | "open" | "click";
 type TagMode = "any" | "all";
 type OptInFilter = "any" | "subscribed" | "unsubscribed" | "pending" | "bounced";
@@ -107,6 +124,11 @@ export default function SegmentsPage() {
   const [segmentName, setSegmentName] = useState("");
   const [savingSegment, setSavingSegment] = useState(false);
 
+  // ✅ ADDED — Phase 5.5 segment reuse state only
+  const [savedSegments, setSavedSegments] = useState<SavedSegment[]>([]);
+  const [segmentsLoading, setSegmentsLoading] = useState(false);
+  const [deletingSegmentId, setDeletingSegmentId] = useState<string | null>(null);
+
   const showToast = (kind: ToastKind, msg: string) => {
     setToastKind(kind);
     setToastMsg(msg);
@@ -152,6 +174,37 @@ export default function SegmentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ✅ ADDED — Phase 5.5 load saved segments by selected brand only
+  const loadSavedSegments = async () => {
+    if (!brandId) {
+      setSavedSegments([]);
+      return;
+    }
+
+    setSegmentsLoading(true);
+
+    const { data, error } = await supabase
+      .from("segments")
+      .select("id,name,brand_id,rules,created_at")
+      .eq("brand_id", brandId)
+      .order("created_at", { ascending: false });
+
+    setSegmentsLoading(false);
+
+    if (error) {
+      setSavedSegments([]);
+      showToast("error", error.message || "Failed to load saved segments.");
+      return;
+    }
+
+    setSavedSegments(((data ?? []) as unknown) as SavedSegment[]);
+  };
+
+  useEffect(() => {
+    loadSavedSegments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandId]);
+
   // ✅ ADDED — Phase 5.4 save current filters to segments table only
   const handleSaveSegment = async () => {
     const cleanName = segmentName.trim();
@@ -194,6 +247,47 @@ export default function SegmentsPage() {
 
     setSegmentName("");
     showToast("success", "Segment saved.");
+    loadSavedSegments();
+  };
+
+  // ✅ ADDED — Phase 5.5 apply saved segment rules only
+  const handleApplySegment = (segment: SavedSegment) => {
+    const rules = segment.rules;
+
+    if (!rules) {
+      showToast("error", "This segment has no saved rules.");
+      return;
+    }
+
+    setEngagement(rules.engagement || "any");
+    setTagMode(rules.tagMode || "any");
+    setTagsRaw(Array.isArray(rules.tags) ? rules.tags.join(", ") : "");
+    setCountry(rules.country || "");
+    setOptInStatus(rules.optInStatus || "any");
+    setCreatedFrom(rules.createdFrom || "");
+    setCreatedTo(rules.createdTo || "");
+    setLastSince(rules.lastSince || "");
+
+    showToast("success", "Segment loaded.");
+  };
+
+  // ✅ ADDED — Phase 5.5 delete saved segment only
+  const handleDeleteSegment = async (segmentId: string) => {
+    if (!segmentId) return;
+
+    setDeletingSegmentId(segmentId);
+
+    const { error } = await supabase.from("segments").delete().eq("id", segmentId);
+
+    setDeletingSegmentId(null);
+
+    if (error) {
+      showToast("error", error.message || "Failed to delete segment.");
+      return;
+    }
+
+    setSavedSegments((current) => current.filter((segment) => segment.id !== segmentId));
+    showToast("success", "Segment deleted.");
   };
 
   const applyFilters = (q: any) => {
@@ -641,6 +735,66 @@ export default function SegmentsPage() {
                 {savingSegment ? "Saving…" : "Save"}
               </button>
             </div>
+          </div>
+
+          {/* ✅ ADDED — Phase 5.5 Saved Segments reuse UI only */}
+          <div style={{ marginTop: 20 }}>
+            <div className="label">Saved Segments</div>
+
+            {segmentsLoading ? (
+              <div style={{ marginTop: 10 }}>
+                <div className="skeleton" />
+              </div>
+            ) : savedSegments.length === 0 ? (
+              <div style={{ marginTop: 10, color: "rgba(255,255,255,0.60)", fontSize: 13 }}>
+                No saved segments for this brand.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                {savedSegments.map((segment) => (
+                  <div
+                    key={segment.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      padding: 10,
+                      borderRadius: 12,
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      background: "rgba(0,0,0,0.26)",
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: "rgba(255,255,255,0.88)", fontSize: 13, fontWeight: 800 }}>
+                        {segment.name}
+                      </div>
+                      <div style={{ color: "rgba(255,255,255,0.52)", fontSize: 12, marginTop: 4 }}>
+                        {fmtDate(segment.created_at)}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                      <button
+                        className="segOpt"
+                        type="button"
+                        onClick={() => handleApplySegment(segment)}
+                      >
+                        Load
+                      </button>
+                      <button
+                        className="segOpt"
+                        type="button"
+                        onClick={() => handleDeleteSegment(segment.id)}
+                        disabled={deletingSegmentId === segment.id}
+                      >
+                        {deletingSegmentId === segment.id ? "Deleting…" : "Delete"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
