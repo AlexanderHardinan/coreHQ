@@ -27,6 +27,8 @@ export default function AnalyticsPage() {
   const [logs, setLogs] = useState<CampaignLog[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
+
   useEffect(() => {
     const loadAnalytics = async () => {
       setLoading(true);
@@ -46,16 +48,27 @@ export default function AnalyticsPage() {
     loadAnalytics();
   }, []);
 
+  const campaignIds = useMemo(() => {
+    return Array.from(
+      new Set(logs.map((log) => log.campaign_id).filter(Boolean) as string[])
+    );
+  }, [logs]);
+
+  const scopedLogs = useMemo(() => {
+    if (!selectedCampaignId) return logs;
+    return logs.filter((log) => log.campaign_id === selectedCampaignId);
+  }, [logs, selectedCampaignId]);
+
   const metrics = useMemo(() => {
-    const sent = logs.filter((log) => normalizeEvent(log).includes("sent")).length;
-    const delivered = logs.filter((log) => normalizeEvent(log).includes("delivered")).length;
-    const opened = logs.filter((log) => normalizeEvent(log).includes("opened") || normalizeEvent(log).includes("open")).length;
-    const clicked = logs.filter((log) => normalizeEvent(log).includes("clicked") || normalizeEvent(log).includes("click")).length;
-    const bounced = logs.filter((log) => normalizeEvent(log).includes("bounced") || normalizeEvent(log).includes("bounce")).length;
-    const failed = logs.filter((log) => normalizeEvent(log).includes("failed")).length;
+    const sent = scopedLogs.filter((log) => normalizeEvent(log).includes("sent")).length;
+    const delivered = scopedLogs.filter((log) => normalizeEvent(log).includes("delivered")).length;
+    const opened = scopedLogs.filter((log) => normalizeEvent(log).includes("opened") || normalizeEvent(log).includes("open")).length;
+    const clicked = scopedLogs.filter((log) => normalizeEvent(log).includes("clicked") || normalizeEvent(log).includes("click")).length;
+    const bounced = scopedLogs.filter((log) => normalizeEvent(log).includes("bounced") || normalizeEvent(log).includes("bounce")).length;
+    const failed = scopedLogs.filter((log) => normalizeEvent(log).includes("failed")).length;
 
     return {
-      totalEvents: logs.length,
+      totalEvents: scopedLogs.length,
       sent,
       delivered,
       opened,
@@ -65,7 +78,7 @@ export default function AnalyticsPage() {
       openRate: pct(opened, delivered || sent),
       clickRate: pct(clicked, delivered || sent),
     };
-  }, [logs]);
+  }, [scopedLogs]);
 
   return (
     <div className="page">
@@ -123,6 +136,29 @@ export default function AnalyticsPage() {
           font-size: 13px;
           color: rgba(255,255,255,0.68);
           line-height: 1.6;
+        }
+
+        .selector{
+          margin-top:18px;
+          display:flex;
+          flex-direction:column;
+          gap:8px;
+        }
+
+        .label{
+          font-size:12px;
+          color:rgba(255,255,255,0.72);
+          font-weight:800;
+        }
+
+        .select{
+          width:100%;
+          border-radius:12px;
+          border:1px solid rgba(255,255,255,0.12);
+          background:rgba(0,0,0,0.40);
+          color:white;
+          padding:11px 12px;
+          outline:none;
         }
 
         .grid{
@@ -211,13 +247,29 @@ export default function AnalyticsPage() {
         <div className="content">
           <h1 className="title">Analytics</h1>
           <p className="sub">
-            Phase 10.3: campaign performance from send logs and Resend webhook events.
+            Phase 12: global and per-campaign performance from campaign logs and Resend webhook events.
           </p>
 
           {loading ? (
             <p className="sub">Loading analytics...</p>
           ) : (
             <>
+              <div className="selector">
+                <div className="label">Campaign Filter</div>
+                <select
+                  className="select"
+                  value={selectedCampaignId}
+                  onChange={(e) => setSelectedCampaignId(e.target.value)}
+                >
+                  <option value="">All Campaigns</option>
+                  {campaignIds.map((id) => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid">
                 <div className="metric">
                   <div className="metricLabel">Total Events</div>
@@ -261,7 +313,7 @@ export default function AnalyticsPage() {
               </div>
 
               <div className="logs">
-                {logs.slice(0, 10).map((log) => (
+                {scopedLogs.slice(0, 10).map((log) => (
                   <div key={log.id} className="log">
                     <div className="logTop">
                       <div>
