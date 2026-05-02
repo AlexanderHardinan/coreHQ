@@ -6,6 +6,28 @@ import { supabase } from "../../../../src/lib/supabaseClient";
 
 type ToastKind = "success" | "error" | "info";
 
+type BrandRow = {
+  id: string;
+  name: string;
+  slug: string | null;
+};
+
+type SegmentRow = {
+  id: string;
+  name: string;
+  brand_id: string;
+  rules: any;
+  created_at: string | null;
+};
+
+type TemplateRow = {
+  id: string;
+  name: string | null;
+  subject: string | null;
+  html_body: string | null;
+  created_at: string | null;
+};
+
 function InlineToast({
   open,
   kind,
@@ -42,43 +64,65 @@ export default function NewCampaignPage() {
 
   const [activeBrand, setActiveBrand] = useState<string>("(loading brand…)");
 
-  // Campaign identity (insert once, then update)
   const [campaignId, setCampaignId] = useState<string | null>(null);
 
-  // Phase 5.1 fields
   const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
   const [previewText, setPreviewText] = useState("");
-  const [scheduleAt, setScheduleAt] = useState(""); // datetime-local string
+  const [scheduleAt, setScheduleAt] = useState("");
 
-  // Phase 5.2 fields (Offer Content)
   const [featuredUrl, setFeaturedUrl] = useState("");
   const [primaryBannerUrl, setPrimaryBannerUrl] = useState("");
 
-  // Phase 5.3 fields (CTA Block)
   const [ctaPrimaryText, setCtaPrimaryText] = useState("");
   const [ctaPrimaryUrl, setCtaPrimaryUrl] = useState("");
   const [ctaSecondaryText, setCtaSecondaryText] = useState("");
   const [ctaSecondaryUrl, setCtaSecondaryUrl] = useState("");
 
-  // Phase 5.4 fields (Optional Extra Banners)
   const [extraBannerUrl1, setExtraBannerUrl1] = useState("");
   const [extraBannerUrl2, setExtraBannerUrl2] = useState("");
 
-  // Phase 5.5 fields (Optional YouTube)
   const [youtubeUrl, setYoutubeUrl] = useState("");
 
-  // Phase 5.6 fields (Footer + compliance + unsubscribe)
   const [footerText, setFooterText] = useState("");
   const [complianceText, setComplianceText] = useState("");
   const [unsubscribeUrl, setUnsubscribeUrl] = useState("");
 
   const [saving, setSaving] = useState(false);
 
+  // ✅ ADDED — Phase 7.1 campaign builder selectors only
+  const [brands, setBrands] = useState<BrandRow[]>([]);
+  const [brandId, setBrandId] = useState("");
+  const [segments, setSegments] = useState<SegmentRow[]>([]);
+  const [segmentId, setSegmentId] = useState("");
+  const [templates, setTemplates] = useState<TemplateRow[]>([]);
+  const [templateId, setTemplateId] = useState("");
+  const [builderLoading, setBuilderLoading] = useState(false);
+
   const [toastOpen, setToastOpen] = useState(false);
   const [toastKind, setToastKind] = useState<ToastKind>("info");
   const [toastMsg, setToastMsg] = useState("");
   const toastTimer = useRef<number | null>(null);
+
+  const selectedTemplate = useMemo(() => {
+    return templates.find((template) => template.id === templateId) || null;
+  }, [templates, templateId]);
+
+  const templatePreviewSubject = useMemo(() => {
+    return (selectedTemplate?.subject || "")
+      .replaceAll("{{name}}", "Alex")
+      .replaceAll("{{email}}", "alex@example.com")
+      .replaceAll("{{company}}", "The Globe")
+      .replaceAll("{{country}}", "Thailand");
+  }, [selectedTemplate]);
+
+  const templatePreviewBody = useMemo(() => {
+    return (selectedTemplate?.html_body || "")
+      .replaceAll("{{name}}", "Alex")
+      .replaceAll("{{email}}", "alex@example.com")
+      .replaceAll("{{company}}", "The Globe")
+      .replaceAll("{{country}}", "Thailand");
+  }, [selectedTemplate]);
 
   const showToast = (kind: ToastKind, msg: string) => {
     setToastKind(kind);
@@ -113,26 +157,99 @@ export default function NewCampaignPage() {
     return () => window.removeEventListener("corehq:brand", onBrand as any);
   }, []);
 
+  // ✅ ADDED — Phase 7.1 load brands/templates only
+  useEffect(() => {
+    const loadBuilderData = async () => {
+      setBuilderLoading(true);
+
+      const [brandRes, templateRes] = await Promise.all([
+        supabase.from("brands").select("id,name,slug").order("name", { ascending: true }),
+        supabase.from("templates").select("id,name,subject,html_body,created_at").order("created_at", { ascending: false }),
+      ]);
+
+      setBuilderLoading(false);
+
+      if (brandRes.error) {
+        showToast("error", brandRes.error.message || "Failed to load brands.");
+      } else {
+        const nextBrands = ((brandRes.data ?? []) as unknown) as BrandRow[];
+        setBrands(nextBrands);
+
+        if (!brandId && nextBrands.length > 0) {
+          setBrandId(nextBrands[0].id);
+        }
+      }
+
+      if (templateRes.error) {
+        showToast("error", templateRes.error.message || "Failed to load templates.");
+      } else {
+        setTemplates(((templateRes.data ?? []) as unknown) as TemplateRow[]);
+      }
+    };
+
+    loadBuilderData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ✅ ADDED — Phase 7.1 load saved segments by selected brand only
+  useEffect(() => {
+    const loadSegments = async () => {
+      if (!brandId) {
+        setSegments([]);
+        setSegmentId("");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("segments")
+        .select("id,name,brand_id,rules,created_at")
+        .eq("brand_id", brandId)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        setSegments([]);
+        setSegmentId("");
+        showToast("error", error.message || "Failed to load segments.");
+        return;
+      }
+
+      const nextSegments = ((data ?? []) as unknown) as SegmentRow[];
+      setSegments(nextSegments);
+      setSegmentId((current) => (nextSegments.some((segment) => segment.id === current) ? current : ""));
+    };
+
+    loadSegments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandId]);
+
+  // ✅ ADDED — Phase 7.1 apply selected template to campaign subject only
+  useEffect(() => {
+    if (!selectedTemplate) return;
+
+    if (selectedTemplate.subject) {
+      setSubject(selectedTemplate.subject);
+    }
+  }, [selectedTemplate]);
+
   function normalizeBrandCandidates(brandLabel: string) {
     const raw = (brandLabel || "").trim();
     const out: string[] = [];
     if (raw) out.push(raw);
 
-    // Handle labels like "Tipsy — CoreHQ" or "Tipsy - CoreHQ"
     const splitDash = raw.split("—")[0]?.trim();
     if (splitDash && splitDash !== raw) out.push(splitDash);
 
     const splitHyphen = raw.split(" - ")[0]?.trim();
     if (splitHyphen && splitHyphen !== raw && !out.includes(splitHyphen)) out.push(splitHyphen);
 
-    // Unique
     return Array.from(new Set(out)).filter(Boolean);
   }
 
   const resolveBrandId = async (brandLabel: string) => {
+    if (brandId) return brandId;
+
     const candidates = normalizeBrandCandidates(brandLabel);
 
-    // 1) Try exact matches against brands.name
     for (const name of candidates) {
       const { data, error } = await supabase
         .from("brands")
@@ -145,7 +262,6 @@ export default function NewCampaignPage() {
       if (data?.id) return data.id as string;
     }
 
-    // 2) Fallback: if there is exactly one brand in DB, use it (keeps draft flow unblocked)
     const { data: anyBrand, error: anyErr } = await supabase
       .from("brands")
       .select("id,name")
@@ -186,15 +302,19 @@ export default function NewCampaignPage() {
 
     setSaving(true);
     try {
-      const brandId = await resolveBrandId(activeBrand);
+      const resolvedBrandId = await resolveBrandId(activeBrand);
 
       const payload = {
-        brand_id: brandId,
+        brand_id: resolvedBrandId,
         name: name.trim(),
         subject: subject.trim(),
         preview_text: normalizeTextOrNull(previewText),
         scheduled_at: normalizeScheduledAt(scheduleAt),
         status: "draft" as any,
+
+        // ✅ ADDED — Phase 7.1 preserve selected segment/template links if columns exist
+        segment_id: normalizeTextOrNull(segmentId),
+        template_id: normalizeTextOrNull(templateId),
 
         featured_url: normalizeTextOrNull(featuredUrl),
         primary_banner_url: normalizeTextOrNull(primaryBannerUrl),
@@ -419,6 +539,29 @@ export default function NewCampaignPage() {
           line-height: 1.55;
         }
 
+        .builderPreview{
+          margin-top: 14px;
+          padding: 14px;
+          border-radius: 14px;
+          border: 1px solid rgba(255,255,255,0.10);
+          background: rgba(0,0,0,0.28);
+        }
+
+        .previewSubject{
+          font-size: 13px;
+          color: rgba(255,255,255,0.92);
+          font-weight: 900;
+          line-height: 1.5;
+        }
+
+        .previewBody{
+          margin-top: 8px;
+          font-size: 12px;
+          color: rgba(255,255,255,0.68);
+          line-height: 1.65;
+          white-space: pre-wrap;
+        }
+
         /* Toast */
         .toast{
           position: fixed;
@@ -518,6 +661,80 @@ export default function NewCampaignPage() {
               </button>
             </div>
           </div>
+
+          {/* ✅ ADDED — Phase 7.1 Builder Selectors */}
+          <div className="sectionTitle">Phase 7.1 — Campaign Targeting</div>
+          <div className="grid" aria-label="Campaign targeting form">
+            <div className="field">
+              <label className="label" htmlFor="brand_id">
+                Brand
+              </label>
+              <select
+                id="brand_id"
+                className="input"
+                value={brandId}
+                onChange={(e) => setBrandId(e.target.value)}
+                disabled={builderLoading}
+              >
+                {brands.length === 0 ? (
+                  <option value="">No brands found</option>
+                ) : (
+                  brands.map((brand) => (
+                    <option key={brand.id} value={brand.id}>
+                      {brand.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="segment_id">
+                Segment
+              </label>
+              <select
+                id="segment_id"
+                className="input"
+                value={segmentId}
+                onChange={(e) => setSegmentId(e.target.value)}
+                disabled={!brandId}
+              >
+                <option value="">No segment selected</option>
+                {segments.map((segment) => (
+                  <option key={segment.id} value={segment.id}>
+                    {segment.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="template_id">
+                Template
+              </label>
+              <select
+                id="template_id"
+                className="input"
+                value={templateId}
+                onChange={(e) => setTemplateId(e.target.value)}
+              >
+                <option value="">No template selected</option>
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name || "Untitled Template"}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {selectedTemplate && (
+            <div className="builderPreview">
+              <div className="label">Selected Template Preview</div>
+              <div className="previewSubject">{templatePreviewSubject || "No subject"}</div>
+              <div className="previewBody">{templatePreviewBody || "No body"}</div>
+            </div>
+          )}
 
           <div className="sectionTitle">Phase 5.1 — Campaign Meta</div>
           <div className="grid" aria-label="Campaign meta form">
@@ -772,7 +989,7 @@ export default function NewCampaignPage() {
           </div>
 
           <div className="help">
-            Phase 5 is now fully represented in the builder UI (5.1 → 5.6). Next: Preview → Save Snapshots → Send.
+            Phase 7.1: Brand, Segment, and Template selection are now available. No sending is enabled yet.
           </div>
         </div>
       </div>
