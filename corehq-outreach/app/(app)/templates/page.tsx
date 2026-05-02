@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { supabase } from "../../../src/lib/supabaseClient";
 
 const TOKENS = ["{{name}}", "{{email}}", "{{company}}", "{{country}}"];
 
@@ -8,6 +9,8 @@ export default function TemplatesPage() {
   const [templateName, setTemplateName] = useState("");
   const [subject, setSubject] = useState("");
   const [htmlBody, setHtmlBody] = useState("");
+
+  const [saving, setSaving] = useState(false); // ✅ added
 
   const previewSubject = useMemo(() => {
     return subject
@@ -27,6 +30,47 @@ export default function TemplatesPage() {
 
   const insertToken = (token: string) => {
     setHtmlBody((current) => `${current}${current ? " " : ""}${token}`);
+  };
+
+  // ✅ added
+  const handleSaveTemplate = async () => {
+    const name = templateName.trim();
+
+    if (!name) {
+      alert("Template name required");
+      return;
+    }
+
+    if (!subject.trim()) {
+      alert("Subject required");
+      return;
+    }
+
+    if (!htmlBody.trim()) {
+      alert("Body required");
+      return;
+    }
+
+    setSaving(true);
+
+    const { error } = await supabase.from("templates").insert({
+      name,
+      subject,
+      html_body: htmlBody,
+    });
+
+    setSaving(false);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    setTemplateName("");
+    setSubject("");
+    setHtmlBody("");
+
+    alert("Template saved");
   };
 
   return (
@@ -77,14 +121,12 @@ export default function TemplatesPage() {
           margin:0;
           font-size:18px;
           font-weight:900;
-          letter-spacing: 0.2px;
         }
 
         .sub{
           margin: 8px 0 0 0;
           font-size: 13px;
           color: rgba(255,255,255,0.68);
-          line-height: 1.6;
         }
 
         .grid{
@@ -119,13 +161,11 @@ export default function TemplatesPage() {
           color:white;
           padding:11px 12px;
           outline:none;
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
         }
 
         .textarea{
           min-height:180px;
           resize:vertical;
-          line-height:1.6;
         }
 
         .tokens{
@@ -138,12 +178,23 @@ export default function TemplatesPage() {
         .token{
           border:1px solid rgba(255,255,255,0.12);
           background:rgba(255,255,255,0.06);
-          color:rgba(255,255,255,0.86);
           border-radius:999px;
           padding:8px 10px;
           cursor:pointer;
           font-size:12px;
           font-weight:800;
+        }
+
+        .saveBtn{
+          margin-top:16px;
+          width:100%;
+          padding:12px;
+          border-radius:12px;
+          border:none;
+          background: linear-gradient(135deg, rgba(59,130,246,0.6), rgba(168,85,247,0.6));
+          color:white;
+          font-weight:900;
+          cursor:pointer;
         }
 
         .preview{
@@ -154,28 +205,9 @@ export default function TemplatesPage() {
           padding:16px;
         }
 
-        .previewTitle{
-          font-size:13px;
-          font-weight:900;
-          margin-bottom:10px;
-        }
-
-        .previewSubject{
-          font-size:14px;
-          font-weight:900;
-          margin-bottom:10px;
-        }
-
-        .previewBody{
-          font-size:13px;
-          color:rgba(255,255,255,0.72);
-          line-height:1.7;
-          white-space:pre-wrap;
-        }
-
         @keyframes cardIn{
-          from{ transform: translateY(14px) scale(0.98); opacity: 0; }
-          to{ transform: translateY(0px) scale(1); opacity: 1; }
+          from{ transform: translateY(14px); opacity: 0; }
+          to{ transform: translateY(0px); opacity: 1; }
         }
         @keyframes spin{
           from{ transform: rotate(0deg); }
@@ -185,11 +217,6 @@ export default function TemplatesPage() {
         @media (max-width: 760px){
           .grid{ grid-template-columns: 1fr; }
         }
-
-        @media (prefers-reduced-motion: reduce){
-          .card, .shine { animation: none !important; }
-          .card{ opacity: 1; transform: none; }
-        }
       `}</style>
 
       <div className="card">
@@ -197,54 +224,40 @@ export default function TemplatesPage() {
 
         <div className="content">
           <h1 className="title">Templates</h1>
-          <p className="sub">
-            Phase 6.1: create reusable campaign template content with subject, HTML body, and personalization tokens.
-          </p>
+          <p className="sub">Phase 6.2: Save template</p>
 
           <div className="grid">
             <div className="field">
               <div className="label">Template Name</div>
-              <input
-                className="input"
-                value={templateName}
-                onChange={(e) => setTemplateName(e.target.value)}
-                placeholder="Example: Welcome Offer"
-              />
+              <input className="input" value={templateName} onChange={(e) => setTemplateName(e.target.value)} />
             </div>
 
             <div className="field">
               <div className="label">Subject</div>
-              <input
-                className="input"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                placeholder="Hello {{name}}, special offer from {{company}}"
-              />
+              <input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} />
             </div>
 
             <div className="field fieldFull">
               <div className="label">HTML Body</div>
-              <textarea
-                className="textarea"
-                value={htmlBody}
-                onChange={(e) => setHtmlBody(e.target.value)}
-                placeholder="<h1>Hello {{name}}</h1><p>Your offer from {{company}} is ready.</p>"
-              />
+              <textarea className="textarea" value={htmlBody} onChange={(e) => setHtmlBody(e.target.value)} />
 
               <div className="tokens">
-                {TOKENS.map((token) => (
-                  <button key={token} className="token" type="button" onClick={() => insertToken(token)}>
-                    {token}
+                {TOKENS.map((t) => (
+                  <button key={t} className="token" onClick={() => insertToken(t)}>
+                    {t}
                   </button>
                 ))}
               </div>
             </div>
           </div>
 
+          <button className="saveBtn" onClick={handleSaveTemplate} disabled={saving}>
+            {saving ? "Saving..." : "Save Template"}
+          </button>
+
           <div className="preview">
-            <div className="previewTitle">Sample Preview</div>
-            <div className="previewSubject">{previewSubject || "Subject preview will appear here."}</div>
-            <div className="previewBody">{previewBody || "Body preview will appear here."}</div>
+            <strong>{previewSubject}</strong>
+            <div style={{ marginTop: 8 }}>{previewBody}</div>
           </div>
         </div>
       </div>
