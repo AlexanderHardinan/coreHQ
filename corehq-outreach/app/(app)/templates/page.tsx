@@ -1,9 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../src/lib/supabaseClient";
 
 const TOKENS = ["{{name}}", "{{email}}", "{{company}}", "{{country}}"];
+
+type SavedTemplate = {
+  id: string;
+  name: string | null;
+  subject: string | null;
+  html_body: string | null;
+  created_at: string | null;
+};
 
 export default function TemplatesPage() {
   const [templateName, setTemplateName] = useState("");
@@ -11,6 +19,11 @@ export default function TemplatesPage() {
   const [htmlBody, setHtmlBody] = useState("");
 
   const [saving, setSaving] = useState(false); // ✅ added
+
+  // ✅ ADDED — Phase 6.3 saved template list state only
+  const [templates, setTemplates] = useState<SavedTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
 
   const previewSubject = useMemo(() => {
     return subject
@@ -31,6 +44,30 @@ export default function TemplatesPage() {
   const insertToken = (token: string) => {
     setHtmlBody((current) => `${current}${current ? " " : ""}${token}`);
   };
+
+  // ✅ ADDED — Phase 6.3 load saved templates only
+  const loadTemplates = async () => {
+    setTemplatesLoading(true);
+
+    const { data, error } = await supabase
+      .from("templates")
+      .select("id,name,subject,html_body,created_at")
+      .order("created_at", { ascending: false });
+
+    setTemplatesLoading(false);
+
+    if (error) {
+      alert(error.message);
+      setTemplates([]);
+      return;
+    }
+
+    setTemplates(((data ?? []) as unknown) as SavedTemplate[]);
+  };
+
+  useEffect(() => {
+    loadTemplates();
+  }, []);
 
   // ✅ added
   const handleSaveTemplate = async () => {
@@ -71,6 +108,31 @@ export default function TemplatesPage() {
     setHtmlBody("");
 
     alert("Template saved");
+    loadTemplates();
+  };
+
+  // ✅ ADDED — Phase 6.3 load selected template into editor only
+  const handleLoadTemplate = (template: SavedTemplate) => {
+    setTemplateName(template.name || "");
+    setSubject(template.subject || "");
+    setHtmlBody(template.html_body || "");
+  };
+
+  // ✅ ADDED — Phase 6.3 delete saved template only
+  const handleDeleteTemplate = async (templateId: string) => {
+    setDeletingTemplateId(templateId);
+
+    const { error } = await supabase.from("templates").delete().eq("id", templateId);
+
+    setDeletingTemplateId(null);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    setTemplates((current) => current.filter((template) => template.id !== templateId));
+    alert("Template deleted");
   };
 
   return (
@@ -205,6 +267,55 @@ export default function TemplatesPage() {
           padding:16px;
         }
 
+        .templateList{
+          margin-top:18px;
+          border-radius:14px;
+          border:1px solid rgba(255,255,255,0.10);
+          background:rgba(0,0,0,0.24);
+          padding:16px;
+        }
+
+        .templateItem{
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:10px;
+          padding:10px;
+          border-radius:12px;
+          border:1px solid rgba(255,255,255,0.10);
+          background:rgba(255,255,255,0.04);
+          margin-top:8px;
+        }
+
+        .templateName{
+          font-size:13px;
+          font-weight:900;
+          color:white;
+        }
+
+        .templateSubject{
+          margin-top:4px;
+          font-size:12px;
+          color:rgba(255,255,255,0.62);
+        }
+
+        .templateActions{
+          display:flex;
+          gap:8px;
+          flex-shrink:0;
+        }
+
+        .smallBtn{
+          border:1px solid rgba(255,255,255,0.12);
+          background:rgba(255,255,255,0.06);
+          border-radius:10px;
+          padding:8px 10px;
+          cursor:pointer;
+          font-size:12px;
+          font-weight:800;
+          color:white;
+        }
+
         @keyframes cardIn{
           from{ transform: translateY(14px); opacity: 0; }
           to{ transform: translateY(0px); opacity: 1; }
@@ -216,6 +327,7 @@ export default function TemplatesPage() {
 
         @media (max-width: 760px){
           .grid{ grid-template-columns: 1fr; }
+          .templateItem{ align-items:flex-start; flex-direction:column; }
         }
       `}</style>
 
@@ -224,7 +336,7 @@ export default function TemplatesPage() {
 
         <div className="content">
           <h1 className="title">Templates</h1>
-          <p className="sub">Phase 6.2: Save template</p>
+          <p className="sub">Phase 6.3: Load and reuse saved templates</p>
 
           <div className="grid">
             <div className="field">
@@ -258,6 +370,40 @@ export default function TemplatesPage() {
           <div className="preview">
             <strong>{previewSubject}</strong>
             <div style={{ marginTop: 8 }}>{previewBody}</div>
+          </div>
+
+          {/* ✅ ADDED — Phase 6.3 saved templates list only */}
+          <div className="templateList">
+            <div className="label">Saved Templates</div>
+
+            {templatesLoading ? (
+              <div style={{ marginTop: 10, color: "rgba(255,255,255,0.62)", fontSize: 13 }}>Loading templates...</div>
+            ) : templates.length === 0 ? (
+              <div style={{ marginTop: 10, color: "rgba(255,255,255,0.62)", fontSize: 13 }}>No saved templates yet.</div>
+            ) : (
+              templates.map((template) => (
+                <div key={template.id} className="templateItem">
+                  <div style={{ minWidth: 0 }}>
+                    <div className="templateName">{template.name || "Untitled Template"}</div>
+                    <div className="templateSubject">{template.subject || "No subject"}</div>
+                  </div>
+
+                  <div className="templateActions">
+                    <button className="smallBtn" type="button" onClick={() => handleLoadTemplate(template)}>
+                      Load
+                    </button>
+                    <button
+                      className="smallBtn"
+                      type="button"
+                      onClick={() => handleDeleteTemplate(template.id)}
+                      disabled={deletingTemplateId === template.id}
+                    >
+                      {deletingTemplateId === template.id ? "Deleting..." : "Delete"}
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
