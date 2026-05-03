@@ -23,10 +23,28 @@ function normalizeEvent(log: CampaignLog) {
   return (log.event || log.status || "").toLowerCase();
 }
 
+function fmtDate(value: string | null) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString();
+}
+
+function emptyEventMap() {
+  return {
+    sent: 0,
+    delivered: 0,
+    opened: 0,
+    clicked: 0,
+    bounced: 0,
+    failed: 0,
+    queued: 0,
+  };
+}
+
 export default function AnalyticsPage() {
   const [logs, setLogs] = useState<CampaignLog[]>([]);
   const [loading, setLoading] = useState(true);
-
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
 
   useEffect(() => {
@@ -60,25 +78,68 @@ export default function AnalyticsPage() {
   }, [logs, selectedCampaignId]);
 
   const metrics = useMemo(() => {
-    const sent = scopedLogs.filter((log) => normalizeEvent(log).includes("sent")).length;
-    const delivered = scopedLogs.filter((log) => normalizeEvent(log).includes("delivered")).length;
-    const opened = scopedLogs.filter((log) => normalizeEvent(log).includes("opened") || normalizeEvent(log).includes("open")).length;
-    const clicked = scopedLogs.filter((log) => normalizeEvent(log).includes("clicked") || normalizeEvent(log).includes("click")).length;
-    const bounced = scopedLogs.filter((log) => normalizeEvent(log).includes("bounced") || normalizeEvent(log).includes("bounce")).length;
-    const failed = scopedLogs.filter((log) => normalizeEvent(log).includes("failed")).length;
+    const eventMap = emptyEventMap();
+    const uniqueEmails = new Set<string>();
+
+    for (const log of scopedLogs) {
+      const ev = normalizeEvent(log);
+
+      if (log.email) uniqueEmails.add(log.email.toLowerCase());
+      for (const r of log.recipients || []) uniqueEmails.add(r.toLowerCase());
+
+      if (ev.includes("queued")) eventMap.queued += 1;
+      if (ev.includes("sent")) eventMap.sent += 1;
+      if (ev.includes("delivered")) eventMap.delivered += 1;
+      if (ev.includes("opened") || ev.includes("open")) eventMap.opened += 1;
+      if (ev.includes("clicked") || ev.includes("click")) eventMap.clicked += 1;
+      if (ev.includes("bounced") || ev.includes("bounce")) eventMap.bounced += 1;
+      if (ev.includes("failed")) eventMap.failed += 1;
+    }
 
     return {
       totalEvents: scopedLogs.length,
-      sent,
-      delivered,
-      opened,
-      clicked,
-      bounced,
-      failed,
-      openRate: pct(opened, delivered || sent),
-      clickRate: pct(clicked, delivered || sent),
+      uniqueEmails: uniqueEmails.size,
+      ...eventMap,
+      openRate: pct(eventMap.opened, eventMap.delivered || eventMap.sent),
+      clickRate: pct(eventMap.clicked, eventMap.delivered || eventMap.sent),
+      failureRate: pct(eventMap.failed + eventMap.bounced, eventMap.sent + eventMap.failed + eventMap.bounced),
     };
   }, [scopedLogs]);
+
+  const eventBreakdown = useMemo(() => {
+    const map = new Map<string, number>();
+
+    for (const log of scopedLogs) {
+      const ev = normalizeEvent(log) || "event";
+      map.set(ev, (map.get(ev) || 0) + 1);
+    }
+
+    return Array.from(map.entries())
+      .map(([event, count]) => ({ event, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [scopedLogs]);
+
+  const timeline = useMemo(() => {
+    const map = new Map<string, number>();
+
+    for (const log of scopedLogs) {
+      if (!log.created_at) continue;
+      const d = new Date(log.created_at);
+      if (Number.isNaN(d.getTime())) continue;
+
+      const key = d.toISOString().slice(0, 10);
+      map.set(key, (map.get(key) || 0) + 1);
+    }
+
+    return Array.from(map.entries())
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-14);
+  }, [scopedLogs]);
+
+  const maxTimelineCount = useMemo(() => {
+    return Math.max(1, ...timeline.map((item) => item.count));
+  }, [timeline]);
 
   return (
     <div className="page">
@@ -93,7 +154,7 @@ export default function AnalyticsPage() {
 
         .card{
           width:100%;
-          max-width: 960px;
+          max-width: 1080px;
           border-radius:18px;
           padding:24px;
           background: rgba(255,255,255,0.06);
@@ -187,6 +248,64 @@ export default function AnalyticsPage() {
           font-weight:950;
         }
 
+        .section{
+          margin-top:18px;
+          border-radius:14px;
+          padding:14px;
+          background:rgba(0,0,0,0.24);
+          border:1px solid rgba(255,255,255,0.08);
+        }
+
+        .sectionTitle{
+          margin:0 0 12px 0;
+          font-size:13px;
+          font-weight:900;
+          color:rgba(255,255,255,0.86);
+        }
+
+        .timeline{
+          display:flex;
+          align-items:flex-end;
+          gap:8px;
+          height:150px;
+          overflow-x:auto;
+          padding-top:10px;
+        }
+
+        .barWrap{
+          min-width:48px;
+          display:flex;
+          flex-direction:column;
+          align-items:center;
+          gap:8px;
+        }
+
+        .bar{
+          width:28px;
+          min-height:6px;
+          border-radius:999px 999px 4px 4px;
+          background:linear-gradient(180deg, rgba(59,130,246,1), rgba(168,85,247,0.9));
+        }
+
+        .barLabel{
+          font-size:10px;
+          color:rgba(255,255,255,0.58);
+          white-space:nowrap;
+        }
+
+        .breakdown{
+          display:grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap:10px;
+        }
+
+        .breakItem{
+          border-radius:12px;
+          padding:12px;
+          background:rgba(255,255,255,0.05);
+          border:1px solid rgba(255,255,255,0.08);
+        }
+
         .logs{
           margin-top:18px;
           display:flex;
@@ -229,10 +348,12 @@ export default function AnalyticsPage() {
 
         @media (max-width: 860px){
           .grid{ grid-template-columns: repeat(2, 1fr); }
+          .breakdown{ grid-template-columns: repeat(2, 1fr); }
         }
 
         @media (max-width: 520px){
           .grid{ grid-template-columns: 1fr; }
+          .breakdown{ grid-template-columns: 1fr; }
         }
 
         @media (prefers-reduced-motion: reduce){
@@ -247,7 +368,7 @@ export default function AnalyticsPage() {
         <div className="content">
           <h1 className="title">Analytics</h1>
           <p className="sub">
-            Phase 12: global and per-campaign performance from campaign logs and Resend webhook events.
+            Phase 17A.1: advanced campaign analytics with event breakdown, timeline, and unique audience counts.
           </p>
 
           {loading ? (
@@ -277,6 +398,11 @@ export default function AnalyticsPage() {
                 </div>
 
                 <div className="metric">
+                  <div className="metricLabel">Unique Emails</div>
+                  <div className="metricValue">{metrics.uniqueEmails}</div>
+                </div>
+
+                <div className="metric">
                   <div className="metricLabel">Sent</div>
                   <div className="metricValue">{metrics.sent}</div>
                 </div>
@@ -297,11 +423,6 @@ export default function AnalyticsPage() {
                 </div>
 
                 <div className="metric">
-                  <div className="metricLabel">Bounced / Failed</div>
-                  <div className="metricValue">{metrics.bounced + metrics.failed}</div>
-                </div>
-
-                <div className="metric">
                   <div className="metricLabel">Open Rate</div>
                   <div className="metricValue">{metrics.openRate}</div>
                 </div>
@@ -310,6 +431,59 @@ export default function AnalyticsPage() {
                   <div className="metricLabel">Click Rate</div>
                   <div className="metricValue">{metrics.clickRate}</div>
                 </div>
+
+                <div className="metric">
+                  <div className="metricLabel">Queued</div>
+                  <div className="metricValue">{metrics.queued}</div>
+                </div>
+
+                <div className="metric">
+                  <div className="metricLabel">Bounced</div>
+                  <div className="metricValue">{metrics.bounced}</div>
+                </div>
+
+                <div className="metric">
+                  <div className="metricLabel">Failed</div>
+                  <div className="metricValue">{metrics.failed}</div>
+                </div>
+
+                <div className="metric">
+                  <div className="metricLabel">Failure Rate</div>
+                  <div className="metricValue">{metrics.failureRate}</div>
+                </div>
+              </div>
+
+              <div className="section">
+                <h2 className="sectionTitle">Event Timeline (Last 14 Active Days)</h2>
+                {timeline.length === 0 ? (
+                  <p className="sub">No timeline data yet.</p>
+                ) : (
+                  <div className="timeline">
+                    {timeline.map((item) => (
+                      <div key={item.date} className="barWrap">
+                        <div className="bar" style={{ height: `${Math.max(8, (item.count / maxTimelineCount) * 120)}px` }} />
+                        <div className="barLabel">{item.date.slice(5)}</div>
+                        <div className="barLabel">{item.count}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="section">
+                <h2 className="sectionTitle">Event Breakdown</h2>
+                {eventBreakdown.length === 0 ? (
+                  <p className="sub">No event data yet.</p>
+                ) : (
+                  <div className="breakdown">
+                    {eventBreakdown.map((item) => (
+                      <div key={item.event} className="breakItem">
+                        <div className="metricLabel">{item.event}</div>
+                        <div className="metricValue">{item.count}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="logs">
@@ -323,7 +497,7 @@ export default function AnalyticsPage() {
                     </div>
                     <div>Email: {log.email || "—"}</div>
                     <div>Recipients: {(log.recipients || []).length}</div>
-                    <div>{log.created_at ? new Date(log.created_at).toLocaleString() : "—"}</div>
+                    <div>{fmtDate(log.created_at)}</div>
                     {log.error && <div>Error: {log.error}</div>}
                   </div>
                 ))}
