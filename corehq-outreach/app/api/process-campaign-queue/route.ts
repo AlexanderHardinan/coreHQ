@@ -47,12 +47,16 @@ async function processQueue() {
 
     const resend = new Resend(RESEND_API_KEY);
     const sender = getDefaultSender();
+
     const BATCH_SIZE = 20;
+    const MAX_ATTEMPTS = 3;
 
     const { data: queue, error: qErr } = await supabase
       .from("campaign_queue")
       .select("id,campaign_id,email_snapshot_id,recipient_email,status,attempts")
-      .eq("status", "queued")
+      .in("status", ["queued", "failed"])
+      .lt("attempts", MAX_ATTEMPTS)
+      .order("attempts", { ascending: true })
       .limit(BATCH_SIZE);
 
     if (qErr) {
@@ -60,12 +64,17 @@ async function processQueue() {
     }
 
     if (!queue || queue.length === 0) {
-      return NextResponse.json({ ok: true, processed: 0 });
+      return NextResponse.json({ ok: true, processed: 0, retried: 0, failed: 0 });
     }
 
     let processed = 0;
+    let retried = 0;
+    let failed = 0;
 
     for (const job of queue as QueueRow[]) {
+      const nextAttempts = job.attempts + 1;
+      const isRetry = job.status === "failed";
+
       try {
         if (!job.email_snapshot_id) {
           throw new Error("Missing snapshot");
@@ -106,8 +115,9 @@ async function processQueue() {
           .from("campaign_queue")
           .update({
             status: "sent",
-            attempts: job.attempts + 1,
+            attempts: nextAttempts,
             sent_at: new Date().toISOString(),
+            error: null,
           })
           .eq("id", job.id);
 
@@ -115,21 +125,25 @@ async function processQueue() {
           campaign_id: job.campaign_id,
           email_snapshot_id: job.email_snapshot_id,
           recipients: [job.recipient_email],
-          status: "sent",
+          status: isRetry ? "retry_sent" : "sent",
           resend_id: (sendRes as any)?.data?.id || null,
-          event: "sent",
+          event: isRetry ? "retry_sent" : "sent",
           email: job.recipient_email,
           error: null,
         });
 
         processed++;
+        if (isRetry) retried++;
       } catch (err: any) {
+        const finalStatus = nextAttempts >= MAX_ATTEMPTS ? "failed_permanent" : "failed";
+        const errorMessage = err?.message || "Send failed";
+
         await supabase
           .from("campaign_queue")
           .update({
-            status: "failed",
-            attempts: job.attempts + 1,
-            error: err?.message || "Send failed",
+            status: finalStatus,
+            attempts: nextAttempts,
+            error: errorMessage,
           })
           .eq("id", job.id);
 
@@ -137,19 +151,24 @@ async function processQueue() {
           campaign_id: job.campaign_id,
           email_snapshot_id: job.email_snapshot_id,
           recipients: [job.recipient_email],
-          status: "failed",
+          status: finalStatus,
           resend_id: null,
-          event: "failed",
+          event: finalStatus,
           email: job.recipient_email,
-          error: err?.message || "Send failed",
+          error: errorMessage,
         });
+
+        failed++;
       }
     }
 
     return NextResponse.json({
       ok: true,
       processed,
+      retried,
+      failed,
       batchSize: queue.length,
+      maxAttempts: MAX_ATTEMPTS,
     });
   } catch (e: any) {
     return NextResponse.json(
