@@ -54,6 +54,8 @@ export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [queueRows, setQueueRows] = useState<QueueRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [runningWorker, setRunningWorker] = useState(false);
+  const [workerMessage, setWorkerMessage] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -76,6 +78,34 @@ export default function CampaignsPage() {
     }
 
     setLoading(false);
+  };
+
+  const runWorker = async () => {
+    setRunningWorker(true);
+    setWorkerMessage("Processing campaign queue...");
+
+    try {
+      const res = await fetch("/api/process-campaign-queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || `Worker failed with HTTP ${res.status}`);
+      }
+
+      setWorkerMessage(
+        `Worker complete. Processed ${json.processed || 0} email(s). Batch size: ${json.batchSize || 0}.`
+      );
+
+      await load();
+    } catch (error: any) {
+      setWorkerMessage(error?.message || "Worker failed.");
+    } finally {
+      setRunningWorker(false);
+    }
   };
 
   useEffect(() => {
@@ -118,6 +148,10 @@ export default function CampaignsPage() {
     return map;
   }, [queueRows]);
 
+  const totalQueued = useMemo(() => {
+    return queueRows.filter((row) => row.status === "queued").length;
+  }, [queueRows]);
+
   return (
     <div className="page">
       <style>{`
@@ -137,12 +171,20 @@ export default function CampaignsPage() {
           display:flex;
           justify-content:space-between;
           align-items:center;
+          gap:12px;
           margin-bottom:16px;
         }
 
         .title{
           font-size:20px;
           font-weight:900;
+        }
+
+        .topActions{
+          display:flex;
+          gap:8px;
+          flex-wrap:wrap;
+          justify-content:flex-end;
         }
 
         .btn{
@@ -154,6 +196,29 @@ export default function CampaignsPage() {
           font-size: 13px;
           font-weight: 800;
           text-decoration:none;
+          cursor:pointer;
+        }
+
+        .btnPrimary{
+          border:0;
+          background:linear-gradient(135deg, rgba(59,130,246,1), rgba(168,85,247,1));
+          color:white;
+        }
+
+        .btn:disabled{
+          opacity:0.55;
+          cursor:not-allowed;
+        }
+
+        .workerBox{
+          margin-bottom:16px;
+          border-radius:14px;
+          padding:12px 14px;
+          background:rgba(0,0,0,0.28);
+          border:1px solid rgba(255,255,255,0.10);
+          color:rgba(255,255,255,0.72);
+          font-size:12px;
+          line-height:1.55;
         }
 
         .list{
@@ -258,6 +323,10 @@ export default function CampaignsPage() {
             flex-direction:column;
           }
 
+          .topActions{
+            justify-content:flex-start;
+          }
+
           .item{
             align-items:flex-start;
             flex-direction:column;
@@ -272,9 +341,25 @@ export default function CampaignsPage() {
       <div className="wrap">
         <div className="top">
           <div className="title">Campaigns</div>
-          <Link href="/campaigns/new" className="btn">
-            + New Campaign
-          </Link>
+
+          <div className="topActions">
+            <button
+              type="button"
+              className="btn btnPrimary"
+              onClick={runWorker}
+              disabled={runningWorker || totalQueued === 0}
+            >
+              {runningWorker ? "Processing..." : `Run Worker (${totalQueued})`}
+            </button>
+
+            <Link href="/campaigns/new" className="btn">
+              + New Campaign
+            </Link>
+          </div>
+        </div>
+
+        <div className="workerBox">
+          {workerMessage || "Manual worker is ready. Queue campaigns, then click Run Worker to send queued emails."}
         </div>
 
         {loading ? (
