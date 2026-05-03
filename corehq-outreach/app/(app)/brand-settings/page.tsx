@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../src/lib/supabaseClient";
 
 type Brand = {
@@ -13,6 +13,44 @@ type Brand = {
   footer_text: string | null;
   accent_color: string | null;
 };
+
+type ToastKind = "success" | "error" | "info";
+
+function isValidEmail(value: string) {
+  if (!value.trim()) return true;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function Toast({
+  open,
+  kind,
+  message,
+}: {
+  open: boolean;
+  kind: ToastKind;
+  message: string;
+}) {
+  const accent = useMemo(() => {
+    if (kind === "success") return "rgba(34,197,94,1)";
+    if (kind === "error") return "rgba(239,68,68,1)";
+    return "rgba(59,130,246,1)";
+  }, [kind]);
+
+  return (
+    <div
+      className={`toast ${open ? "toastOpen" : "toastClose"}`}
+      style={{ ["--toastAccent" as any]: accent }}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="toastBar" />
+      <div className="toastBody">
+        <div className="toastDot" />
+        <div className="toastText">{message}</div>
+      </div>
+    </div>
+  );
+}
 
 export default function BrandSettingsPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -27,30 +65,56 @@ export default function BrandSettingsPage() {
   const [footerText, setFooterText] = useState("");
   const [accentColor, setAccentColor] = useState("#3b82f6");
 
+  const [toastOpen, setToastOpen] = useState(false);
+  const [toastKind, setToastKind] = useState<ToastKind>("info");
+  const [toastMsg, setToastMsg] = useState("");
+  const toastTimer = useRef<number | null>(null);
+
   const selectedBrand = brands.find((brand) => brand.id === brandId) || null;
 
+  const showToast = (kind: ToastKind, msg: string) => {
+    setToastKind(kind);
+    setToastMsg(msg);
+    setToastOpen(true);
+
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToastOpen(false), 2600);
+  };
+
   useEffect(() => {
-    const loadBrands = async () => {
-      setLoading(true);
-
-      const { data, error } = await supabase
-        .from("brands")
-        .select("id,name,slug,from_name,sender_email,reply_to_email,footer_text,accent_color")
-        .order("name", { ascending: true });
-
-      if (!error && data) {
-        const list = data as Brand[];
-        setBrands(list);
-
-        if (list.length > 0) {
-          setBrandId(list[0].id);
-        }
-      }
-
-      setLoading(false);
+    return () => {
+      if (toastTimer.current) window.clearTimeout(toastTimer.current);
     };
+  }, []);
 
+  const loadBrands = async () => {
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from("brands")
+      .select("id,name,slug,from_name,sender_email,reply_to_email,footer_text,accent_color")
+      .order("name", { ascending: true });
+
+    if (error) {
+      showToast("error", error.message || "Failed to load brand settings.");
+      setBrands([]);
+      setLoading(false);
+      return;
+    }
+
+    const list = (data || []) as Brand[];
+    setBrands(list);
+
+    if (!brandId && list.length > 0) {
+      setBrandId(list[0].id);
+    }
+
+    setLoading(false);
+  };
+
+  useEffect(() => {
     loadBrands();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -66,54 +130,53 @@ export default function BrandSettingsPage() {
 
   const saveBrand = async () => {
     if (!brandId) {
-      alert("Select a brand first.");
+      showToast("error", "Select a brand first.");
       return;
     }
 
     if (!name.trim()) {
-      alert("Brand name is required.");
+      showToast("error", "Brand name is required.");
+      return;
+    }
+
+    if (!isValidEmail(senderEmail)) {
+      showToast("error", "Sender email is invalid.");
+      return;
+    }
+
+    if (!isValidEmail(replyToEmail)) {
+      showToast("error", "Reply-to email is invalid.");
       return;
     }
 
     setSaving(true);
 
-    const { error } = await supabase
-      .from("brands")
-      .update({
-        name: name.trim(),
-        from_name: fromName.trim() || null,
-        sender_email: senderEmail.trim() || null,
-        reply_to_email: replyToEmail.trim() || null,
-        footer_text: footerText.trim() || null,
-        accent_color: accentColor.trim() || "#3b82f6",
-      })
-      .eq("id", brandId);
+    const nextBrand = {
+      name: name.trim(),
+      from_name: fromName.trim() || null,
+      sender_email: senderEmail.trim() || null,
+      reply_to_email: replyToEmail.trim() || null,
+      footer_text: footerText.trim() || null,
+      accent_color: accentColor.trim() || "#3b82f6",
+    };
+
+    const { error } = await supabase.from("brands").update(nextBrand).eq("id", brandId);
 
     setSaving(false);
 
     if (error) {
-      alert(error.message || "Failed to save brand settings.");
+      showToast("error", error.message || "Failed to save brand settings.");
       return;
     }
 
     setBrands((current) =>
-      current.map((brand) =>
-        brand.id === brandId
-          ? {
-              ...brand,
-              name: name.trim(),
-              from_name: fromName.trim() || null,
-              sender_email: senderEmail.trim() || null,
-              reply_to_email: replyToEmail.trim() || null,
-              footer_text: footerText.trim() || null,
-              accent_color: accentColor.trim() || "#3b82f6",
-            }
-          : brand
-      )
+      current.map((brand) => (brand.id === brandId ? { ...brand, ...nextBrand } : brand))
     );
 
-    alert("Brand settings saved.");
+    showToast("success", "Brand settings saved.");
   };
+
+  const senderPreview = `${fromName || name || "Brand"} <${senderEmail || "onboarding@resend.dev"}>`;
 
   return (
     <div className="page">
@@ -231,6 +294,25 @@ export default function BrandSettingsPage() {
           background:${accentColor || "#3b82f6"};
         }
 
+        .previewLine{
+          margin-top:10px;
+          font-size:12px;
+          color:rgba(255,255,255,0.68);
+          line-height:1.6;
+          word-break:break-word;
+        }
+
+        .warning{
+          margin-top:12px;
+          border-radius:12px;
+          padding:12px;
+          background:rgba(245,158,11,0.10);
+          border:1px solid rgba(245,158,11,0.22);
+          color:rgba(253,230,138,1);
+          font-size:12px;
+          line-height:1.55;
+        }
+
         .btn{
           margin-top:18px;
           width:100%;
@@ -249,6 +331,46 @@ export default function BrandSettingsPage() {
           cursor:not-allowed;
         }
 
+        .toast{
+          position: fixed;
+          right: 16px;
+          top: 16px;
+          width: min(420px, calc(100vw - 32px));
+          border-radius: 14px;
+          border: 1px solid rgba(255,255,255,0.12);
+          background: rgba(10,10,10,0.72);
+          backdrop-filter: blur(14px);
+          box-shadow: 0 20px 70px rgba(0,0,0,0.55);
+          overflow:hidden;
+          transform: translateY(-10px);
+          opacity: 0;
+          pointer-events:none;
+          z-index: 9999;
+        }
+
+        .toastOpen{
+          animation: toastIn 260ms cubic-bezier(.2,.9,.2,1) forwards;
+          pointer-events:auto;
+        }
+
+        .toastClose{
+          animation: toastOut 220ms ease forwards;
+          pointer-events:none;
+        }
+
+        .toastBar{ height: 3px; background: var(--toastAccent); }
+        .toastBody{ display:flex; gap: 10px; padding: 12px; align-items:flex-start; }
+        .toastDot{
+          margin-top: 3px;
+          height: 10px;
+          width: 10px;
+          border-radius: 999px;
+          background: var(--toastAccent);
+          box-shadow: 0 0 0 4px color-mix(in srgb, var(--toastAccent) 25%, transparent);
+          flex: 0 0 auto;
+        }
+        .toastText{ font-size: 13px; color: rgba(255,255,255,0.88); line-height: 1.45; }
+
         @keyframes cardIn{
           from{ transform: translateY(14px) scale(0.98); opacity: 0; }
           to{ transform: translateY(0px) scale(1); opacity: 1; }
@@ -259,15 +381,27 @@ export default function BrandSettingsPage() {
           to{ transform: rotate(360deg); }
         }
 
+        @keyframes toastIn{
+          from{ transform: translateY(-10px); opacity: 0; }
+          to{ transform: translateY(0px); opacity: 1; }
+        }
+
+        @keyframes toastOut{
+          from{ transform: translateY(0px); opacity: 1; }
+          to{ transform: translateY(-10px); opacity: 0; }
+        }
+
         @media(max-width:760px){
           .grid{ grid-template-columns:1fr; }
         }
 
         @media (prefers-reduced-motion: reduce){
-          .card, .shine { animation: none !important; }
+          .card, .shine, .toastOpen, .toastClose { animation: none !important; }
           .card{ opacity: 1; transform: none; }
         }
       `}</style>
+
+      <Toast open={toastOpen} kind={toastKind} message={toastMsg} />
 
       <div className="card">
         <div className="shine" />
@@ -333,10 +467,15 @@ export default function BrandSettingsPage() {
 
               <div className="preview">
                 <div className="previewBadge">{fromName || name || "Brand"}</div>
-                <p className="sub">
-                  Sender: {senderEmail || "onboarding@resend.dev"} · Reply-To: {replyToEmail || "Not set"}
-                </p>
-                <p className="sub">{footerText || "No footer text yet."}</p>
+                <div className="previewLine">From: {senderPreview}</div>
+                <div className="previewLine">Reply-To: {replyToEmail || "Not set"}</div>
+                <div className="previewLine">{footerText || "No footer text yet."}</div>
+
+                {senderEmail.includes("onboarding@resend.dev") && (
+                  <div className="warning">
+                    Development sender is active. Real production campaigns should use a verified Resend domain.
+                  </div>
+                )}
               </div>
 
               <button className="btn" onClick={saveBrand} disabled={saving}>
