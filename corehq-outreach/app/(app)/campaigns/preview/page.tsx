@@ -631,7 +631,7 @@ export default function CampaignPreviewPage() {
 
         .wrap{
           width:100%;
-          max-width: 1200px;
+          max-width: 1320px;
         }
 
         .card{
@@ -740,15 +740,17 @@ export default function CampaignPreviewPage() {
         .grid{
           margin-top: 16px;
           display:grid;
-          grid-template-columns: 1.1fr 0.9fr;
-          gap: 14px;
+          grid-template-columns: minmax(520px, 0.95fr) minmax(520px, 1.05fr);
+          gap: 24px;
+          align-items:start;
         }
 
         .panel{
+          min-width:0;
           border-radius:16px;
           border: 1px solid rgba(255,255,255,0.10);
           background: rgba(0,0,0,0.28);
-          padding: 12px;
+          padding: 16px;
         }
 
         .panelTitle{
@@ -761,6 +763,8 @@ export default function CampaignPreviewPage() {
         }
 
         .iframeWrap{
+          width:100%;
+          min-width:0;
           border-radius: 14px;
           overflow:hidden;
           border: 1px solid rgba(255,255,255,0.10);
@@ -769,6 +773,7 @@ export default function CampaignPreviewPage() {
 
         iframe{
           width: 100%;
+          min-width: 360px;
           height: 640px;
           border: 0;
           background: #fff;
@@ -907,9 +912,9 @@ export default function CampaignPreviewPage() {
           to{ transform: translateY(-10px); opacity: 0; }
         }
 
-        @media (max-width: 980px){
+        @media (max-width: 1180px){
           .grid{ grid-template-columns: 1fr; }
-          iframe{ height: 560px; }
+          iframe{ height: 560px; min-width:0; }
         }
 
         @media (prefers-reduced-motion: reduce){
