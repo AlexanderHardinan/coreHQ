@@ -591,8 +591,8 @@ export default function SegmentsPage() {
             <div>
               <h1 className="title">Segments</h1>
               <p className="sub">
-                Phase 5.2: brand-level segmentation filters with live preview. Filters include Brand, Engagement,
-                Tags, Country, Opt-in Status, Created Date Range, and Last Activity.
+                
+              
               </p>
             </div>
 
