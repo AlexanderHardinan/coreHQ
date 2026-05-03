@@ -78,8 +78,7 @@ function escHtml(s: string) {
 }
 
 function normalizeUrlOrEmpty(v: string | null) {
-  const s = (v || "").trim();
-  return s;
+  return (v || "").trim();
 }
 
 function tryGetYouTubeId(url: string) {
@@ -98,7 +97,7 @@ function tryGetYouTubeId(url: string) {
   return "";
 }
 
-function buildEmailHtml(c: CampaignRow, brandName: string) {
+function buildEmailHtml(c: CampaignRow, brandName: string, appOrigin: string) {
   const subject = safeText(c.subject) || "Campaign";
   const preview = safeText(c.preview_text);
   const featuredUrl = normalizeUrlOrEmpty(c.featured_url);
@@ -121,6 +120,11 @@ function buildEmailHtml(c: CampaignRow, brandName: string) {
   const unsub = normalizeUrlOrEmpty(c.unsubscribe_url);
 
   const preheader = preview ? escHtml(preview) : escHtml(`New offer from ${brandName}`);
+
+  const openPixelUrl = `${appOrigin}/api/track/open?campaign_id=${encodeURIComponent(c.id)}`;
+  const openPixel = `<img src="${escHtml(
+    openPixelUrl
+  )}" width="1" height="1" alt="" style="display:none;width:1px;height:1px;opacity:0;overflow:hidden;" />`;
 
   const buttonStyle =
     "display:inline-block;padding:12px 16px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;";
@@ -273,6 +277,7 @@ function buildEmailHtml(c: CampaignRow, brandName: string) {
       </td>
     </tr>
   </table>
+  ${openPixel}
 </body>
 </html>`;
 
@@ -388,7 +393,6 @@ export default function CampaignPreviewPage() {
 
   const [saving, setSaving] = useState(false);
 
-  // Phase 8 send UI
   const SEND_TO_KEY = "corehq.preview.sendTo";
   const SEND_FROM_KEY = "corehq.preview.sendFrom";
   const SEND_REPLYTO_KEY = "corehq.preview.replyTo";
@@ -420,7 +424,6 @@ export default function CampaignPreviewPage() {
   }, []);
 
   useEffect(() => {
-    // restore send fields
     try {
       const t = window.localStorage.getItem(SEND_TO_KEY);
       const f = window.localStorage.getItem(SEND_FROM_KEY);
@@ -489,7 +492,6 @@ export default function CampaignPreviewPage() {
 
         if (error) throw new Error(error.message || "Failed to load campaign.");
 
-        // Hard runtime guard (prevents TS weirdness + protects from unexpected shapes)
         const row = (data as unknown as CampaignRow) || ({} as CampaignRow);
         if (!row?.id) throw new Error("Campaign row missing id.");
 
@@ -504,7 +506,8 @@ export default function CampaignPreviewPage() {
           if (!bErr && b?.name) brandLabel = String(b.name);
         }
 
-        const emailHtml = buildEmailHtml(row, brandLabel);
+        const appOrigin = window.location.origin;
+        const emailHtml = buildEmailHtml(row, brandLabel, appOrigin);
         const emailText = buildEmailText(row, brandLabel);
 
         if (!mounted) return;
@@ -607,7 +610,7 @@ export default function CampaignPreviewPage() {
         throw new Error(msg);
       }
 
-      showToast("success", `Sent to ${to.length} recipient(s).`);
+      showToast("success", `Queued ${to.length} recipient(s).`);
     } catch (e: any) {
       showToast("error", e?.message || "Send failed.");
     } finally {
@@ -705,11 +708,13 @@ export default function CampaignPreviewPage() {
           align-items:center;
           justify-content:center;
         }
+
         .btn:hover{
           transform: translateY(-1px);
           background: rgba(255,255,255,0.12);
           border-color: rgba(255,255,255,0.22);
         }
+
         .btn:active{ transform: translateY(0px); }
 
         .btnPrimary{
@@ -717,6 +722,7 @@ export default function CampaignPreviewPage() {
           background: linear-gradient(135deg, rgba(59,130,246,1), rgba(168,85,247,1));
           box-shadow: 0 16px 40px rgba(59,130,246,0.14);
         }
+
         .btnPrimary:hover{
           box-shadow: 0 22px 48px rgba(168,85,247,0.16);
         }
@@ -808,12 +814,14 @@ export default function CampaignPreviewPage() {
           gap: 8px;
           margin-bottom: 10px;
         }
+
         .label{
           font-size: 12px;
           color: rgba(255,255,255,0.70);
           font-weight: 800;
           letter-spacing: 0.2px;
         }
+
         .input, .textarea{
           width:100%;
           padding: 11px 12px;
@@ -824,17 +832,18 @@ export default function CampaignPreviewPage() {
           outline: none;
           transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
         }
+
         .input:focus, .textarea:focus{
           border-color: rgba(59,130,246,0.55);
           box-shadow: 0 0 0 4px rgba(59,130,246,0.16);
           transform: translateY(-1px);
         }
+
         .textarea{
           min-height: 92px;
           resize: vertical;
         }
 
-        /* Toast */
         .toast{
           position: fixed;
           right: 16px;
@@ -851,16 +860,21 @@ export default function CampaignPreviewPage() {
           pointer-events:none;
           z-index: 9999;
         }
+
         .toastOpen{
           animation: toastIn 260ms cubic-bezier(.2,.9,.2,1) forwards;
           pointer-events:auto;
         }
+
         .toastClose{
           animation: toastOut 220ms ease forwards;
           pointer-events:none;
         }
+
         .toastBar{ height: 3px; background: var(--toastAccent); }
+
         .toastBody{ display:flex; gap: 10px; padding: 12px; align-items:flex-start; }
+
         .toastDot{
           margin-top: 3px;
           height: 10px;
@@ -870,20 +884,24 @@ export default function CampaignPreviewPage() {
           box-shadow: 0 0 0 4px color-mix(in srgb, var(--toastAccent) 25%, transparent);
           flex: 0 0 auto;
         }
+
         .toastText{ font-size: 13px; color: rgba(255,255,255,0.88); line-height: 1.45; }
 
         @keyframes cardIn{
           from{ transform: translateY(14px) scale(0.98); opacity: 0; }
           to{ transform: translateY(0px) scale(1); opacity: 1; }
         }
+
         @keyframes spin{
           from{ transform: rotate(0deg); }
           to{ transform: rotate(360deg); }
         }
+
         @keyframes toastIn{
           from{ transform: translateY(-10px); opacity: 0; }
           to{ transform: translateY(0px); opacity: 1; }
         }
+
         @keyframes toastOut{
           from{ transform: translateY(0px); opacity: 1; }
           to{ transform: translateY(-10px); opacity: 0; }
@@ -1015,7 +1033,7 @@ export default function CampaignPreviewPage() {
                       className="btn btnPrimary"
                       onClick={sendCampaign}
                       disabled={sending || !campaignId}
-                      title="Sends latest saved snapshots (emails table) via Resend"
+                      title="Queues latest saved snapshots for worker processing"
                     >
                       {sending ? "Sending…" : "Send Campaign"}
                     </button>
@@ -1042,9 +1060,9 @@ export default function CampaignPreviewPage() {
 
               <div className="hint">
                 Notes:
-                <br />• Send uses the latest snapshot row in <b>emails</b> for this campaign.
+                <br />• Open tracking pixel is inserted into saved HTML snapshots.
+                <br />• Send queues recipients; go to <b>/campaigns</b> and click <b>Run Worker</b>.
                 <br />• If “Send Campaign” says “No email snapshots found…”, click <b>Save Snapshots</b> first.
-                <br />• Default From uses Resend dev domain: <b>onboarding@resend.dev</b>.
               </div>
             </>
           )}
