@@ -235,8 +235,9 @@ function buildEmailHtml(c: CampaignRow, brandName: string, appOrigin: string) {
          </tr>`
       : "";
 
-  const footerBlock = footer || compliance || unsub
-    ? `<tr>
+  const footerBlock =
+    footer || compliance || unsub
+      ? `<tr>
          <td style="padding:18px;font-family:Arial,Helvetica,sans-serif;">
            <div style="border-top:1px solid #1F2937;margin-top:6px;padding-top:14px;">
              ${
@@ -265,7 +266,7 @@ function buildEmailHtml(c: CampaignRow, brandName: string, appOrigin: string) {
            </div>
          </td>
        </tr>`
-    : "";
+      : "";
 
   const wrapEnd = `
           <tr>
@@ -402,6 +403,7 @@ export default function CampaignPreviewPage() {
   const [sendReplyTo, setSendReplyTo] = useState("");
 
   const [sending, setSending] = useState(false);
+  const [sendingNow, setSendingNow] = useState(false);
 
   const [toastOpen, setToastOpen] = useState(false);
   const [toastKind, setToastKind] = useState<ToastKind>("info");
@@ -615,6 +617,68 @@ export default function CampaignPreviewPage() {
       showToast("error", e?.message || "Send failed.");
     } finally {
       setSending(false);
+    }
+  };
+
+  const sendNowCampaign = async () => {
+    if (!campaignId) {
+      showToast("error", "Missing campaign id.");
+      return;
+    }
+
+    const to = parseRecipients(sendToInput);
+    if (!to.length) {
+      showToast("error", "Add at least one recipient email in Send To.");
+      return;
+    }
+
+    const from = (sendFrom || "").trim() || "CoreHQ <onboarding@resend.dev>";
+    const replyTo = (sendReplyTo || "").trim();
+
+    setSendingNow(true);
+    try {
+      const queueRes = await fetch("/api/send-campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          campaignId,
+          to,
+          from,
+          ...(replyTo ? { replyTo } : {}),
+        }),
+      });
+
+      const queueJson = await queueRes.json().catch(() => null);
+
+      if (!queueRes.ok || !queueJson?.ok) {
+        const msg =
+          (queueJson && typeof queueJson.error === "string" && queueJson.error) ||
+          `Queue failed (HTTP ${queueRes.status}).`;
+        throw new Error(msg);
+      }
+
+      const workerRes = await fetch("/api/process-campaign-queue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const workerJson = await workerRes.json().catch(() => null);
+
+      if (!workerRes.ok || !workerJson?.ok) {
+        const msg =
+          (workerJson && typeof workerJson.error === "string" && workerJson.error) ||
+          `Worker failed (HTTP ${workerRes.status}).`;
+        throw new Error(msg);
+      }
+
+      showToast(
+        "success",
+        `Queued ${to.length}. Sent ${workerJson.processed || 0} email(s).`
+      );
+    } catch (e: any) {
+      showToast("error", e?.message || "Send Now failed.");
+    } finally {
+      setSendingNow(false);
     }
   };
 
@@ -1036,8 +1100,17 @@ export default function CampaignPreviewPage() {
                   <div className="row">
                     <button
                       className="btn btnPrimary"
+                      onClick={sendNowCampaign}
+                      disabled={sendingNow || sending || !campaignId}
+                      title="Queues recipients and immediately runs the worker"
+                    >
+                      {sendingNow ? "Sending Now…" : "Send Now"}
+                    </button>
+
+                    <button
+                      className="btn btnPrimary"
                       onClick={sendCampaign}
-                      disabled={sending || !campaignId}
+                      disabled={sending || sendingNow || !campaignId}
                       title="Queues latest saved snapshots for worker processing"
                     >
                       {sending ? "Sending…" : "Send Campaign"}
@@ -1066,8 +1139,9 @@ export default function CampaignPreviewPage() {
               <div className="hint">
                 Notes:
                 <br />• Open tracking pixel is inserted into saved HTML snapshots.
-                <br />• Send queues recipients; go to <b>/campaigns</b> and click <b>Run Worker</b>.
-                <br />• If “Send Campaign” says “No email snapshots found…”, click <b>Save Snapshots</b> first.
+                <br />• Send Now queues recipients and immediately runs the worker.
+                <br />• Send Campaign only queues recipients; go to <b>/campaigns</b> and click <b>Run Worker</b>.
+                <br />• If sending says “No email snapshots found…”, click <b>Save Snapshots</b> first.
               </div>
             </>
           )}
