@@ -336,7 +336,9 @@ export default function TemplatesPage() {
 
         <div className="content">
           <h1 className="title">Templates</h1>
-          <p className="sub">Phase 6.3: Load and reuse saved templates</p>
+          <p className="sub">
+            
+          </p>
 
           <div className="grid">
             <div className="field">
