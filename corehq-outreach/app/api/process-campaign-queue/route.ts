@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { createClient } from "@supabase/supabase-js";
-import { getDefaultSender } from "../../../../src/lib/emailSender";
+import { getDefaultSender } from "../../../src/lib/emailSender";
 
 function pickEnv(...keys: string[]) {
   for (const k of keys) {
