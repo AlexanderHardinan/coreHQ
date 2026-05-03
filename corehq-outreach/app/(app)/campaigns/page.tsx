@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../src/lib/supabaseClient";
 
 type Campaign = {
@@ -10,6 +10,19 @@ type Campaign = {
   subject: string | null;
   status: string;
   created_at: string;
+};
+
+type QueueRow = {
+  campaign_id: string;
+  status: string;
+};
+
+type CampaignProgress = {
+  total: number;
+  queued: number;
+  sent: number;
+  failed: number;
+  percent: number;
 };
 
 function getStatusClass(status: string) {
@@ -27,21 +40,40 @@ function getStatusClass(status: string) {
   }
 }
 
+function emptyProgress(): CampaignProgress {
+  return {
+    total: 0,
+    queued: 0,
+    sent: 0,
+    failed: 0,
+    percent: 0,
+  };
+}
+
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [queueRows, setQueueRows] = useState<QueueRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
 
-      const { data, error } = await supabase
-        .from("campaigns")
-        .select("id,name,subject,status,created_at")
-        .order("created_at", { ascending: false });
+      const [{ data: campaignData, error: campaignError }, { data: queueData }] =
+        await Promise.all([
+          supabase
+            .from("campaigns")
+            .select("id,name,subject,status,created_at")
+            .order("created_at", { ascending: false }),
+          supabase.from("campaign_queue").select("campaign_id,status"),
+        ]);
 
-      if (!error && data) {
-        setCampaigns(data as Campaign[]);
+      if (!campaignError && campaignData) {
+        setCampaigns(campaignData as Campaign[]);
+      }
+
+      if (queueData) {
+        setQueueRows(queueData as QueueRow[]);
       }
 
       setLoading(false);
@@ -49,6 +81,28 @@ export default function CampaignsPage() {
 
     load();
   }, []);
+
+  const progressByCampaign = useMemo(() => {
+    const map = new Map<string, CampaignProgress>();
+
+    for (const row of queueRows) {
+      if (!row.campaign_id) continue;
+
+      const current = map.get(row.campaign_id) || emptyProgress();
+
+      current.total += 1;
+
+      if (row.status === "queued") current.queued += 1;
+      if (row.status === "sent") current.sent += 1;
+      if (row.status === "failed") current.failed += 1;
+
+      current.percent = current.total ? Math.round(((current.sent + current.failed) / current.total) * 100) : 0;
+
+      map.set(row.campaign_id, current);
+    }
+
+    return map;
+  }, [queueRows]);
 
   return (
     <div className="page">
@@ -102,6 +156,12 @@ export default function CampaignsPage() {
           display:flex;
           justify-content:space-between;
           align-items:center;
+          gap:14px;
+        }
+
+        .left{
+          min-width:0;
+          flex:1;
         }
 
         .meta{
@@ -113,9 +173,10 @@ export default function CampaignsPage() {
           display:flex;
           gap:8px;
           align-items:center;
+          flex-wrap:wrap;
+          justify-content:flex-end;
         }
 
-        /* ✅ Status styles */
         .status{
           font-size:11px;
           padding:5px 10px;
@@ -147,6 +208,50 @@ export default function CampaignsPage() {
           background: rgba(239,68,68,0.2);
           color: rgba(252,165,165,1);
         }
+
+        .progressBox{
+          margin-top:10px;
+          max-width:520px;
+        }
+
+        .progressMeta{
+          display:flex;
+          justify-content:space-between;
+          gap:10px;
+          font-size:11px;
+          color:rgba(255,255,255,0.62);
+          margin-bottom:6px;
+          flex-wrap:wrap;
+        }
+
+        .bar{
+          height:8px;
+          border-radius:999px;
+          background:rgba(255,255,255,0.10);
+          overflow:hidden;
+        }
+
+        .barFill{
+          height:100%;
+          border-radius:999px;
+          background:linear-gradient(135deg, rgba(59,130,246,1), rgba(34,197,94,1));
+        }
+
+        @media(max-width:760px){
+          .top{
+            align-items:flex-start;
+            flex-direction:column;
+          }
+
+          .item{
+            align-items:flex-start;
+            flex-direction:column;
+          }
+
+          .actions{
+            justify-content:flex-start;
+          }
+        }
       `}</style>
 
       <div className="wrap">
@@ -163,31 +268,46 @@ export default function CampaignsPage() {
           <div>No campaigns found.</div>
         ) : (
           <div className="list">
-            {campaigns.map((c) => (
-              <div key={c.id} className="item">
-                <div>
-                  <div><b>{c.name || "Untitled Campaign"}</b></div>
-                  <div className="meta">{c.subject || "No subject"}</div>
-                  <div className="meta">
-                    {new Date(c.created_at).toLocaleString()}
+            {campaigns.map((c) => {
+              const progress = progressByCampaign.get(c.id) || emptyProgress();
+
+              return (
+                <div key={c.id} className="item">
+                  <div className="left">
+                    <div>
+                      <b>{c.name || "Untitled Campaign"}</b>
+                    </div>
+                    <div className="meta">{c.subject || "No subject"}</div>
+                    <div className="meta">{new Date(c.created_at).toLocaleString()}</div>
+
+                    <div className="progressBox">
+                      <div className="progressMeta">
+                        <span>Progress: {progress.percent}%</span>
+                        <span>Queued: {progress.queued}</span>
+                        <span>Sent: {progress.sent}</span>
+                        <span>Failed: {progress.failed}</span>
+                        <span>Total: {progress.total}</span>
+                      </div>
+                      <div className="bar">
+                        <div className="barFill" style={{ width: `${progress.percent}%` }} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="actions">
+                    <div className={`status ${getStatusClass(c.status)}`}>{c.status}</div>
+
+                    <Link href={`/campaigns/new?id=${c.id}`} className="btn">
+                      Edit
+                    </Link>
+
+                    <Link href={`/campaigns/preview?id=${c.id}`} className="btn">
+                      Preview
+                    </Link>
                   </div>
                 </div>
-
-                <div className="actions">
-                  <div className={`status ${getStatusClass(c.status)}`}>
-                    {c.status}
-                  </div>
-
-                  <Link href={`/campaigns/new?id=${c.id}`} className="btn">
-                    Edit
-                  </Link>
-
-                  <Link href={`/campaigns/preview?id=${c.id}`} className="btn">
-                    Preview
-                  </Link>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
