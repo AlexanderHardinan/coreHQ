@@ -55,31 +55,45 @@ export default function CampaignsPage() {
   const [queueRows, setQueueRows] = useState<QueueRow[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const load = async () => {
+    setLoading(true);
+
+    const [{ data: campaignData, error: campaignError }, { data: queueData }] =
+      await Promise.all([
+        supabase
+          .from("campaigns")
+          .select("id,name,subject,status,created_at")
+          .order("created_at", { ascending: false }),
+        supabase.from("campaign_queue").select("campaign_id,status"),
+      ]);
+
+    if (!campaignError && campaignData) {
+      setCampaigns(campaignData as Campaign[]);
+    }
+
+    if (queueData) {
+      setQueueRows(queueData as QueueRow[]);
+    }
+
+    setLoading(false);
+  };
+
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-
-      const [{ data: campaignData, error: campaignError }, { data: queueData }] =
-        await Promise.all([
-          supabase
-            .from("campaigns")
-            .select("id,name,subject,status,created_at")
-            .order("created_at", { ascending: false }),
-          supabase.from("campaign_queue").select("campaign_id,status"),
-        ]);
-
-      if (!campaignError && campaignData) {
-        setCampaigns(campaignData as Campaign[]);
-      }
-
-      if (queueData) {
-        setQueueRows(queueData as QueueRow[]);
-      }
-
-      setLoading(false);
-    };
-
     load();
+
+    const channel = supabase
+      .channel("campaigns-progress-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "campaigns" }, () => {
+        load();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "campaign_queue" }, () => {
+        load();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const progressByCampaign = useMemo(() => {
@@ -235,6 +249,7 @@ export default function CampaignsPage() {
           height:100%;
           border-radius:999px;
           background:linear-gradient(135deg, rgba(59,130,246,1), rgba(34,197,94,1));
+          transition: width 220ms ease;
         }
 
         @media(max-width:760px){
