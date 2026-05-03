@@ -10,6 +10,7 @@ type CampaignLog = {
   status: string | null;
   event: string | null;
   email: string | null;
+  clicked_url: string | null;
   error: string | null;
   created_at: string | null;
 };
@@ -53,7 +54,7 @@ export default function AnalyticsPage() {
 
       const { data, error } = await supabase
         .from("campaign_logs")
-        .select("id,campaign_id,recipients,status,event,email,error,created_at")
+        .select("id,campaign_id,recipients,status,event,email,clicked_url,error,created_at")
         .order("created_at", { ascending: false });
 
       if (!error && data) {
@@ -337,6 +338,12 @@ export default function AnalyticsPage() {
           white-space:nowrap;
         }
 
+        .clickedUrl{
+          margin-top:6px;
+          word-break:break-all;
+          color:rgba(147,197,253,1);
+        }
+
         @keyframes cardIn{
           from{ transform: translateY(14px) scale(0.98); opacity: 0; }
           to{ transform: translateY(0px) scale(1); opacity: 1; }
@@ -368,7 +375,7 @@ export default function AnalyticsPage() {
         <div className="content">
           <h1 className="title">Analytics</h1>
           <p className="sub">
-            Phase 17A.1: advanced campaign analytics with event breakdown, timeline, and unique audience counts.
+            Phase 17A.2: advanced campaign analytics with clicked URL visibility.
           </p>
 
           {loading ? (
@@ -497,6 +504,11 @@ export default function AnalyticsPage() {
                     </div>
                     <div>Email: {log.email || "—"}</div>
                     <div>Recipients: {(log.recipients || []).length}</div>
+                    {log.clicked_url && (
+                      <div className="clickedUrl">
+                        Clicked URL: {log.clicked_url}
+                      </div>
+                    )}
                     <div>{fmtDate(log.created_at)}</div>
                     {log.error && <div>Error: {log.error}</div>}
                   </div>
