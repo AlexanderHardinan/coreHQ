@@ -1,7 +1,8 @@
+// app/api/process-campaign-queue/route.ts
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { createClient } from "@supabase/supabase-js";
-import { getDefaultSender } from "../../../src/lib/emailSender";
+import { getSenderByBrand } from "../../../src/lib/emailSender";
 
 function pickEnv(...keys: string[]) {
   for (const k of keys) {
@@ -27,34 +28,15 @@ type SnapshotRow = {
   text_snapshot: string | null;
 };
 
-type CampaignBrandRow = {
+type CampaignRow = {
   id: string;
   brand_id: string | null;
-  brands: {
-    name: string | null;
-    from_name: string | null;
-    sender_email: string | null;
-    reply_to_email: string | null;
-  } | null;
 };
 
-function resolveSender(row: CampaignBrandRow | null) {
-  const fallback = getDefaultSender();
-  const brand = row?.brands || null;
-
-  const fromName = (brand?.from_name || brand?.name || "CoreHQ").trim();
-  const senderEmail = (brand?.sender_email || "").trim();
-  const replyTo = (brand?.reply_to_email || fallback.replyTo || "").trim();
-
-  if (!senderEmail) {
-    return fallback;
-  }
-
-  return {
-    from: `${fromName} <${senderEmail}>`,
-    replyTo,
-  };
-}
+type Sender = {
+  from: string;
+  replyTo: string;
+};
 
 async function processQueue() {
   try {
@@ -99,7 +81,7 @@ async function processQueue() {
     let retried = 0;
     let failed = 0;
 
-    const senderCache = new Map<string, ReturnType<typeof resolveSender>>();
+    const senderCache = new Map<string, Sender>();
 
     for (const job of queue as QueueRow[]) {
       const nextAttempts = job.attempts + 1;
@@ -121,13 +103,17 @@ async function processQueue() {
         let sender = senderCache.get(job.campaign_id);
 
         if (!sender) {
-          const { data: campaignBrand } = await supabase
+          const { data: campaignRow, error: campaignErr } = await supabase
             .from("campaigns")
-            .select("id,brand_id,brands(name,from_name,sender_email,reply_to_email)")
+            .select("id,brand_id")
             .eq("id", job.campaign_id)
-            .maybeSingle<CampaignBrandRow>();
+            .maybeSingle<CampaignRow>();
 
-          sender = resolveSender(campaignBrand || null);
+          if (campaignErr) {
+            throw new Error(campaignErr.message || "Failed to load campaign brand.");
+          }
+
+          sender = await getSenderByBrand(campaignRow?.brand_id || null);
           senderCache.set(job.campaign_id, sender);
         }
 
