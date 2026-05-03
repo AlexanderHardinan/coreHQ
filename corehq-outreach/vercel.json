@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/process-campaign-queue",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

@@ -26,7 +26,7 @@ type SnapshotRow = {
   text_snapshot: string | null;
 };
 
-export async function POST() {
+async function processQueue() {
   try {
     const RESEND_API_KEY = pickEnv("RESEND_API_KEY");
     if (!RESEND_API_KEY) {
@@ -45,8 +45,6 @@ export async function POST() {
     });
 
     const resend = new Resend(RESEND_API_KEY);
-
-    // batch size control (safe for rate limits)
     const BATCH_SIZE = 20;
 
     const { data: queue, error: qErr } = await supabase
@@ -155,4 +153,12 @@ export async function POST() {
       { status: 500 }
     );
   }
+}
+
+export async function GET() {
+  return processQueue();
+}
+
+export async function POST() {
+  return processQueue();
 }
