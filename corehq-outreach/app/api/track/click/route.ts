@@ -45,6 +45,7 @@ export async function GET(req: Request) {
         resend_id: existingLog?.resend_id || null,
         event: "clicked",
         email: email || null,
+        clicked_url: target,
         error: null,
       });
     }
