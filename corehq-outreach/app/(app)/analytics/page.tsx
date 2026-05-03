@@ -375,7 +375,7 @@ export default function AnalyticsPage() {
         <div className="content">
           <h1 className="title">Analytics</h1>
           <p className="sub">
-            Phase 17A.2: advanced campaign analytics with clicked URL visibility.
+            
           </p>
 
           {loading ? (
