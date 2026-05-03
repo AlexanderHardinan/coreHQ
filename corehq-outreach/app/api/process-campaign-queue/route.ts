@@ -27,6 +27,35 @@ type SnapshotRow = {
   text_snapshot: string | null;
 };
 
+type CampaignBrandRow = {
+  id: string;
+  brand_id: string | null;
+  brands: {
+    name: string | null;
+    from_name: string | null;
+    sender_email: string | null;
+    reply_to_email: string | null;
+  } | null;
+};
+
+function resolveSender(row: CampaignBrandRow | null) {
+  const fallback = getDefaultSender();
+  const brand = row?.brands || null;
+
+  const fromName = (brand?.from_name || brand?.name || "CoreHQ").trim();
+  const senderEmail = (brand?.sender_email || "").trim();
+  const replyTo = (brand?.reply_to_email || fallback.replyTo || "").trim();
+
+  if (!senderEmail) {
+    return fallback;
+  }
+
+  return {
+    from: `${fromName} <${senderEmail}>`,
+    replyTo,
+  };
+}
+
 async function processQueue() {
   try {
     const RESEND_API_KEY = pickEnv("RESEND_API_KEY");
@@ -46,7 +75,6 @@ async function processQueue() {
     });
 
     const resend = new Resend(RESEND_API_KEY);
-    const sender = getDefaultSender();
 
     const BATCH_SIZE = 20;
     const MAX_ATTEMPTS = 3;
@@ -71,6 +99,8 @@ async function processQueue() {
     let retried = 0;
     let failed = 0;
 
+    const senderCache = new Map<string, ReturnType<typeof resolveSender>>();
+
     for (const job of queue as QueueRow[]) {
       const nextAttempts = job.attempts + 1;
       const isRetry = job.status === "failed";
@@ -87,6 +117,19 @@ async function processQueue() {
           .single<SnapshotRow>();
 
         if (!snap) throw new Error("Snapshot not found");
+
+        let sender = senderCache.get(job.campaign_id);
+
+        if (!sender) {
+          const { data: campaignBrand } = await supabase
+            .from("campaigns")
+            .select("id,brand_id,brands(name,from_name,sender_email,reply_to_email)")
+            .eq("id", job.campaign_id)
+            .maybeSingle<CampaignBrandRow>();
+
+          sender = resolveSender(campaignBrand || null);
+          senderCache.set(job.campaign_id, sender);
+        }
 
         const subject = snap.subject || "Campaign";
         const html = snap.html_snapshot || "";
