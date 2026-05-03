@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { createClient } from "@supabase/supabase-js";
+import { getDefaultSender } from "../../../../src/lib/emailSender";
 
 function pickEnv(...keys: string[]) {
   for (const k of keys) {
@@ -45,6 +46,7 @@ async function processQueue() {
     });
 
     const resend = new Resend(RESEND_API_KEY);
+    const sender = getDefaultSender();
     const BATCH_SIZE = 20;
 
     const { data: queue, error: qErr } = await supabase
@@ -85,16 +87,18 @@ async function processQueue() {
 
         const sendRes = html
           ? await resend.emails.send({
-              from: "CoreHQ <onboarding@resend.dev>",
+              from: sender.from,
               to: [job.recipient_email],
               subject,
+              ...(sender.replyTo ? { replyTo: sender.replyTo } : {}),
               html,
               ...(text ? { text } : {}),
             })
           : await resend.emails.send({
-              from: "CoreHQ <onboarding@resend.dev>",
+              from: sender.from,
               to: [job.recipient_email],
               subject,
+              ...(sender.replyTo ? { replyTo: sender.replyTo } : {}),
               text,
             });
 
