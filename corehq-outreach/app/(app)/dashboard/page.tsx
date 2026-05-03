@@ -1,6 +1,121 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { supabase } from "../../../src/lib/supabaseClient";
+
+type Metrics = {
+  brands: number;
+  contacts: number;
+  campaigns: number;
+  queued: number;
+  sent24h: number;
+  opened24h: number;
+  clicked24h: number;
+  failed24h: number;
+  failedQueue: number;
+};
+
+function emptyMetrics(): Metrics {
+  return {
+    brands: 0,
+    contacts: 0,
+    campaigns: 0,
+    queued: 0,
+    sent24h: 0,
+    opened24h: 0,
+    clicked24h: 0,
+    failed24h: 0,
+    failedQueue: 0,
+  };
+}
+
+function fmt(value: number, loading: boolean) {
+  if (loading) return "—";
+  return value.toLocaleString();
+}
+
 export default function DashboardPage() {
+  const [metrics, setMetrics] = useState<Metrics>(emptyMetrics());
+  const [loading, setLoading] = useState(true);
+
+  const loadMetrics = async () => {
+    setLoading(true);
+
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    const [
+      brandsRes,
+      contactsRes,
+      campaignsRes,
+      queuedRes,
+      failedQueueRes,
+      sentRes,
+      openedRes,
+      clickedRes,
+      failedRes,
+    ] = await Promise.all([
+      supabase.from("brands").select("id", { count: "exact", head: true }),
+      supabase.from("contacts").select("id", { count: "exact", head: true }),
+      supabase.from("campaigns").select("id", { count: "exact", head: true }),
+      supabase.from("campaign_queue").select("id", { count: "exact", head: true }).eq("status", "queued"),
+      supabase
+        .from("campaign_queue")
+        .select("id", { count: "exact", head: true })
+        .in("status", ["failed", "failed_permanent"]),
+      supabase
+        .from("campaign_logs")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", since24h)
+        .in("event", ["sent", "retry_sent"]),
+      supabase
+        .from("campaign_logs")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", since24h)
+        .in("event", ["opened", "open"]),
+      supabase
+        .from("campaign_logs")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", since24h)
+        .in("event", ["clicked", "click"]),
+      supabase
+        .from("campaign_logs")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", since24h)
+        .in("event", ["failed", "failed_permanent"]),
+    ]);
+
+    setMetrics({
+      brands: brandsRes.count || 0,
+      contacts: contactsRes.count || 0,
+      campaigns: campaignsRes.count || 0,
+      queued: queuedRes.count || 0,
+      sent24h: sentRes.count || 0,
+      opened24h: openedRes.count || 0,
+      clicked24h: clickedRes.count || 0,
+      failed24h: failedRes.count || 0,
+      failedQueue: failedQueueRes.count || 0,
+    });
+
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadMetrics();
+
+    const channel = supabase
+      .channel("dashboard-live-metrics")
+      .on("postgres_changes", { event: "*", schema: "public", table: "brands" }, () => loadMetrics())
+      .on("postgres_changes", { event: "*", schema: "public", table: "contacts" }, () => loadMetrics())
+      .on("postgres_changes", { event: "*", schema: "public", table: "campaigns" }, () => loadMetrics())
+      .on("postgres_changes", { event: "*", schema: "public", table: "campaign_queue" }, () => loadMetrics())
+      .on("postgres_changes", { event: "*", schema: "public", table: "campaign_logs" }, () => loadMetrics())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   return (
     <div className="page">
       <style>{`
@@ -9,6 +124,7 @@ export default function DashboardPage() {
           display:flex;
           align-items:center;
           justify-content:center;
+          padding:24px 16px;
         }
 
         .wrap{
@@ -40,6 +156,11 @@ export default function DashboardPage() {
           animation: spin 10s linear infinite;
           opacity: 0.45;
           pointer-events:none;
+        }
+
+        .content{
+          position:relative;
+          z-index:1;
         }
 
         .title{
@@ -89,6 +210,38 @@ export default function DashboardPage() {
           margin: 0;
         }
 
+        .health{
+          margin-top:18px;
+          border-radius:16px;
+          border:1px solid rgba(255,255,255,0.10);
+          background:rgba(0,0,0,0.28);
+          padding:14px;
+        }
+
+        .healthTop{
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:12px;
+          flex-wrap:wrap;
+        }
+
+        .badge{
+          display:inline-flex;
+          align-items:center;
+          border-radius:999px;
+          padding:6px 10px;
+          font-size:12px;
+          font-weight:900;
+          background:rgba(34,197,94,0.18);
+          color:rgba(134,239,172,1);
+        }
+
+        .badgeWarn{
+          background:rgba(239,68,68,0.18);
+          color:rgba(252,165,165,1);
+        }
+
         @keyframes cardIn{
           from{ transform: translateY(14px) scale(0.98); opacity: 0; }
           to{ transform: translateY(0px) scale(1); opacity: 1; }
@@ -111,23 +264,75 @@ export default function DashboardPage() {
       <div className="wrap">
         <div className="card">
           <div className="shine" />
-          <h1 className="title">Dashboard</h1>
-          <p className="sub">
-            This is the CoreHQ – Outreach workspace dashboard. Phase 4+ will populate live counts and activity.
-          </p>
 
-          <div className="grid">
-            <div className="tile">
-              <p className="k">Brands</p>
-              <p className="v">—</p>
+          <div className="content">
+            <h1 className="title">Dashboard</h1>
+            <p className="sub">
+              Live CoreHQ Outreach metrics for brands, contacts, campaigns, queue health, and last 24-hour activity.
+            </p>
+
+            <div className="grid">
+              <div className="tile">
+                <p className="k">Brands</p>
+                <p className="v">{fmt(metrics.brands, loading)}</p>
+              </div>
+
+              <div className="tile">
+                <p className="k">Contacts</p>
+                <p className="v">{fmt(metrics.contacts, loading)}</p>
+              </div>
+
+              <div className="tile">
+                <p className="k">Campaigns</p>
+                <p className="v">{fmt(metrics.campaigns, loading)}</p>
+              </div>
+
+              <div className="tile">
+                <p className="k">Queued Emails</p>
+                <p className="v">{fmt(metrics.queued, loading)}</p>
+              </div>
+
+              <div className="tile">
+                <p className="k">Sent Last 24h</p>
+                <p className="v">{fmt(metrics.sent24h, loading)}</p>
+              </div>
+
+              <div className="tile">
+                <p className="k">Opened Last 24h</p>
+                <p className="v">{fmt(metrics.opened24h, loading)}</p>
+              </div>
+
+              <div className="tile">
+                <p className="k">Clicked Last 24h</p>
+                <p className="v">{fmt(metrics.clicked24h, loading)}</p>
+              </div>
+
+              <div className="tile">
+                <p className="k">Failed Last 24h</p>
+                <p className="v">{fmt(metrics.failed24h, loading)}</p>
+              </div>
+
+              <div className="tile">
+                <p className="k">Failed Queue</p>
+                <p className="v">{fmt(metrics.failedQueue, loading)}</p>
+              </div>
             </div>
-            <div className="tile">
-              <p className="k">Contacts</p>
-              <p className="v">—</p>
-            </div>
-            <div className="tile">
-              <p className="k">Campaigns</p>
-              <p className="v">—</p>
+
+            <div className="health">
+              <div className="healthTop">
+                <div>
+                  <p className="k">System Health</p>
+                  <p className="sub">
+                    {metrics.queued > 0
+                      ? "Queued emails are waiting. Go to Campaigns and run the worker."
+                      : "No pending queue items. System is clear."}
+                  </p>
+                </div>
+
+                <div className={`badge ${metrics.failedQueue > 0 ? "badgeWarn" : ""}`}>
+                  {metrics.failedQueue > 0 ? "Needs Attention" : "Healthy"}
+                </div>
+              </div>
             </div>
           </div>
         </div>
