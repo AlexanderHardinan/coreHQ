@@ -837,7 +837,7 @@ export default function NewCampaignPage() {
             </div>
           </div>
 
-          <div className="sectionTitle">Phase 7.1 — Campaign Targeting</div>
+          <div className="sectionTitle"></div>
           <div className="grid" aria-label="Campaign targeting form">
             <div className="field">
               <label className="label" htmlFor="brand_id">
@@ -911,7 +911,7 @@ export default function NewCampaignPage() {
             </div>
           )}
 
-          <div className="sectionTitle">Phase 5.1 — Campaign Meta</div>
+          <div className="sectionTitle"></div>
           <div className="grid" aria-label="Campaign meta form">
             <div className="field">
               <label className="label" htmlFor="name">
@@ -978,7 +978,7 @@ export default function NewCampaignPage() {
             </div>
           </div>
 
-          <div className="sectionTitle">Phase 5.2 — Offer Content</div>
+          <div className="sectionTitle"></div>
           <div className="grid" aria-label="Offer content form">
             <div className="field">
               <label className="label" htmlFor="featured_url">
@@ -1013,7 +1013,7 @@ export default function NewCampaignPage() {
             </div>
           </div>
 
-          <div className="sectionTitle">Phase 5.3 — CTA Block (Primary + Secondary)</div>
+          <div className="sectionTitle"></div>
           <div className="grid" aria-label="CTA block form">
             <div className="field">
               <label className="label" htmlFor="cta_primary_text">
@@ -1078,7 +1078,7 @@ export default function NewCampaignPage() {
             </div>
           </div>
 
-          <div className="sectionTitle">Phase 5.4 — Extra Banners (Optional)</div>
+          <div className="sectionTitle"></div>
           <div className="grid" aria-label="Extra banners form">
             <div className="field">
               <label className="label" htmlFor="extra_banner_url_1">
@@ -1113,7 +1113,7 @@ export default function NewCampaignPage() {
             </div>
           </div>
 
-          <div className="sectionTitle">Phase 5.5 — YouTube Preview (Optional)</div>
+          <div className="sectionTitle"></div>
           <div className="grid" aria-label="YouTube preview form">
             <div className="field">
               <label className="label" htmlFor="youtube_url">
@@ -1132,7 +1132,7 @@ export default function NewCampaignPage() {
             </div>
           </div>
 
-          <div className="sectionTitle">Phase 5.6 — Footer + Compliance</div>
+          <div className="sectionTitle"></div>
           <div className="grid" aria-label="Footer and compliance form">
             <div className="field">
               <label className="label" htmlFor="footer_text">
