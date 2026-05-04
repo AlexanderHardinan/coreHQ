@@ -52,6 +52,7 @@ type BrandRow = {
   reply_to_email: string | null;
   footer_text: string | null;
   accent_color: string | null;
+  logo_url: string | null;
   signature_title: string | null;
   signature_company: string | null;
   signature_website: string | null;
@@ -63,24 +64,18 @@ type BrandRow = {
 type CampaignRow = {
   id: string;
   brand_id: string | null;
-
   name: string | null;
   subject: string | null;
   preview_text: string | null;
-
   featured_url: string | null;
   primary_banner_url: string | null;
-
   cta_primary_text: string | null;
   cta_primary_url: string | null;
   cta_secondary_text: string | null;
   cta_secondary_url: string | null;
-
   extra_banner_url_1: string | null;
   extra_banner_url_2: string | null;
-
   youtube_url: string | null;
-
   footer_text: string | null;
   compliance_text: string | null;
   unsubscribe_url: string | null;
@@ -123,7 +118,17 @@ function getBrandName(brand: BrandRow | null) {
   return safeText(brand?.name) || "CoreHQ Brand";
 }
 
+function buildFromValue(brand: BrandRow | null, fallback: string) {
+  const fromName = safeText(brand?.from_name) || getBrandName(brand);
+  const senderEmail = safeText(brand?.sender_email);
+
+  if (fromName && senderEmail) return `${fromName} <${senderEmail}>`;
+
+  return fallback.trim() || "CoreHQ <hello@corehq.company>";
+}
+
 function buildBrandSignatureHtml(brand: BrandRow | null, campaignFooter: string) {
+  const logo = normalizeUrlOrEmpty(brand?.logo_url || "");
   const fromName = safeText(brand?.from_name) || getBrandName(brand) || "CoreHQ";
   const title = safeText(brand?.signature_title) || "Outreach Team";
   const company = safeText(brand?.signature_company) || getBrandName(brand);
@@ -133,7 +138,6 @@ function buildBrandSignatureHtml(brand: BrandRow | null, campaignFooter: string)
   const brandFooter = safeText(brand?.footer_text);
   const disclaimer = safeText(brand?.signature_disclaimer);
   const accent = safeText(brand?.accent_color) || "#3B82F6";
-
   const footer = campaignFooter || brandFooter;
 
   return `<tr>
@@ -141,7 +145,16 @@ function buildBrandSignatureHtml(brand: BrandRow | null, campaignFooter: string)
       <div style="border-top:1px solid #1F2937;margin-top:6px;padding-top:16px;">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
           <tr>
-            <td style="border-left:4px solid ${escHtml(accent)};padding-left:12px;">
+            ${
+              logo
+                ? `<td width="76" valign="top" style="padding-right:14px;">
+                    <img src="${escHtml(logo)}" alt="${escHtml(
+                    fromName
+                  )}" width="62" style="width:62px;max-width:62px;height:auto;display:block;border-radius:10px;" />
+                  </td>`
+                : ""
+            }
+            <td valign="top" style="border-left:4px solid ${escHtml(accent)};padding-left:12px;">
               <div style="font-size:14px;line-height:1.4;color:#FFFFFF;font-weight:900;">
                 ${escHtml(fromName)}
               </div>
@@ -230,6 +243,9 @@ function buildBrandSignatureText(brand: BrandRow | null, campaignFooter: string)
 
 function buildEmailHtml(c: CampaignRow, brand: BrandRow | null, appOrigin: string) {
   const brandName = getBrandName(brand);
+  const brandLogo = normalizeUrlOrEmpty(brand?.logo_url || "");
+  const accent = safeText(brand?.accent_color) || "#3B82F6";
+
   const subject = safeText(c.subject) || "Campaign";
   const preview = safeText(c.preview_text);
   const featuredUrl = normalizeUrlOrEmpty(c.featured_url);
@@ -260,7 +276,7 @@ function buildEmailHtml(c: CampaignRow, brand: BrandRow | null, appOrigin: strin
 
   const buttonStyle =
     "display:inline-block;padding:12px 16px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;";
-  const btnPrimary = buttonStyle + "background:#3B82F6;color:#ffffff;";
+  const btnPrimary = buttonStyle + `background:${accent};color:#ffffff;`;
   const btnSecondary =
     buttonStyle + "background:#111827;color:#ffffff;border:1px solid #374151;";
 
@@ -279,6 +295,17 @@ function buildEmailHtml(c: CampaignRow, brand: BrandRow | null, appOrigin: strin
     <tr>
       <td align="center" style="padding:24px 12px;">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:640px;background:#0F1115;border:1px solid #1F2937;border-radius:14px;overflow:hidden;">
+          ${
+            brandLogo
+              ? `<tr>
+                  <td style="padding:18px 18px 0 18px;font-family:Arial,Helvetica,sans-serif;">
+                    <img src="${escHtml(brandLogo)}" alt="${escHtml(
+                  brandName
+                )}" width="160" style="width:auto;max-width:160px;max-height:52px;height:auto;display:block;border:0;outline:none;text-decoration:none;" />
+                  </td>
+                </tr>`
+              : ""
+          }
           <tr>
             <td style="padding:18px 18px 10px 18px;font-family:Arial,Helvetica,sans-serif;color:#ffffff;">
               <div style="font-size:12px;color:#9CA3AF;font-weight:700;letter-spacing:0.3px;text-transform:uppercase;">
@@ -428,6 +455,7 @@ function buildEmailText(c: CampaignRow, brand: BrandRow | null) {
 
   lines.push(`${brandName}`);
   lines.push(subject);
+
   if (preview) {
     lines.push("");
     lines.push(preview);
@@ -448,6 +476,7 @@ function buildEmailText(c: CampaignRow, brand: BrandRow | null) {
     lines.push("");
     lines.push(`CTA: ${cta1Text} — ${cta1Url}`);
   }
+
   if (cta2Text && cta2Url) {
     lines.push(`CTA: ${cta2Text} — ${cta2Url}`);
   }
@@ -455,9 +484,10 @@ function buildEmailText(c: CampaignRow, brand: BrandRow | null) {
   const extra1 = normalizeUrlOrEmpty(c.extra_banner_url_1);
   const extra2 = normalizeUrlOrEmpty(c.extra_banner_url_2);
   const extras = [extra1, extra2].filter(Boolean);
+
   if (extras.length) {
     lines.push("");
-    lines.push(`Extra banners:`);
+    lines.push("Extra banners:");
     extras.forEach((u) => lines.push(`- ${u}`));
   }
 
@@ -477,6 +507,7 @@ function buildEmailText(c: CampaignRow, brand: BrandRow | null) {
     lines.push("Compliance:");
     lines.push(compliance);
   }
+
   if (unsub) {
     lines.push("");
     lines.push(`Unsubscribe: ${unsub}`);
@@ -493,6 +524,7 @@ function parseRecipients(input: string) {
 
   const uniq: string[] = [];
   const seen = new Set<string>();
+
   for (const e of raw) {
     const k = e.toLowerCase();
     if (!seen.has(k)) {
@@ -500,6 +532,7 @@ function parseRecipients(input: string) {
       uniq.push(e);
     }
   }
+
   return uniq;
 }
 
@@ -513,28 +546,17 @@ function appendRecipient(current: string, email: string) {
   return current.trim() ? `${current.trim()}\n${clean}` : clean;
 }
 
-function buildFromValue(brand: BrandRow | null, fallback: string) {
-  const fromName = safeText(brand?.from_name) || getBrandName(brand);
-  const senderEmail = safeText(brand?.sender_email);
-
-  if (fromName && senderEmail) return `${fromName} <${senderEmail}>`;
-
-  return fallback.trim() || "CoreHQ <hello@corehq.company>";
-}
-
 export default function CampaignPreviewPage() {
   const params = useSearchParams();
   const campaignId = (params.get("id") || "").trim();
 
   const [loading, setLoading] = useState(true);
-
   const [campaign, setCampaign] = useState<CampaignRow | null>(null);
   const [brand, setBrand] = useState<BrandRow | null>(null);
   const [brandName, setBrandName] = useState<string>("(brand)");
 
   const [html, setHtml] = useState<string>("");
   const [text, setText] = useState<string>("");
-
   const [saving, setSaving] = useState(false);
 
   const SEND_TO_KEY = "corehq.preview.sendTo";
@@ -576,6 +598,7 @@ export default function CampaignPreviewPage() {
       const t = window.localStorage.getItem(SEND_TO_KEY);
       const f = window.localStorage.getItem(SEND_FROM_KEY);
       const r = window.localStorage.getItem(SEND_REPLYTO_KEY);
+
       if (typeof t === "string") setSendToInput(t);
       if (typeof f === "string" && f.trim()) setSendFrom(f);
       if (typeof r === "string") setSendReplyTo(r);
@@ -626,6 +649,7 @@ export default function CampaignPreviewPage() {
       }
 
       setLoading(true);
+
       try {
         const { data, error } = await supabase
           .from("campaigns")
@@ -672,6 +696,7 @@ export default function CampaignPreviewPage() {
                 "reply_to_email",
                 "footer_text",
                 "accent_color",
+                "logo_url",
                 "signature_title",
                 "signature_company",
                 "signature_website",
@@ -715,6 +740,7 @@ export default function CampaignPreviewPage() {
     };
 
     run();
+
     return () => {
       mounted = false;
     };
@@ -745,12 +771,14 @@ export default function CampaignPreviewPage() {
       showToast("error", "No campaign loaded.");
       return;
     }
+
     if (!campaign.brand_id) {
       showToast("error", "Campaign brand_id is missing.");
       return;
     }
 
     setSaving(true);
+
     try {
       const payload = {
         campaign_id: campaign.id,
@@ -780,6 +808,7 @@ export default function CampaignPreviewPage() {
     }
 
     const to = parseRecipients(sendToInput);
+
     if (!to.length) {
       showToast("error", "Add at least one recipient email in Send To.");
       return;
@@ -789,6 +818,7 @@ export default function CampaignPreviewPage() {
     const replyTo = safeText(brand?.reply_to_email) || (sendReplyTo || "").trim();
 
     setSending(true);
+
     try {
       const res = await fetch("/api/send-campaign", {
         method: "POST",
@@ -825,6 +855,7 @@ export default function CampaignPreviewPage() {
     }
 
     const to = parseRecipients(sendToInput);
+
     if (!to.length) {
       showToast("error", "Add at least one recipient email in Send To.");
       return;
@@ -834,6 +865,7 @@ export default function CampaignPreviewPage() {
     const replyTo = safeText(brand?.reply_to_email) || (sendReplyTo || "").trim();
 
     setSendingNow(true);
+
     try {
       const queueRes = await fetch("/api/send-campaign", {
         method: "POST",
@@ -987,11 +1019,6 @@ export default function CampaignPreviewPage() {
 
         .btnPrimary:hover{
           box-shadow: 0 22px 48px rgba(168,85,247,0.16);
-        }
-
-        .btnDanger{
-          border: 1px solid rgba(239,68,68,0.35);
-          background: rgba(239,68,68,0.10);
         }
 
         .btn:disabled{
@@ -1381,7 +1408,7 @@ export default function CampaignPreviewPage() {
 
               <div className="hint">
                 Notes:
-                <br />• Dynamic brand signature and footer are injected automatically from Brand Settings.
+                <br />• Brand logo, accent color, signature, and footer are injected automatically from Brand Settings.
                 <br />• Campaign footer overrides brand footer only when campaign footer has content.
                 <br />• Open tracking pixel is inserted into saved HTML snapshots.
                 <br />• Select a contact and click <b>Add</b> to place the email into Send To.
