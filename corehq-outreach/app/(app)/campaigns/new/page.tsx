@@ -29,6 +29,15 @@ type TemplateRow = {
   created_at: string | null;
 };
 
+type ContactRow = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  company: string | null;
+  country: string | null;
+  created_at: string | null;
+};
+
 type CampaignEditRow = {
   id: string;
   brand_id: string | null;
@@ -37,8 +46,6 @@ type CampaignEditRow = {
   preview_text: string | null;
   scheduled_at: string | null;
   status: string | null;
-  segment_id: string | null;
-  template_id: string | null;
   featured_url: string | null;
   primary_banner_url: string | null;
   cta_primary_text: string | null;
@@ -96,11 +103,49 @@ function toDatetimeLocal(value: string | null) {
   )}:${pad(d.getMinutes())}`;
 }
 
+function parseRecipients(input: string) {
+  const raw = input
+    .split(/[\n,;]+/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const uniq: string[] = [];
+  const seen = new Set<string>();
+
+  for (const email of raw) {
+    const key = email.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniq.push(email);
+    }
+  }
+
+  return uniq;
+}
+
+function appendRecipient(current: string, email: string) {
+  const clean = email.trim();
+  if (!clean) return current;
+
+  const existing = parseRecipients(current).map((item) => item.toLowerCase());
+  if (existing.includes(clean.toLowerCase())) return current;
+
+  return current.trim() ? `${current.trim()}\n${clean}` : clean;
+}
+
+function removeRecipient(current: string, email: string) {
+  const target = email.trim().toLowerCase();
+  return parseRecipients(current)
+    .filter((item) => item.toLowerCase() !== target)
+    .join("\n");
+}
+
 export default function NewCampaignPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const BRAND_STORAGE_KEY = "corehq.activeBrand";
+  const PREVIEW_SEND_TO_KEY = "corehq.preview.sendTo";
   const editId = (searchParams.get("id") || "").trim();
 
   const [activeBrand, setActiveBrand] = useState<string>("(loading brand…)");
@@ -140,6 +185,11 @@ export default function NewCampaignPage() {
   const [templateId, setTemplateId] = useState("");
   const [builderLoading, setBuilderLoading] = useState(false);
 
+  const [contacts, setContacts] = useState<ContactRow[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [selectedContactEmail, setSelectedContactEmail] = useState("");
+  const [sendToInput, setSendToInput] = useState("");
+
   const [toastOpen, setToastOpen] = useState(false);
   const [toastKind, setToastKind] = useState<ToastKind>("info");
   const [toastMsg, setToastMsg] = useState("");
@@ -148,6 +198,10 @@ export default function NewCampaignPage() {
   const selectedTemplate = useMemo(() => {
     return templates.find((template) => template.id === templateId) || null;
   }, [templates, templateId]);
+
+  const selectedContactEmails = useMemo(() => {
+    return parseRecipients(sendToInput);
+  }, [sendToInput]);
 
   const templatePreviewSubject = useMemo(() => {
     return (selectedTemplate?.subject || "")
@@ -199,6 +253,19 @@ export default function NewCampaignPage() {
   }, []);
 
   useEffect(() => {
+    try {
+      const savedRecipients = window.localStorage.getItem(PREVIEW_SEND_TO_KEY);
+      if (typeof savedRecipients === "string") setSendToInput(savedRecipients);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PREVIEW_SEND_TO_KEY, sendToInput);
+    } catch {}
+  }, [sendToInput]);
+
+  useEffect(() => {
     const loadBuilderData = async () => {
       setBuilderLoading(true);
 
@@ -215,7 +282,7 @@ export default function NewCampaignPage() {
       if (brandRes.error) {
         showToast("error", brandRes.error.message || "Failed to load brands.");
       } else {
-        const nextBrands = (brandRes.data ?? []) as BrandRow[];
+        const nextBrands = ((brandRes.data ?? []) as unknown) as BrandRow[];
         setBrands(nextBrands);
 
         if (!brandId && !editId && nextBrands.length > 0) {
@@ -224,14 +291,41 @@ export default function NewCampaignPage() {
       }
 
       if (templateRes.error) {
-        showToast("error", templateRes.error.message || "Failed to load templates.");
+        setTemplates([]);
       } else {
-        setTemplates((templateRes.data ?? []) as TemplateRow[]);
+        setTemplates(((templateRes.data ?? []) as unknown) as TemplateRow[]);
       }
     };
 
     loadBuilderData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const loadContacts = async () => {
+      setContactsLoading(true);
+
+      const { data, error } = await supabase
+        .from("contacts")
+        .select("id,name,email,company,country,created_at")
+        .order("created_at", { ascending: false });
+
+      setContactsLoading(false);
+
+      if (error) {
+        setContacts([]);
+        showToast("error", error.message || "Failed to load contacts.");
+        return;
+      }
+
+      const nextContacts = (((data ?? []) as unknown) as ContactRow[]).filter(
+        (contact) => !!contact.email
+      );
+
+      setContacts(nextContacts);
+    };
+
+    loadContacts();
   }, []);
 
   useEffect(() => {
@@ -252,8 +346,6 @@ export default function NewCampaignPage() {
               "preview_text",
               "scheduled_at",
               "status",
-              "segment_id",
-              "template_id",
               "featured_url",
               "primary_banner_url",
               "cta_primary_text",
@@ -269,30 +361,30 @@ export default function NewCampaignPage() {
             ].join(",")
           )
           .eq("id", editId)
-          .single<CampaignEditRow>();
+          .single();
 
         if (error) throw new Error(error.message || "Failed to load campaign.");
 
-        setCampaignId(data.id);
-        setBrandId(data.brand_id || "");
-        setName(data.name || "");
-        setSubject(data.subject || "");
-        setPreviewText(data.preview_text || "");
-        setScheduleAt(toDatetimeLocal(data.scheduled_at));
-        setSegmentId(data.segment_id || "");
-        setTemplateId(data.template_id || "");
-        setFeaturedUrl(data.featured_url || "");
-        setPrimaryBannerUrl(data.primary_banner_url || "");
-        setCtaPrimaryText(data.cta_primary_text || "");
-        setCtaPrimaryUrl(data.cta_primary_url || "");
-        setCtaSecondaryText(data.cta_secondary_text || "");
-        setCtaSecondaryUrl(data.cta_secondary_url || "");
-        setExtraBannerUrl1(data.extra_banner_url_1 || "");
-        setExtraBannerUrl2(data.extra_banner_url_2 || "");
-        setYoutubeUrl(data.youtube_url || "");
-        setFooterText(data.footer_text || "");
-        setComplianceText(data.compliance_text || "");
-        setUnsubscribeUrl(data.unsubscribe_url || "");
+        const row = (data as unknown) as CampaignEditRow;
+
+        setCampaignId(row.id);
+        setBrandId(row.brand_id || "");
+        setName(row.name || "");
+        setSubject(row.subject || "");
+        setPreviewText(row.preview_text || "");
+        setScheduleAt(toDatetimeLocal(row.scheduled_at));
+        setFeaturedUrl(row.featured_url || "");
+        setPrimaryBannerUrl(row.primary_banner_url || "");
+        setCtaPrimaryText(row.cta_primary_text || "");
+        setCtaPrimaryUrl(row.cta_primary_url || "");
+        setCtaSecondaryText(row.cta_secondary_text || "");
+        setCtaSecondaryUrl(row.cta_secondary_url || "");
+        setExtraBannerUrl1(row.extra_banner_url_1 || "");
+        setExtraBannerUrl2(row.extra_banner_url_2 || "");
+        setYoutubeUrl(row.youtube_url || "");
+        setFooterText(row.footer_text || "");
+        setComplianceText(row.compliance_text || "");
+        setUnsubscribeUrl(row.unsubscribe_url || "");
       } catch (e: any) {
         showToast("error", e?.message || "Failed to load campaign.");
       } finally {
@@ -301,7 +393,6 @@ export default function NewCampaignPage() {
     };
 
     loadCampaign();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId]);
 
   useEffect(() => {
@@ -321,11 +412,10 @@ export default function NewCampaignPage() {
       if (error) {
         setSegments([]);
         setSegmentId("");
-        showToast("error", error.message || "Failed to load segments.");
         return;
       }
 
-      const nextSegments = (data ?? []) as SegmentRow[];
+      const nextSegments = ((data ?? []) as unknown) as SegmentRow[];
       setSegments(nextSegments);
       setSegmentId((current) =>
         nextSegments.some((segment) => segment.id === current) ? current : ""
@@ -333,16 +423,15 @@ export default function NewCampaignPage() {
     };
 
     loadSegments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandId]);
 
   useEffect(() => {
     if (!selectedTemplate) return;
 
-    if (selectedTemplate.subject && !editId) {
+    if (selectedTemplate.subject) {
       setSubject(selectedTemplate.subject);
     }
-  }, [selectedTemplate, editId]);
+  }, [selectedTemplate]);
 
   function normalizeBrandCandidates(brandLabel: string) {
     const raw = (brandLabel || "").trim();
@@ -363,11 +452,11 @@ export default function NewCampaignPage() {
 
     const candidates = normalizeBrandCandidates(brandLabel);
 
-    for (const brandName of candidates) {
+    for (const candidate of candidates) {
       const { data, error } = await supabase
         .from("brands")
         .select("id")
-        .eq("name", brandName)
+        .eq("name", candidate)
         .limit(1)
         .maybeSingle();
 
@@ -406,6 +495,45 @@ export default function NewCampaignPage() {
     return null;
   };
 
+  const addSelectedContact = () => {
+    if (!selectedContactEmail) {
+      showToast("error", "Select a contact first.");
+      return;
+    }
+
+    setSendToInput((current) => appendRecipient(current, selectedContactEmail));
+    setSelectedContactEmail("");
+    showToast("success", "Contact added to campaign recipient list.");
+  };
+
+  const addAllContacts = () => {
+    const emails = contacts
+      .map((contact) => contact.email || "")
+      .map((email) => email.trim())
+      .filter(Boolean);
+
+    if (!emails.length) {
+      showToast("error", "No contacts with email found.");
+      return;
+    }
+
+    setSendToInput((current) => {
+      let next = current;
+      for (const email of emails) {
+        next = appendRecipient(next, email);
+      }
+      return next;
+    });
+
+    showToast("success", `${emails.length} contact(s) added to campaign recipient list.`);
+  };
+
+  const clearRecipients = () => {
+    setSendToInput("");
+    setSelectedContactEmail("");
+    showToast("info", "Campaign recipient list cleared.");
+  };
+
   const handleSaveDraft = async () => {
     const err = validate();
     if (err) {
@@ -414,6 +542,7 @@ export default function NewCampaignPage() {
     }
 
     setSaving(true);
+
     try {
       const resolvedBrandId = await resolveBrandId(activeBrand);
 
@@ -424,9 +553,6 @@ export default function NewCampaignPage() {
         preview_text: normalizeTextOrNull(previewText),
         scheduled_at: normalizeScheduledAt(scheduleAt),
         status: "draft" as any,
-
-        segment_id: normalizeTextOrNull(segmentId),
-        template_id: normalizeTextOrNull(templateId),
 
         featured_url: normalizeTextOrNull(featuredUrl),
         primary_banner_url: normalizeTextOrNull(primaryBannerUrl),
@@ -459,12 +585,13 @@ export default function NewCampaignPage() {
           .single();
 
         if (error) throw new Error(error.message || "Failed to create campaign.");
+
         setCampaignId(data.id);
         showToast("success", "Draft campaign created.");
-        router.replace(`/campaigns/new?id=${data.id}`);
       } else {
         const { error } = await supabase.from("campaigns").update(payload).eq("id", campaignId);
         if (error) throw new Error(error.message || "Failed to update campaign.");
+
         showToast("success", "Draft campaign updated.");
       }
     } catch (e: any) {
@@ -481,7 +608,7 @@ export default function NewCampaignPage() {
     }
 
     const confirmed = window.confirm(
-      "Delete this campaign permanently? This will also delete related queue items, logs, and saved email snapshots."
+      "Delete this campaign? This will also remove related queued recipients, email snapshots, and logs for this campaign."
     );
 
     if (!confirmed) return;
@@ -505,6 +632,8 @@ export default function NewCampaignPage() {
       setDeleting(false);
     }
   };
+
+  const previewHref = campaignId ? `/campaigns/preview?id=${campaignId}` : "/campaigns/preview";
 
   return (
     <div className="page">
@@ -603,11 +732,13 @@ export default function NewCampaignPage() {
           align-items:center;
           justify-content:center;
         }
+
         .btn:hover{
           transform: translateY(-1px);
           background: rgba(255,255,255,0.12);
           border-color: rgba(255,255,255,0.22);
         }
+
         .btn:active{ transform: translateY(0px); }
 
         .btnPrimary{
@@ -615,19 +746,15 @@ export default function NewCampaignPage() {
           background: linear-gradient(135deg, rgba(59,130,246,1), rgba(168,85,247,1));
           box-shadow: 0 16px 40px rgba(59,130,246,0.14);
         }
+
         .btnPrimary:hover{
           box-shadow: 0 22px 48px rgba(168,85,247,0.16);
         }
 
         .btnDanger{
           border: 1px solid rgba(239,68,68,0.35);
-          background: rgba(239,68,68,0.12);
+          background: rgba(239,68,68,0.10);
           color: rgba(254,202,202,1);
-        }
-
-        .btnDanger:hover{
-          border-color: rgba(239,68,68,0.58);
-          background: rgba(239,68,68,0.18);
         }
 
         .btn:disabled{
@@ -657,6 +784,10 @@ export default function NewCampaignPage() {
           gap: 8px;
         }
 
+        .fieldFull{
+          grid-column:1 / -1;
+        }
+
         .label{
           font-size: 12px;
           color: rgba(255,255,255,0.70);
@@ -664,7 +795,7 @@ export default function NewCampaignPage() {
           letter-spacing: 0.2px;
         }
 
-        .input, .textarea{
+        .input, .textarea, .select{
           width:100%;
           padding: 11px 12px;
           border-radius: 12px;
@@ -674,14 +805,88 @@ export default function NewCampaignPage() {
           outline: none;
           transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
         }
-        .input:focus, .textarea:focus{
+
+        .input:focus, .textarea:focus, .select:focus{
           border-color: rgba(59,130,246,0.55);
           box-shadow: 0 0 0 4px rgba(59,130,246,0.16);
           transform: translateY(-1px);
         }
+
         .textarea{
           min-height: 96px;
           resize: vertical;
+        }
+
+        .contactRow{
+          display:flex;
+          gap:10px;
+          align-items:center;
+        }
+
+        .contactRow .select{
+          flex:1;
+        }
+
+        .recipientBox{
+          margin-top:10px;
+          border-radius:14px;
+          border:1px solid rgba(255,255,255,0.10);
+          background:rgba(0,0,0,0.24);
+          padding:12px;
+        }
+
+        .recipientHeader{
+          display:flex;
+          justify-content:space-between;
+          gap:10px;
+          align-items:center;
+          flex-wrap:wrap;
+          margin-bottom:10px;
+        }
+
+        .recipientCount{
+          font-size:12px;
+          color:rgba(255,255,255,0.70);
+          font-weight:800;
+        }
+
+        .recipientList{
+          display:flex;
+          flex-direction:column;
+          gap:8px;
+          max-height:180px;
+          overflow:auto;
+        }
+
+        .recipientItem{
+          display:flex;
+          justify-content:space-between;
+          gap:10px;
+          align-items:center;
+          border-radius:12px;
+          padding:9px 10px;
+          background:rgba(255,255,255,0.05);
+          border:1px solid rgba(255,255,255,0.08);
+          color:rgba(255,255,255,0.78);
+          font-size:12px;
+          word-break:break-word;
+        }
+
+        .miniBtn{
+          border:1px solid rgba(255,255,255,0.12);
+          background:rgba(255,255,255,0.07);
+          color:rgba(255,255,255,0.86);
+          padding:6px 9px;
+          border-radius:10px;
+          font-size:11px;
+          font-weight:850;
+          cursor:pointer;
+        }
+
+        .miniBtnDanger{
+          border-color:rgba(239,68,68,0.30);
+          background:rgba(239,68,68,0.10);
+          color:rgba(254,202,202,1);
         }
 
         .help{
@@ -734,16 +939,21 @@ export default function NewCampaignPage() {
           pointer-events:none;
           z-index: 9999;
         }
+
         .toastOpen{
           animation: toastIn 260ms cubic-bezier(.2,.9,.2,1) forwards;
           pointer-events:auto;
         }
+
         .toastClose{
           animation: toastOut 220ms ease forwards;
           pointer-events:none;
         }
+
         .toastBar{ height: 3px; background: var(--toastAccent); }
+
         .toastBody{ display:flex; gap: 10px; padding: 12px; align-items:flex-start; }
+
         .toastDot{
           margin-top: 3px;
           height: 10px;
@@ -753,20 +963,24 @@ export default function NewCampaignPage() {
           box-shadow: 0 0 0 4px color-mix(in srgb, var(--toastAccent) 25%, transparent);
           flex: 0 0 auto;
         }
+
         .toastText{ font-size: 13px; color: rgba(255,255,255,0.88); line-height: 1.45; }
 
         @keyframes cardIn{
           from{ transform: translateY(14px) scale(0.98); opacity: 0; }
           to{ transform: translateY(0px) scale(1); opacity: 1; }
         }
+
         @keyframes spin{
           from{ transform: rotate(0deg); }
           to{ transform: rotate(360deg); }
         }
+
         @keyframes toastIn{
           from{ transform: translateY(-10px); opacity: 0; }
           to{ transform: translateY(0px); opacity: 1; }
         }
+
         @keyframes toastOut{
           from{ transform: translateY(0px); opacity: 1; }
           to{ transform: translateY(-10px); opacity: 0; }
@@ -776,12 +990,13 @@ export default function NewCampaignPage() {
           .top{ flex-direction:column; align-items:stretch; }
           .actions{ justify-content:flex-start; }
           .grid{ grid-template-columns: 1fr; }
+          .contactRow{ flex-direction:column; align-items:stretch; }
         }
 
         @media (prefers-reduced-motion: reduce){
           .card, .shine, .toastOpen, .toastClose { animation: none !important; }
           .card{ opacity: 1; transform: none; }
-          .btn, .input, .textarea{ transition: none !important; }
+          .btn, .input, .textarea, .select{ transition: none !important; }
           .toast{ opacity: 1; transform:none; }
         }
       `}</style>
@@ -798,15 +1013,14 @@ export default function NewCampaignPage() {
               <p className="meta">
                 Active brand: <b>{activeBrand}</b>
               </p>
-              {loadingCampaign ? (
-                <p className="idLine">Loading campaign…</p>
-              ) : campaignId ? (
+              {campaignId ? (
                 <p className="idLine">
-                  Campaign ID: <b>{campaignId}</b>
+                  Draft campaign ID: <b>{campaignId}</b>
                 </p>
               ) : (
                 <p className="idLine">Not saved yet — click Save Draft to create it.</p>
               )}
+              {loadingCampaign && <p className="idLine">Loading campaign details...</p>}
             </div>
 
             <div className="actions">
@@ -815,29 +1029,29 @@ export default function NewCampaignPage() {
               </Link>
 
               {campaignId && (
-                <Link className="btn" href={`/campaigns/preview?id=${campaignId}`}>
+                <Link className="btn" href={previewHref}>
                   Preview
                 </Link>
               )}
 
               {campaignId && (
                 <button
+                  type="button"
                   className="btn btnDanger"
                   onClick={handleDeleteCampaign}
                   disabled={deleting || saving}
-                  type="button"
                 >
                   {deleting ? "Deleting…" : "Delete"}
                 </button>
               )}
 
               <button className="btn btnPrimary" onClick={handleSaveDraft} disabled={saving || deleting}>
-                {saving ? "Saving…" : "Save Draft"}
+                {saving ? "Saving…" : campaignId ? "Update Draft" : "Save Draft"}
               </button>
             </div>
           </div>
 
-          <div className="sectionTitle"></div>
+          <div className="sectionTitle">Campaign Targeting</div>
           <div className="grid" aria-label="Campaign targeting form">
             <div className="field">
               <label className="label" htmlFor="brand_id">
@@ -845,10 +1059,10 @@ export default function NewCampaignPage() {
               </label>
               <select
                 id="brand_id"
-                className="input"
+                className="select"
                 value={brandId}
                 onChange={(e) => setBrandId(e.target.value)}
-                disabled={builderLoading || loadingCampaign}
+                disabled={builderLoading}
               >
                 {brands.length === 0 ? (
                   <option value="">No brands found</option>
@@ -868,10 +1082,10 @@ export default function NewCampaignPage() {
               </label>
               <select
                 id="segment_id"
-                className="input"
+                className="select"
                 value={segmentId}
                 onChange={(e) => setSegmentId(e.target.value)}
-                disabled={!brandId || loadingCampaign}
+                disabled={!brandId}
               >
                 <option value="">No segment selected</option>
                 {segments.map((segment) => (
@@ -888,10 +1102,9 @@ export default function NewCampaignPage() {
               </label>
               <select
                 id="template_id"
-                className="input"
+                className="select"
                 value={templateId}
                 onChange={(e) => setTemplateId(e.target.value)}
-                disabled={loadingCampaign}
               >
                 <option value="">No template selected</option>
                 {templates.map((template) => (
@@ -903,6 +1116,107 @@ export default function NewCampaignPage() {
             </div>
           </div>
 
+          <div className="sectionTitle">Campaign Recipients</div>
+          <div className="grid" aria-label="Campaign recipients form">
+            <div className="field fieldFull">
+              <label className="label" htmlFor="contact_select">
+                Add Contact
+              </label>
+              <div className="contactRow">
+                <select
+                  id="contact_select"
+                  className="select"
+                  value={selectedContactEmail}
+                  onChange={(e) => setSelectedContactEmail(e.target.value)}
+                  disabled={contactsLoading}
+                >
+                  <option value="">
+                    {contactsLoading
+                      ? "Loading contacts..."
+                      : contacts.length
+                      ? "Select contact email"
+                      : "No contacts found"}
+                  </option>
+                  {contacts.map((contact) => (
+                    <option key={contact.id} value={contact.email || ""}>
+                      {(contact.name || "Unnamed Contact") +
+                        " — " +
+                        (contact.email || "") +
+                        (contact.company ? ` — ${contact.company}` : "")}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={addSelectedContact}
+                  disabled={!selectedContactEmail}
+                >
+                  Add
+                </button>
+
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={addAllContacts}
+                  disabled={contactsLoading || contacts.length === 0}
+                >
+                  Add All
+                </button>
+              </div>
+            </div>
+
+            <div className="field fieldFull">
+              <label className="label" htmlFor="send_to">
+                Selected Recipients
+              </label>
+              <textarea
+                id="send_to"
+                className="textarea"
+                value={sendToInput}
+                onChange={(e) => setSendToInput(e.target.value)}
+                placeholder={"recipient@example.com\nsecond@example.com"}
+              />
+
+              <div className="recipientBox">
+                <div className="recipientHeader">
+                  <div className="recipientCount">
+                    {selectedContactEmails.length} recipient(s) selected for Campaign Preview
+                  </div>
+
+                  <button
+                    type="button"
+                    className="miniBtn miniBtnDanger"
+                    onClick={clearRecipients}
+                    disabled={selectedContactEmails.length === 0}
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                {selectedContactEmails.length === 0 ? (
+                  <div className="recipientItem">No recipients selected yet.</div>
+                ) : (
+                  <div className="recipientList">
+                    {selectedContactEmails.map((email) => (
+                      <div key={email} className="recipientItem">
+                        <span>{email}</span>
+                        <button
+                          type="button"
+                          className="miniBtn miniBtnDanger"
+                          onClick={() => setSendToInput((current) => removeRecipient(current, email))}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           {selectedTemplate && (
             <div className="builderPreview">
               <div className="label">Selected Template Preview</div>
@@ -911,7 +1225,7 @@ export default function NewCampaignPage() {
             </div>
           )}
 
-          <div className="sectionTitle"></div>
+          <div className="sectionTitle">Campaign Meta</div>
           <div className="grid" aria-label="Campaign meta form">
             <div className="field">
               <label className="label" htmlFor="name">
@@ -924,7 +1238,6 @@ export default function NewCampaignPage() {
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Example: Tipsy February Offer"
                 autoComplete="off"
-                disabled={loadingCampaign}
               />
             </div>
 
@@ -939,7 +1252,6 @@ export default function NewCampaignPage() {
                 onChange={(e) => setSubject(e.target.value)}
                 placeholder="Example: Limited-time offer — 20% off this week"
                 autoComplete="off"
-                disabled={loadingCampaign}
               />
             </div>
 
@@ -954,7 +1266,6 @@ export default function NewCampaignPage() {
                 onChange={(e) => setPreviewText(e.target.value)}
                 placeholder="Short supporting line that appears in inbox preview…"
                 autoComplete="off"
-                disabled={loadingCampaign}
               />
             </div>
 
@@ -968,7 +1279,6 @@ export default function NewCampaignPage() {
                 value={scheduleAt}
                 onChange={(e) => setScheduleAt(e.target.value)}
                 type="datetime-local"
-                disabled={loadingCampaign}
               />
             </div>
 
@@ -978,7 +1288,7 @@ export default function NewCampaignPage() {
             </div>
           </div>
 
-          <div className="sectionTitle"></div>
+          <div className="sectionTitle">Offer Content</div>
           <div className="grid" aria-label="Offer content form">
             <div className="field">
               <label className="label" htmlFor="featured_url">
@@ -992,7 +1302,6 @@ export default function NewCampaignPage() {
                 placeholder="https://your-offer-link.com"
                 autoComplete="off"
                 inputMode="url"
-                disabled={loadingCampaign}
               />
             </div>
 
@@ -1008,16 +1317,15 @@ export default function NewCampaignPage() {
                 placeholder="https://your-cdn.com/banner.png"
                 autoComplete="off"
                 inputMode="url"
-                disabled={loadingCampaign}
               />
             </div>
           </div>
 
-          <div className="sectionTitle"></div>
+          <div className="sectionTitle">CTA Block</div>
           <div className="grid" aria-label="CTA block form">
             <div className="field">
               <label className="label" htmlFor="cta_primary_text">
-                Primary CTA Text (required when publishing)
+                Primary CTA Text
               </label>
               <input
                 id="cta_primary_text"
@@ -1026,13 +1334,12 @@ export default function NewCampaignPage() {
                 onChange={(e) => setCtaPrimaryText(e.target.value)}
                 placeholder="Example: Claim Offer"
                 autoComplete="off"
-                disabled={loadingCampaign}
               />
             </div>
 
             <div className="field">
               <label className="label" htmlFor="cta_primary_url">
-                Primary CTA URL (required when publishing)
+                Primary CTA URL
               </label>
               <input
                 id="cta_primary_url"
@@ -1042,13 +1349,12 @@ export default function NewCampaignPage() {
                 placeholder="https://your-primary-cta-link.com"
                 autoComplete="off"
                 inputMode="url"
-                disabled={loadingCampaign}
               />
             </div>
 
             <div className="field">
               <label className="label" htmlFor="cta_secondary_text">
-                Secondary CTA Text (required when publishing)
+                Secondary CTA Text
               </label>
               <input
                 id="cta_secondary_text"
@@ -1057,13 +1363,12 @@ export default function NewCampaignPage() {
                 onChange={(e) => setCtaSecondaryText(e.target.value)}
                 placeholder="Example: Learn More"
                 autoComplete="off"
-                disabled={loadingCampaign}
               />
             </div>
 
             <div className="field">
               <label className="label" htmlFor="cta_secondary_url">
-                Secondary CTA URL (required when publishing)
+                Secondary CTA URL
               </label>
               <input
                 id="cta_secondary_url"
@@ -1073,16 +1378,15 @@ export default function NewCampaignPage() {
                 placeholder="https://your-secondary-cta-link.com"
                 autoComplete="off"
                 inputMode="url"
-                disabled={loadingCampaign}
               />
             </div>
           </div>
 
-          <div className="sectionTitle"></div>
+          <div className="sectionTitle">Extra Banners</div>
           <div className="grid" aria-label="Extra banners form">
             <div className="field">
               <label className="label" htmlFor="extra_banner_url_1">
-                Extra banner URL #1 (optional)
+                Extra banner URL #1
               </label>
               <input
                 id="extra_banner_url_1"
@@ -1092,13 +1396,12 @@ export default function NewCampaignPage() {
                 placeholder="https://your-cdn.com/extra-banner-1.png"
                 autoComplete="off"
                 inputMode="url"
-                disabled={loadingCampaign}
               />
             </div>
 
             <div className="field">
               <label className="label" htmlFor="extra_banner_url_2">
-                Extra banner URL #2 (optional)
+                Extra banner URL #2
               </label>
               <input
                 id="extra_banner_url_2"
@@ -1108,16 +1411,15 @@ export default function NewCampaignPage() {
                 placeholder="https://your-cdn.com/extra-banner-2.png"
                 autoComplete="off"
                 inputMode="url"
-                disabled={loadingCampaign}
               />
             </div>
           </div>
 
-          <div className="sectionTitle"></div>
+          <div className="sectionTitle">YouTube Preview</div>
           <div className="grid" aria-label="YouTube preview form">
             <div className="field">
               <label className="label" htmlFor="youtube_url">
-                YouTube URL (optional)
+                YouTube URL
               </label>
               <input
                 id="youtube_url"
@@ -1127,24 +1429,22 @@ export default function NewCampaignPage() {
                 placeholder="https://www.youtube.com/watch?v=..."
                 autoComplete="off"
                 inputMode="url"
-                disabled={loadingCampaign}
               />
             </div>
           </div>
 
-          <div className="sectionTitle"></div>
+          <div className="sectionTitle">Footer + Compliance</div>
           <div className="grid" aria-label="Footer and compliance form">
             <div className="field">
               <label className="label" htmlFor="footer_text">
-                Footer text (optional)
+                Campaign footer override (optional)
               </label>
               <textarea
                 id="footer_text"
                 className="textarea"
                 value={footerText}
                 onChange={(e) => setFooterText(e.target.value)}
-                placeholder="Brand footer / address / contact info..."
-                disabled={loadingCampaign}
+                placeholder="Leave empty to use the selected brand footer/signature automatically..."
               />
             </div>
 
@@ -1158,7 +1458,6 @@ export default function NewCampaignPage() {
                 value={complianceText}
                 onChange={(e) => setComplianceText(e.target.value)}
                 placeholder="Why they received this email, consent line, etc..."
-                disabled={loadingCampaign}
               />
             </div>
 
@@ -1171,16 +1470,16 @@ export default function NewCampaignPage() {
                 className="input"
                 value={unsubscribeUrl}
                 onChange={(e) => setUnsubscribeUrl(e.target.value)}
-                placeholder="https://corehq.io/unsubscribe?..."
+                placeholder="https://corehq.company/unsubscribe?..."
                 autoComplete="off"
                 inputMode="url"
-                disabled={loadingCampaign}
               />
             </div>
           </div>
 
           <div className="help">
-            Edit mode now supports full campaign control: update, preview, and permanent delete.
+            Contacts added here are saved into the Campaign Preview recipient list automatically. After saving the draft,
+            click Preview to save snapshots and send the campaign.
           </div>
         </div>
       </div>
