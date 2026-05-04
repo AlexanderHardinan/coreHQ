@@ -141,21 +141,21 @@ function buildBrandSignatureHtml(brand: BrandRow | null, campaignFooter: string)
   const footer = campaignFooter || brandFooter;
 
   return `<tr>
-    <td style="padding:18px;font-family:Arial,Helvetica,sans-serif;">
-      <div style="border-top:1px solid #1F2937;margin-top:6px;padding-top:16px;">
+    <td style="padding:20px 18px 18px 18px;font-family:Arial,Helvetica,sans-serif;">
+      <div style="border-top:1px solid #1F2937;margin-top:8px;padding-top:18px;">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
           <tr>
             ${
               logo
-                ? `<td width="76" valign="top" style="padding-right:14px;">
+                ? `<td width="82" valign="top" style="padding-right:14px;">
                     <img src="${escHtml(logo)}" alt="${escHtml(
                     fromName
-                  )}" width="62" style="width:62px;max-width:62px;height:auto;display:block;border-radius:10px;" />
+                  )}" width="68" style="width:68px;max-width:68px;height:auto;display:block;border-radius:12px;border:1px solid #1F2937;" />
                   </td>`
                 : ""
             }
             <td valign="top" style="border-left:4px solid ${escHtml(accent)};padding-left:12px;">
-              <div style="font-size:14px;line-height:1.4;color:#FFFFFF;font-weight:900;">
+              <div style="font-size:15px;line-height:1.4;color:#FFFFFF;font-weight:900;">
                 ${escHtml(fromName)}
               </div>
               <div style="margin-top:3px;font-size:12px;line-height:1.5;color:#D1D5DB;">
@@ -301,7 +301,7 @@ function buildEmailHtml(c: CampaignRow, brand: BrandRow | null, appOrigin: strin
                   <td style="padding:18px 18px 0 18px;font-family:Arial,Helvetica,sans-serif;">
                     <img src="${escHtml(brandLogo)}" alt="${escHtml(
                   brandName
-                )}" width="160" style="width:auto;max-width:160px;max-height:52px;height:auto;display:block;border:0;outline:none;text-decoration:none;" />
+                )}" width="160" style="width:auto;max-width:160px;max-height:56px;height:auto;display:block;border:0;outline:none;text-decoration:none;" />
                   </td>
                 </tr>`
               : ""
@@ -773,27 +773,38 @@ export default function CampaignPreviewPage() {
     }
 
     if (!campaign.brand_id) {
-      showToast("error", "Campaign brand_id is missing.");
+      showToast("error", "Campaign brand_id is missing. Edit this campaign and select the correct brand first.");
+      return;
+    }
+
+    if (!brand) {
+      showToast("error", "Brand settings were not loaded. Check campaign brand_id and Brand Settings.");
       return;
     }
 
     setSaving(true);
 
     try {
+      const freshHtml = buildEmailHtml(campaign, brand, window.location.origin);
+      const freshText = buildEmailText(campaign, brand);
+
       const payload = {
         campaign_id: campaign.id,
         brand_id: campaign.brand_id,
         subject: campaign.subject || null,
         preview_text: campaign.preview_text || null,
-        html_snapshot: html,
-        text_snapshot: text,
+        html_snapshot: freshHtml,
+        text_snapshot: freshText,
         created_at: new Date().toISOString(),
       };
 
       const { error } = await supabase.from("emails").insert(payload);
       if (error) throw new Error(error.message || "Failed to save snapshots.");
 
-      showToast("success", "Snapshots saved to emails.");
+      setHtml(freshHtml);
+      setText(freshText);
+
+      showToast("success", "Snapshots saved with latest brand signature.");
     } catch (e: any) {
       showToast("error", e?.message || "Save failed.");
     } finally {
@@ -1151,15 +1162,15 @@ export default function CampaignPreviewPage() {
         .toast{
           position: fixed;
           right: 16px;
-          top: 16px;
-          width: min(420px, calc(100vw - 32px));
+          bottom: 16px;
+          width: min(360px, calc(100vw - 32px));
           border-radius: 14px;
           border: 1px solid rgba(255,255,255,0.12);
-          background: rgba(10,10,10,0.72);
+          background: rgba(10,10,10,0.78);
           backdrop-filter: blur(14px);
           box-shadow: 0 20px 70px rgba(0,0,0,0.55);
           overflow:hidden;
-          transform: translateY(-10px);
+          transform: translateY(10px);
           opacity: 0;
           pointer-events:none;
           z-index: 9999;
@@ -1177,19 +1188,19 @@ export default function CampaignPreviewPage() {
 
         .toastBar{ height: 3px; background: var(--toastAccent); }
 
-        .toastBody{ display:flex; gap: 10px; padding: 12px; align-items:flex-start; }
+        .toastBody{ display:flex; gap: 10px; padding: 10px 12px; align-items:flex-start; }
 
         .toastDot{
           margin-top: 3px;
-          height: 10px;
-          width: 10px;
+          height: 9px;
+          width: 9px;
           border-radius: 999px;
           background: var(--toastAccent);
           box-shadow: 0 0 0 4px color-mix(in srgb, var(--toastAccent) 25%, transparent);
           flex: 0 0 auto;
         }
 
-        .toastText{ font-size: 13px; color: rgba(255,255,255,0.88); line-height: 1.45; }
+        .toastText{ font-size: 12px; color: rgba(255,255,255,0.88); line-height: 1.45; }
 
         @keyframes cardIn{
           from{ transform: translateY(14px) scale(0.98); opacity: 0; }
@@ -1202,13 +1213,13 @@ export default function CampaignPreviewPage() {
         }
 
         @keyframes toastIn{
-          from{ transform: translateY(-10px); opacity: 0; }
+          from{ transform: translateY(10px); opacity: 0; }
           to{ transform: translateY(0px); opacity: 1; }
         }
 
         @keyframes toastOut{
           from{ transform: translateY(0px); opacity: 1; }
-          to{ transform: translateY(-10px); opacity: 0; }
+          to{ transform: translateY(10px); opacity: 0; }
         }
 
         @media (max-width: 1180px){
@@ -1262,7 +1273,7 @@ export default function CampaignPreviewPage() {
                 className="btn btnPrimary"
                 onClick={saveSnapshots}
                 disabled={loading || saving || !campaign}
-                title="Inserts html_snapshot + text_snapshot into emails table"
+                title="Inserts latest html_snapshot + text_snapshot into emails table"
               >
                 {saving ? "Saving…" : "Save Snapshots"}
               </button>
@@ -1408,13 +1419,11 @@ export default function CampaignPreviewPage() {
 
               <div className="hint">
                 Notes:
-                <br />• Brand logo, accent color, signature, and footer are injected automatically from Brand Settings.
+                <br />• Brand logo, accent color, signature, and footer are injected directly from Brand Settings.
+                <br />• Save Snapshots now rebuilds from the latest loaded brand settings before inserting.
                 <br />• Campaign footer overrides brand footer only when campaign footer has content.
-                <br />• Open tracking pixel is inserted into saved HTML snapshots.
                 <br />• Select a contact and click <b>Add</b> to place the email into Send To.
-                <br />• Send Now queues recipients and immediately runs the worker.
-                <br />• Send Campaign only queues recipients; go to <b>/campaigns</b> and click <b>Run Worker</b>.
-                <br />• If sending says “No email snapshots found…”, click <b>Save Snapshots</b> first.
+                <br />• After changing Brand Settings, open Preview again and click <b>Save Snapshots</b>.
               </div>
             </>
           )}
