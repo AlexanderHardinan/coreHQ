@@ -7,37 +7,6 @@ import { supabase } from "../../../../src/lib/supabaseClient";
 
 type ToastKind = "success" | "error" | "info";
 
-function InlineToast({
-  open,
-  kind,
-  message,
-}: {
-  open: boolean;
-  kind: ToastKind;
-  message: string;
-}) {
-  const accent = useMemo(() => {
-    if (kind === "success") return "rgba(34,197,94,1)";
-    if (kind === "error") return "rgba(239,68,68,1)";
-    return "rgba(59,130,246,1)";
-  }, [kind]);
-
-  return (
-    <div
-      className={`toast ${open ? "toastOpen" : "toastClose"}`}
-      style={{ ["--toastAccent" as any]: accent }}
-      role="status"
-      aria-live="polite"
-    >
-      <div className="toastBar" />
-      <div className="toastBody">
-        <div className="toastDot" />
-        <div className="toastText">{message}</div>
-      </div>
-    </div>
-  );
-}
-
 type ContactRow = {
   id: string;
   name: string | null;
@@ -94,7 +63,7 @@ function escHtml(s: string) {
     .replaceAll("'", "&#039;");
 }
 
-function normalizeUrlOrEmpty(v: string | null) {
+function normalizeUrlOrEmpty(v: string | null | undefined) {
   return (v || "").trim();
 }
 
@@ -127,12 +96,43 @@ function buildFromValue(brand: BrandRow | null, fallback: string) {
   return fallback.trim() || "CoreHQ <hello@corehq.company>";
 }
 
+function InlineToast({
+  open,
+  kind,
+  message,
+}: {
+  open: boolean;
+  kind: ToastKind;
+  message: string;
+}) {
+  const accent = useMemo(() => {
+    if (kind === "success") return "rgba(34,197,94,1)";
+    if (kind === "error") return "rgba(239,68,68,1)";
+    return "rgba(59,130,246,1)";
+  }, [kind]);
+
+  return (
+    <div
+      className={`toast ${open ? "toastOpen" : "toastClose"}`}
+      style={{ ["--toastAccent" as any]: accent }}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="toastBar" />
+      <div className="toastBody">
+        <div className="toastDot" />
+        <div className="toastText">{message}</div>
+      </div>
+    </div>
+  );
+}
+
 function buildBrandSignatureHtml(brand: BrandRow | null, campaignFooter: string) {
-  const logo = normalizeUrlOrEmpty(brand?.logo_url || "");
+  const logo = normalizeUrlOrEmpty(brand?.logo_url);
   const fromName = safeText(brand?.from_name) || getBrandName(brand) || "CoreHQ";
   const title = safeText(brand?.signature_title) || "Outreach Team";
   const company = safeText(brand?.signature_company) || getBrandName(brand);
-  const website = normalizeUrlOrEmpty(brand?.signature_website || "");
+  const website = normalizeUrlOrEmpty(brand?.signature_website);
   const phone = safeText(brand?.signature_phone);
   const address = safeText(brand?.signature_address);
   const brandFooter = safeText(brand?.footer_text);
@@ -212,7 +212,7 @@ function buildBrandSignatureText(brand: BrandRow | null, campaignFooter: string)
   const fromName = safeText(brand?.from_name) || getBrandName(brand) || "CoreHQ";
   const title = safeText(brand?.signature_title) || "Outreach Team";
   const company = safeText(brand?.signature_company) || getBrandName(brand);
-  const website = normalizeUrlOrEmpty(brand?.signature_website || "");
+  const website = normalizeUrlOrEmpty(brand?.signature_website);
   const phone = safeText(brand?.signature_phone);
   const address = safeText(brand?.signature_address);
   const brandFooter = safeText(brand?.footer_text);
@@ -243,7 +243,7 @@ function buildBrandSignatureText(brand: BrandRow | null, campaignFooter: string)
 
 function buildEmailHtml(c: CampaignRow, brand: BrandRow | null, appOrigin: string) {
   const brandName = getBrandName(brand);
-  const brandLogo = normalizeUrlOrEmpty(brand?.logo_url || "");
+  const brandLogo = normalizeUrlOrEmpty(brand?.logo_url);
   const accent = safeText(brand?.accent_color) || "#3B82F6";
 
   const subject = safeText(c.subject) || "Campaign";
@@ -276,7 +276,7 @@ function buildEmailHtml(c: CampaignRow, brand: BrandRow | null, appOrigin: strin
 
   const buttonStyle =
     "display:inline-block;padding:12px 16px;border-radius:10px;text-decoration:none;font-weight:700;font-size:14px;";
-  const btnPrimary = buttonStyle + `background:${accent};color:#ffffff;`;
+  const btnPrimary = buttonStyle + `background:${escHtml(accent)};color:#ffffff;`;
   const btnSecondary =
     buttonStyle + "background:#111827;color:#ffffff;border:1px solid #374151;";
 
