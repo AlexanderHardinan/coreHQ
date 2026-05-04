@@ -11,13 +11,13 @@ function pickEnv(...keys: string[]) {
 }
 
 export async function getSenderByBrand(brandId?: string | null) {
-  const DEFAULT_FROM = "CoreHQ <onboarding@resend.dev>";
+  const DEFAULT_FROM = "CoreHQ <hello@corehq.company>";
 
   try {
     if (!brandId) {
       return {
         from: DEFAULT_FROM,
-        replyTo: "",
+        replyTo: "support@corehq.company",
       };
     }
 
@@ -27,7 +27,7 @@ export async function getSenderByBrand(brandId?: string | null) {
     if (!SUPABASE_URL || !SERVICE_KEY) {
       return {
         from: DEFAULT_FROM,
-        replyTo: "",
+        replyTo: "support@corehq.company",
       };
     }
 
@@ -44,32 +44,28 @@ export async function getSenderByBrand(brandId?: string | null) {
     if (error || !data) {
       return {
         from: DEFAULT_FROM,
-        replyTo: "",
+        replyTo: "support@corehq.company",
       };
     }
 
     const fromName = (data.from_name || data.name || "CoreHQ").trim();
     const senderEmail = (data.sender_email || "").trim();
-    const replyTo = (data.reply_to_email || "").trim();
+    const replyTo = (data.reply_to_email || "support@corehq.company").trim();
 
-    // ⚠️ Safety: only allow resend.dev OR verified domains
     const isSafe =
-      senderEmail.endsWith("@resend.dev") ||
-      senderEmail.endsWith("@yourdomain.com"); // ← change when you verify domain
+      senderEmail.endsWith("@corehq.company") ||
+      senderEmail.endsWith("@resend.dev");
 
-    const finalFrom =
-      senderEmail && isSafe
-        ? `${fromName} <${senderEmail}>`
-        : DEFAULT_FROM;
+    const finalFrom = senderEmail && isSafe ? `${fromName} <${senderEmail}>` : DEFAULT_FROM;
 
     return {
       from: finalFrom,
-      replyTo: replyTo || "",
+      replyTo,
     };
   } catch {
     return {
       from: DEFAULT_FROM,
-      replyTo: "",
+      replyTo: "support@corehq.company",
     };
   }
 }
