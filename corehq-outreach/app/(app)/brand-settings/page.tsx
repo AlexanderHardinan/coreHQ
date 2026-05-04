@@ -132,7 +132,7 @@ export default function BrandSettingsPage() {
       return;
     }
 
-    const list = (data || []) as Brand[];
+    const list = ((data || []) as unknown) as Brand[];
     setBrands(list);
 
     if (!brandId && list.length > 0) {
