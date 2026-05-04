@@ -12,6 +12,12 @@ type Brand = {
   reply_to_email: string | null;
   footer_text: string | null;
   accent_color: string | null;
+  signature_title: string | null;
+  signature_company: string | null;
+  signature_website: string | null;
+  signature_phone: string | null;
+  signature_address: string | null;
+  signature_disclaimer: string | null;
 };
 
 type ToastKind = "success" | "error" | "info";
@@ -65,6 +71,13 @@ export default function BrandSettingsPage() {
   const [footerText, setFooterText] = useState("");
   const [accentColor, setAccentColor] = useState("#3b82f6");
 
+  const [signatureTitle, setSignatureTitle] = useState("");
+  const [signatureCompany, setSignatureCompany] = useState("");
+  const [signatureWebsite, setSignatureWebsite] = useState("");
+  const [signaturePhone, setSignaturePhone] = useState("");
+  const [signatureAddress, setSignatureAddress] = useState("");
+  const [signatureDisclaimer, setSignatureDisclaimer] = useState("");
+
   const [toastOpen, setToastOpen] = useState(false);
   const [toastKind, setToastKind] = useState<ToastKind>("info");
   const [toastMsg, setToastMsg] = useState("");
@@ -92,7 +105,24 @@ export default function BrandSettingsPage() {
 
     const { data, error } = await supabase
       .from("brands")
-      .select("id,name,slug,from_name,sender_email,reply_to_email,footer_text,accent_color")
+      .select(
+        [
+          "id",
+          "name",
+          "slug",
+          "from_name",
+          "sender_email",
+          "reply_to_email",
+          "footer_text",
+          "accent_color",
+          "signature_title",
+          "signature_company",
+          "signature_website",
+          "signature_phone",
+          "signature_address",
+          "signature_disclaimer",
+        ].join(",")
+      )
       .order("name", { ascending: true });
 
     if (error) {
@@ -122,10 +152,17 @@ export default function BrandSettingsPage() {
 
     setName(selectedBrand.name || "");
     setFromName(selectedBrand.from_name || selectedBrand.name || "");
-    setSenderEmail(selectedBrand.sender_email || "onboarding@resend.dev");
-    setReplyToEmail(selectedBrand.reply_to_email || "");
+    setSenderEmail(selectedBrand.sender_email || "hello@corehq.company");
+    setReplyToEmail(selectedBrand.reply_to_email || "support@corehq.company");
     setFooterText(selectedBrand.footer_text || "");
     setAccentColor(selectedBrand.accent_color || "#3b82f6");
+
+    setSignatureTitle(selectedBrand.signature_title || "");
+    setSignatureCompany(selectedBrand.signature_company || selectedBrand.name || "");
+    setSignatureWebsite(selectedBrand.signature_website || "https://corehq.company");
+    setSignaturePhone(selectedBrand.signature_phone || "");
+    setSignatureAddress(selectedBrand.signature_address || "");
+    setSignatureDisclaimer(selectedBrand.signature_disclaimer || "");
   }, [selectedBrand]);
 
   const saveBrand = async () => {
@@ -158,6 +195,12 @@ export default function BrandSettingsPage() {
       reply_to_email: replyToEmail.trim() || null,
       footer_text: footerText.trim() || null,
       accent_color: accentColor.trim() || "#3b82f6",
+      signature_title: signatureTitle.trim() || null,
+      signature_company: signatureCompany.trim() || null,
+      signature_website: signatureWebsite.trim() || null,
+      signature_phone: signaturePhone.trim() || null,
+      signature_address: signatureAddress.trim() || null,
+      signature_disclaimer: signatureDisclaimer.trim() || null,
     };
 
     const { error } = await supabase.from("brands").update(nextBrand).eq("id", brandId);
@@ -176,7 +219,9 @@ export default function BrandSettingsPage() {
     showToast("success", "Brand settings saved.");
   };
 
-  const senderPreview = `${fromName || name || "Brand"} <${senderEmail || "onboarding@resend.dev"}>`;
+  const senderPreview = `${fromName || name || "Brand"} <${
+    senderEmail || "hello@corehq.company"
+  }>`;
 
   return (
     <div className="page">
@@ -236,6 +281,15 @@ export default function BrandSettingsPage() {
           line-height: 1.6;
         }
 
+        .sectionTitle{
+          margin:22px 0 0 0;
+          font-size:12px;
+          font-weight:900;
+          color:rgba(255,255,255,0.86);
+          text-transform:uppercase;
+          letter-spacing:0.28px;
+        }
+
         .grid{
           margin-top:18px;
           display:grid;
@@ -292,6 +346,26 @@ export default function BrandSettingsPage() {
           font-weight:900;
           color:white;
           background:${accentColor || "#3b82f6"};
+        }
+
+        .previewSignature{
+          margin-top:14px;
+          border-radius:14px;
+          padding:14px;
+          background:rgba(255,255,255,0.05);
+          border:1px solid rgba(255,255,255,0.08);
+        }
+
+        .previewName{
+          font-size:14px;
+          font-weight:950;
+          color:white;
+        }
+
+        .previewRole{
+          margin-top:4px;
+          font-size:12px;
+          color:rgba(255,255,255,0.70);
         }
 
         .previewLine{
@@ -409,7 +483,7 @@ export default function BrandSettingsPage() {
         <div className="content">
           <h1 className="title">Brand Settings</h1>
           <p className="sub">
-            Manage brand sender identity, reply-to, footer text, and accent color.
+            Manage brand sender identity, reply-to, dynamic commercial signature, footer text, and accent color.
           </p>
 
           {loading ? (
@@ -458,10 +532,79 @@ export default function BrandSettingsPage() {
                   <div className="label">Accent Color</div>
                   <input className="input" type="color" value={accentColor} onChange={(e) => setAccentColor(e.target.value)} />
                 </div>
+              </div>
+
+              <div className="sectionTitle">Commercial Signature</div>
+
+              <div className="grid">
+                <div className="field">
+                  <div className="label">Signature Title / Role</div>
+                  <input
+                    className="input"
+                    value={signatureTitle}
+                    onChange={(e) => setSignatureTitle(e.target.value)}
+                    placeholder="Example: Outreach Team"
+                  />
+                </div>
+
+                <div className="field">
+                  <div className="label">Signature Company</div>
+                  <input
+                    className="input"
+                    value={signatureCompany}
+                    onChange={(e) => setSignatureCompany(e.target.value)}
+                    placeholder="Example: CoreHQ"
+                  />
+                </div>
+
+                <div className="field">
+                  <div className="label">Website</div>
+                  <input
+                    className="input"
+                    value={signatureWebsite}
+                    onChange={(e) => setSignatureWebsite(e.target.value)}
+                    placeholder="https://corehq.company"
+                  />
+                </div>
+
+                <div className="field">
+                  <div className="label">Phone</div>
+                  <input
+                    className="input"
+                    value={signaturePhone}
+                    onChange={(e) => setSignaturePhone(e.target.value)}
+                    placeholder="+63..."
+                  />
+                </div>
+
+                <div className="field fieldFull">
+                  <div className="label">Address</div>
+                  <input
+                    className="input"
+                    value={signatureAddress}
+                    onChange={(e) => setSignatureAddress(e.target.value)}
+                    placeholder="Business address or location"
+                  />
+                </div>
+
+                <div className="field fieldFull">
+                  <div className="label">Signature Disclaimer</div>
+                  <textarea
+                    className="textarea"
+                    value={signatureDisclaimer}
+                    onChange={(e) => setSignatureDisclaimer(e.target.value)}
+                    placeholder="Commercial disclaimer, confidentiality note, or brand note..."
+                  />
+                </div>
 
                 <div className="field fieldFull">
                   <div className="label">Footer Text</div>
-                  <textarea className="textarea" value={footerText} onChange={(e) => setFooterText(e.target.value)} />
+                  <textarea
+                    className="textarea"
+                    value={footerText}
+                    onChange={(e) => setFooterText(e.target.value)}
+                    placeholder="Optional brand footer text..."
+                  />
                 </div>
               </div>
 
@@ -469,7 +612,19 @@ export default function BrandSettingsPage() {
                 <div className="previewBadge">{fromName || name || "Brand"}</div>
                 <div className="previewLine">From: {senderPreview}</div>
                 <div className="previewLine">Reply-To: {replyToEmail || "Not set"}</div>
-                <div className="previewLine">{footerText || "No footer text yet."}</div>
+
+                <div className="previewSignature">
+                  <div className="previewName">{fromName || name || "CoreHQ"}</div>
+                  <div className="previewRole">
+                    {signatureTitle || "Outreach Team"}
+                    {signatureCompany ? ` · ${signatureCompany}` : ""}
+                  </div>
+                  {signatureWebsite && <div className="previewLine">{signatureWebsite}</div>}
+                  {signaturePhone && <div className="previewLine">{signaturePhone}</div>}
+                  {signatureAddress && <div className="previewLine">{signatureAddress}</div>}
+                  {footerText && <div className="previewLine">{footerText}</div>}
+                  {signatureDisclaimer && <div className="previewLine">{signatureDisclaimer}</div>}
+                </div>
 
                 {senderEmail.includes("onboarding@resend.dev") && (
                   <div className="warning">
