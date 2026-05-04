@@ -44,6 +44,22 @@ type ContactRow = {
   email: string | null;
 };
 
+type BrandRow = {
+  id: string;
+  name: string | null;
+  from_name: string | null;
+  sender_email: string | null;
+  reply_to_email: string | null;
+  footer_text: string | null;
+  accent_color: string | null;
+  signature_title: string | null;
+  signature_company: string | null;
+  signature_website: string | null;
+  signature_phone: string | null;
+  signature_address: string | null;
+  signature_disclaimer: string | null;
+};
+
 type CampaignRow = {
   id: string;
   brand_id: string | null;
@@ -103,7 +119,117 @@ function tryGetYouTubeId(url: string) {
   return "";
 }
 
-function buildEmailHtml(c: CampaignRow, brandName: string, appOrigin: string) {
+function getBrandName(brand: BrandRow | null) {
+  return safeText(brand?.name) || "CoreHQ Brand";
+}
+
+function buildBrandSignatureHtml(brand: BrandRow | null, campaignFooter: string) {
+  const fromName = safeText(brand?.from_name) || getBrandName(brand) || "CoreHQ";
+  const title = safeText(brand?.signature_title) || "Outreach Team";
+  const company = safeText(brand?.signature_company) || getBrandName(brand);
+  const website = normalizeUrlOrEmpty(brand?.signature_website || "");
+  const phone = safeText(brand?.signature_phone);
+  const address = safeText(brand?.signature_address);
+  const brandFooter = safeText(brand?.footer_text);
+  const disclaimer = safeText(brand?.signature_disclaimer);
+  const accent = safeText(brand?.accent_color) || "#3B82F6";
+
+  const footer = campaignFooter || brandFooter;
+
+  return `<tr>
+    <td style="padding:18px;font-family:Arial,Helvetica,sans-serif;">
+      <div style="border-top:1px solid #1F2937;margin-top:6px;padding-top:16px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+          <tr>
+            <td style="border-left:4px solid ${escHtml(accent)};padding-left:12px;">
+              <div style="font-size:14px;line-height:1.4;color:#FFFFFF;font-weight:900;">
+                ${escHtml(fromName)}
+              </div>
+              <div style="margin-top:3px;font-size:12px;line-height:1.5;color:#D1D5DB;">
+                ${escHtml(title)}${company ? ` · ${escHtml(company)}` : ""}
+              </div>
+              ${
+                website
+                  ? `<div style="margin-top:8px;font-size:12px;line-height:1.6;">
+                      <a href="${escHtml(website)}" style="color:#60A5FA;text-decoration:none;font-weight:800;">${escHtml(
+                      website
+                    )}</a>
+                    </div>`
+                  : ""
+              }
+              ${
+                phone
+                  ? `<div style="margin-top:4px;font-size:12px;line-height:1.6;color:#D1D5DB;">${escHtml(
+                      phone
+                    )}</div>`
+                  : ""
+              }
+              ${
+                address
+                  ? `<div style="margin-top:4px;font-size:12px;line-height:1.6;color:#9CA3AF;">${escHtml(
+                      address
+                    )}</div>`
+                  : ""
+              }
+            </td>
+          </tr>
+        </table>
+
+        ${
+          footer
+            ? `<div style="margin-top:14px;font-size:12px;line-height:1.6;color:#D1D5DB;white-space:pre-wrap;">${escHtml(
+                footer
+              )}</div>`
+            : ""
+        }
+
+        ${
+          disclaimer
+            ? `<div style="margin-top:10px;font-size:11px;line-height:1.6;color:#9CA3AF;white-space:pre-wrap;">${escHtml(
+                disclaimer
+              )}</div>`
+            : ""
+        }
+      </div>
+    </td>
+  </tr>`;
+}
+
+function buildBrandSignatureText(brand: BrandRow | null, campaignFooter: string) {
+  const fromName = safeText(brand?.from_name) || getBrandName(brand) || "CoreHQ";
+  const title = safeText(brand?.signature_title) || "Outreach Team";
+  const company = safeText(brand?.signature_company) || getBrandName(brand);
+  const website = normalizeUrlOrEmpty(brand?.signature_website || "");
+  const phone = safeText(brand?.signature_phone);
+  const address = safeText(brand?.signature_address);
+  const brandFooter = safeText(brand?.footer_text);
+  const disclaimer = safeText(brand?.signature_disclaimer);
+  const footer = campaignFooter || brandFooter;
+
+  const lines: string[] = [];
+
+  lines.push("");
+  lines.push("--");
+  lines.push(fromName);
+  lines.push(company ? `${title} · ${company}` : title);
+
+  if (website) lines.push(website);
+  if (phone) lines.push(phone);
+  if (address) lines.push(address);
+  if (footer) {
+    lines.push("");
+    lines.push(footer);
+  }
+  if (disclaimer) {
+    lines.push("");
+    lines.push(disclaimer);
+  }
+
+  return lines.join("\n");
+}
+
+function buildEmailHtml(c: CampaignRow, brand: BrandRow | null, appOrigin: string) {
+  const brandName = getBrandName(brand);
   const subject = safeText(c.subject) || "Campaign";
   const preview = safeText(c.preview_text);
   const featuredUrl = normalizeUrlOrEmpty(c.featured_url);
@@ -121,7 +247,7 @@ function buildEmailHtml(c: CampaignRow, brandName: string, appOrigin: string) {
   const ytId = tryGetYouTubeId(ytUrl);
   const ytThumb = ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : "";
 
-  const footer = safeText(c.footer_text);
+  const campaignFooter = safeText(c.footer_text);
   const compliance = safeText(c.compliance_text);
   const unsub = normalizeUrlOrEmpty(c.unsubscribe_url);
 
@@ -185,8 +311,8 @@ function buildEmailHtml(c: CampaignRow, brandName: string, appOrigin: string) {
            <div style="font-size:14px;line-height:1.6;">
              Featured link:
              <a href="${escHtml(featuredUrl)}" style="color:#60A5FA;text-decoration:none;font-weight:700;">${escHtml(
-        featuredUrl
-      )}</a>
+               featuredUrl
+             )}</a>
            </div>
          </td>
        </tr>`
@@ -241,35 +367,28 @@ function buildEmailHtml(c: CampaignRow, brandName: string, appOrigin: string) {
          </tr>`
       : "";
 
-  const footerBlock =
-    footer || compliance || unsub
+  const signatureBlock = buildBrandSignatureHtml(brand, campaignFooter);
+
+  const complianceBlock =
+    compliance || unsub
       ? `<tr>
-         <td style="padding:18px;font-family:Arial,Helvetica,sans-serif;">
-           <div style="border-top:1px solid #1F2937;margin-top:6px;padding-top:14px;">
-             ${
-               footer
-                 ? `<div style="font-size:12px;line-height:1.6;color:#D1D5DB;white-space:pre-wrap;">${escHtml(
-                     footer
-                   )}</div>`
-                 : ""
-             }
-             ${
-               compliance
-                 ? `<div style="margin-top:10px;font-size:12px;line-height:1.6;color:#9CA3AF;white-space:pre-wrap;">${escHtml(
-                     compliance
-                   )}</div>`
-                 : ""
-             }
-             ${
-               unsub
-                 ? `<div style="margin-top:12px;font-size:12px;line-height:1.6;color:#9CA3AF;">
-                      <a href="${escHtml(
-                        unsub
-                      )}" style="color:#60A5FA;text-decoration:none;font-weight:800;">Unsubscribe</a>
-                    </div>`
-                 : ""
-             }
-           </div>
+         <td style="padding:0 18px 18px 18px;font-family:Arial,Helvetica,sans-serif;">
+           ${
+             compliance
+               ? `<div style="font-size:11px;line-height:1.6;color:#9CA3AF;white-space:pre-wrap;">${escHtml(
+                   compliance
+                 )}</div>`
+               : ""
+           }
+           ${
+             unsub
+               ? `<div style="margin-top:12px;font-size:12px;line-height:1.6;color:#9CA3AF;">
+                    <a href="${escHtml(
+                      unsub
+                    )}" style="color:#60A5FA;text-decoration:none;font-weight:800;">Unsubscribe</a>
+                  </div>`
+               : ""
+           }
          </td>
        </tr>`
       : "";
@@ -277,7 +396,7 @@ function buildEmailHtml(c: CampaignRow, brandName: string, appOrigin: string) {
   const wrapEnd = `
           <tr>
             <td style="padding:14px 18px 18px 18px;font-family:Arial,Helvetica,sans-serif;color:#6B7280;font-size:11px;line-height:1.6;">
-              Sent via CoreHQ Company •
+              Sent via CoreHQ Company
             </td>
           </tr>
         </table>
@@ -295,13 +414,15 @@ function buildEmailHtml(c: CampaignRow, brandName: string, appOrigin: string) {
     ctaBlock +
     extraBlock +
     youtubeBlock +
-    footerBlock +
+    signatureBlock +
+    complianceBlock +
     wrapEnd
   );
 }
 
-function buildEmailText(c: CampaignRow, brandName: string) {
+function buildEmailText(c: CampaignRow, brand: BrandRow | null) {
   const lines: string[] = [];
+  const brandName = getBrandName(brand);
   const subject = safeText(c.subject) || "Campaign";
   const preview = safeText(c.preview_text);
 
@@ -346,15 +467,11 @@ function buildEmailText(c: CampaignRow, brandName: string) {
     lines.push(`Video: ${ytUrl}`);
   }
 
-  const footer = safeText(c.footer_text);
+  lines.push(buildBrandSignatureText(brand, safeText(c.footer_text)));
+
   const compliance = safeText(c.compliance_text);
   const unsub = normalizeUrlOrEmpty(c.unsubscribe_url);
 
-  if (footer) {
-    lines.push("");
-    lines.push("Footer:");
-    lines.push(footer);
-  }
   if (compliance) {
     lines.push("");
     lines.push("Compliance:");
@@ -396,6 +513,15 @@ function appendRecipient(current: string, email: string) {
   return current.trim() ? `${current.trim()}\n${clean}` : clean;
 }
 
+function buildFromValue(brand: BrandRow | null, fallback: string) {
+  const fromName = safeText(brand?.from_name) || getBrandName(brand);
+  const senderEmail = safeText(brand?.sender_email);
+
+  if (fromName && senderEmail) return `${fromName} <${senderEmail}>`;
+
+  return fallback.trim() || "CoreHQ <hello@corehq.company>";
+}
+
 export default function CampaignPreviewPage() {
   const params = useSearchParams();
   const campaignId = (params.get("id") || "").trim();
@@ -403,6 +529,7 @@ export default function CampaignPreviewPage() {
   const [loading, setLoading] = useState(true);
 
   const [campaign, setCampaign] = useState<CampaignRow | null>(null);
+  const [brand, setBrand] = useState<BrandRow | null>(null);
   const [brandName, setBrandName] = useState<string>("(brand)");
 
   const [html, setHtml] = useState<string>("");
@@ -481,7 +608,7 @@ export default function CampaignPreviewPage() {
         .order("created_at", { ascending: false });
 
       if (!error && data) {
-        setContacts((data as ContactRow[]).filter((contact) => !!contact.email));
+        setContacts(((data as unknown) as ContactRow[]).filter((contact) => !!contact.email));
       }
     };
 
@@ -528,30 +655,56 @@ export default function CampaignPreviewPage() {
 
         if (error) throw new Error(error.message || "Failed to load campaign.");
 
-        const row = (data as unknown as CampaignRow) || ({} as CampaignRow);
+        const row = ((data as unknown) || ({} as CampaignRow)) as CampaignRow;
         if (!row?.id) throw new Error("Campaign row missing id.");
 
-        let brandLabel = "CoreHQ Brand";
+        let loadedBrand: BrandRow | null = null;
+
         if (row.brand_id) {
           const { data: b, error: bErr } = await supabase
             .from("brands")
-            .select("name")
+            .select(
+              [
+                "id",
+                "name",
+                "from_name",
+                "sender_email",
+                "reply_to_email",
+                "footer_text",
+                "accent_color",
+                "signature_title",
+                "signature_company",
+                "signature_website",
+                "signature_phone",
+                "signature_address",
+                "signature_disclaimer",
+              ].join(",")
+            )
             .eq("id", row.brand_id)
             .maybeSingle();
 
-          if (!bErr && b?.name) brandLabel = String(b.name);
+          if (!bErr && b) {
+            loadedBrand = (b as unknown) as BrandRow;
+          }
         }
 
+        const nextBrandName = getBrandName(loadedBrand);
         const appOrigin = window.location.origin;
-        const emailHtml = buildEmailHtml(row, brandLabel, appOrigin);
-        const emailText = buildEmailText(row, brandLabel);
+        const emailHtml = buildEmailHtml(row, loadedBrand, appOrigin);
+        const emailText = buildEmailText(row, loadedBrand);
 
         if (!mounted) return;
 
         setCampaign(row);
-        setBrandName(brandLabel);
+        setBrand(loadedBrand);
+        setBrandName(nextBrandName);
         setHtml(emailHtml);
         setText(emailText);
+
+        if (loadedBrand) {
+          setSendFrom(buildFromValue(loadedBrand, "CoreHQ <hello@corehq.company>"));
+          setSendReplyTo(safeText(loadedBrand.reply_to_email) || "support@corehq.company");
+        }
       } catch (e: any) {
         if (!mounted) return;
         showToast("error", e?.message || "Load failed.");
@@ -632,8 +785,8 @@ export default function CampaignPreviewPage() {
       return;
     }
 
-    const from = (sendFrom || "").trim() || "CoreHQ <hello@corehq.company>";
-    const replyTo = (sendReplyTo || "").trim();
+    const from = buildFromValue(brand, sendFrom);
+    const replyTo = safeText(brand?.reply_to_email) || (sendReplyTo || "").trim();
 
     setSending(true);
     try {
@@ -677,8 +830,8 @@ export default function CampaignPreviewPage() {
       return;
     }
 
-    const from = (sendFrom || "").trim() || "CoreHQ <hello@corehq.company>";
-    const replyTo = (sendReplyTo || "").trim();
+    const from = buildFromValue(brand, sendFrom);
+    const replyTo = safeText(brand?.reply_to_email) || (sendReplyTo || "").trim();
 
     setSendingNow(true);
     try {
@@ -1056,7 +1209,7 @@ export default function CampaignPreviewPage() {
 
           <div className="top">
             <div>
-              <h1 className="title">Campaign Preview </h1>
+              <h1 className="title">Campaign Preview</h1>
               <p className="meta">
                 {campaignId ? (
                   <>
@@ -1112,7 +1265,7 @@ export default function CampaignPreviewPage() {
                 </div>
 
                 <div className="panel">
-                  <p className="panelTitle"></p>
+                  <p className="panelTitle">Send Campaign</p>
 
                   <div className="field">
                     <label className="label" htmlFor="contact_select">
@@ -1228,6 +1381,8 @@ export default function CampaignPreviewPage() {
 
               <div className="hint">
                 Notes:
+                <br />• Dynamic brand signature and footer are injected automatically from Brand Settings.
+                <br />• Campaign footer overrides brand footer only when campaign footer has content.
                 <br />• Open tracking pixel is inserted into saved HTML snapshots.
                 <br />• Select a contact and click <b>Add</b> to place the email into Send To.
                 <br />• Send Now queues recipients and immediately runs the worker.
