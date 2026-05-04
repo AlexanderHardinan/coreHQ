@@ -431,18 +431,18 @@ export default function BrandSettingsPage() {
         .toast{
           position: fixed;
           right: 16px;
-          top: 16px;
-          width: min(420px, calc(100vw - 32px));
+          bottom: 16px;
+          width: min(360px, calc(100vw - 32px));
           border-radius: 14px;
           border: 1px solid rgba(255,255,255,0.12);
-          background: rgba(10,10,10,0.72);
+          background: rgba(10,10,10,0.86);
           backdrop-filter: blur(14px);
-          box-shadow: 0 20px 70px rgba(0,0,0,0.55);
+          box-shadow: 0 20px 70px rgba(0,0,0,0.65);
           overflow:hidden;
           transform: translateY(-10px);
           opacity: 0;
           pointer-events:none;
-          z-index: 9999;
+          z-index: 2147483647;
         }
 
         .toastOpen{
