@@ -17,6 +17,7 @@ type QueueRow = {
   campaign_id: string;
   email_snapshot_id: string | null;
   recipient_email: string;
+  recipient_name: string | null;
   status: string;
   attempts: number;
 };
@@ -33,10 +34,48 @@ type CampaignRow = {
   brand_id: string | null;
 };
 
+type BrandRow = {
+  id: string;
+  name: string | null;
+  from_name: string | null;
+  signature_company: string | null;
+};
+
+type ContactRow = {
+  email: string | null;
+  name: string | null;
+};
+
 type Sender = {
   from: string;
   replyTo: string;
 };
+
+type PersonalizationData = {
+  name: string;
+  email: string;
+  brand: string;
+  company: string;
+};
+
+function safeText(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function firstNameOnly(name: string) {
+  const clean = name.trim();
+  if (!clean) return "";
+  return clean.split(/\s+/)[0] || clean;
+}
+
+function replacePlaceholders(value: string, data: PersonalizationData) {
+  return value
+    .replaceAll("{{name}}", data.name || data.email)
+    .replaceAll("{{first_name}}", firstNameOnly(data.name) || data.email)
+    .replaceAll("{{email}}", data.email)
+    .replaceAll("{{brand}}", data.brand)
+    .replaceAll("{{company}}", data.company || data.brand);
+}
 
 async function processQueue() {
   try {
@@ -63,7 +102,7 @@ async function processQueue() {
 
     const { data: queue, error: qErr } = await supabase
       .from("campaign_queue")
-      .select("id,campaign_id,email_snapshot_id,recipient_email,status,attempts")
+      .select("id,campaign_id,email_snapshot_id,recipient_email,recipient_name,status,attempts")
       .in("status", ["queued", "failed"])
       .lt("attempts", MAX_ATTEMPTS)
       .order("attempts", { ascending: true })
@@ -82,6 +121,9 @@ async function processQueue() {
     let failed = 0;
 
     const senderCache = new Map<string, Sender>();
+    const campaignCache = new Map<string, CampaignRow | null>();
+    const brandCache = new Map<string, BrandRow | null>();
+    const contactCache = new Map<string, ContactRow | null>();
 
     for (const job of queue as QueueRow[]) {
       const nextAttempts = job.attempts + 1;
@@ -100,26 +142,75 @@ async function processQueue() {
 
         if (!snap) throw new Error("Snapshot not found");
 
-        let sender = senderCache.get(job.campaign_id);
+        let campaignRow = campaignCache.get(job.campaign_id);
 
-        if (!sender) {
-          const { data: campaignRow, error: campaignErr } = await supabase
+        if (!campaignCache.has(job.campaign_id)) {
+          const { data, error } = await supabase
             .from("campaigns")
             .select("id,brand_id")
             .eq("id", job.campaign_id)
             .maybeSingle<CampaignRow>();
 
-          if (campaignErr) {
-            throw new Error(campaignErr.message || "Failed to load campaign brand.");
+          if (error) {
+            throw new Error(error.message || "Failed to load campaign brand.");
           }
 
+          campaignRow = data || null;
+          campaignCache.set(job.campaign_id, campaignRow);
+        }
+
+        let sender = senderCache.get(job.campaign_id);
+
+        if (!sender) {
           sender = await getSenderByBrand(campaignRow?.brand_id || null);
           senderCache.set(job.campaign_id, sender);
         }
 
-        const subject = snap.subject || "Campaign";
-        const html = snap.html_snapshot || "";
-        const text = snap.text_snapshot || "";
+        let brand: BrandRow | null = null;
+
+        if (campaignRow?.brand_id) {
+          brand = brandCache.get(campaignRow.brand_id) || null;
+
+          if (!brandCache.has(campaignRow.brand_id)) {
+            const { data } = await supabase
+              .from("brands")
+              .select("id,name,from_name,signature_company")
+              .eq("id", campaignRow.brand_id)
+              .maybeSingle<BrandRow>();
+
+            brand = data || null;
+            brandCache.set(campaignRow.brand_id, brand);
+          }
+        }
+
+        const contactKey = job.recipient_email.toLowerCase();
+        let contact = contactCache.get(contactKey) || null;
+
+        if (!contactCache.has(contactKey)) {
+          const { data } = await supabase
+            .from("contacts")
+            .select("email,name")
+            .eq("email", job.recipient_email)
+            .maybeSingle<ContactRow>();
+
+          contact = data || null;
+          contactCache.set(contactKey, contact);
+        }
+
+        const recipientName = safeText(job.recipient_name) || safeText(contact?.name);
+        const brandName = safeText(brand?.name) || "CoreHQ";
+        const companyName = safeText(brand?.signature_company) || brandName;
+
+        const personalization: PersonalizationData = {
+          name: recipientName,
+          email: job.recipient_email,
+          brand: brandName,
+          company: companyName,
+        };
+
+        const subject = replacePlaceholders(snap.subject || "Campaign", personalization);
+        const html = replacePlaceholders(snap.html_snapshot || "", personalization);
+        const text = replacePlaceholders(snap.text_snapshot || "", personalization);
 
         if (!html && !text) throw new Error("Empty email content");
 
