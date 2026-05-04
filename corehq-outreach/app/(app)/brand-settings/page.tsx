@@ -12,6 +12,7 @@ type Brand = {
   reply_to_email: string | null;
   footer_text: string | null;
   accent_color: string | null;
+  logo_url: string | null;
   signature_title: string | null;
   signature_company: string | null;
   signature_website: string | null;
@@ -70,6 +71,7 @@ export default function BrandSettingsPage() {
   const [replyToEmail, setReplyToEmail] = useState("");
   const [footerText, setFooterText] = useState("");
   const [accentColor, setAccentColor] = useState("#3b82f6");
+  const [logoUrl, setLogoUrl] = useState("");
 
   const [signatureTitle, setSignatureTitle] = useState("");
   const [signatureCompany, setSignatureCompany] = useState("");
@@ -115,6 +117,7 @@ export default function BrandSettingsPage() {
           "reply_to_email",
           "footer_text",
           "accent_color",
+          "logo_url",
           "signature_title",
           "signature_company",
           "signature_website",
@@ -156,6 +159,7 @@ export default function BrandSettingsPage() {
     setReplyToEmail(selectedBrand.reply_to_email || "support@corehq.company");
     setFooterText(selectedBrand.footer_text || "");
     setAccentColor(selectedBrand.accent_color || "#3b82f6");
+    setLogoUrl(selectedBrand.logo_url || "");
 
     setSignatureTitle(selectedBrand.signature_title || "");
     setSignatureCompany(selectedBrand.signature_company || selectedBrand.name || "");
@@ -195,6 +199,7 @@ export default function BrandSettingsPage() {
       reply_to_email: replyToEmail.trim() || null,
       footer_text: footerText.trim() || null,
       accent_color: accentColor.trim() || "#3b82f6",
+      logo_url: logoUrl.trim() || null,
       signature_title: signatureTitle.trim() || null,
       signature_company: signatureCompany.trim() || null,
       signature_website: signatureWebsite.trim() || null,
@@ -356,6 +361,24 @@ export default function BrandSettingsPage() {
           border:1px solid rgba(255,255,255,0.08);
         }
 
+        .logoBox{
+          margin-bottom:12px;
+          display:flex;
+          align-items:center;
+          gap:12px;
+        }
+
+        .logoPreview{
+          max-height:46px;
+          max-width:180px;
+          object-fit:contain;
+          display:block;
+          border-radius:10px;
+          background:rgba(255,255,255,0.04);
+          border:1px solid rgba(255,255,255,0.08);
+          padding:6px;
+        }
+
         .previewName{
           font-size:14px;
           font-weight:950;
@@ -483,7 +506,7 @@ export default function BrandSettingsPage() {
         <div className="content">
           <h1 className="title">Brand Settings</h1>
           <p className="sub">
-            Manage brand sender identity, reply-to, dynamic commercial signature, footer text, and accent color.
+            Manage brand sender identity, reply-to, logo, dynamic commercial signature, footer text, and accent color.
           </p>
 
           {loading ? (
@@ -531,6 +554,16 @@ export default function BrandSettingsPage() {
                 <div className="field">
                   <div className="label">Accent Color</div>
                   <input className="input" type="color" value={accentColor} onChange={(e) => setAccentColor(e.target.value)} />
+                </div>
+
+                <div className="field fieldFull">
+                  <div className="label">Logo URL</div>
+                  <input
+                    className="input"
+                    value={logoUrl}
+                    onChange={(e) => setLogoUrl(e.target.value)}
+                    placeholder="https://yourdomain.com/logo.png"
+                  />
                 </div>
               </div>
 
@@ -614,16 +647,27 @@ export default function BrandSettingsPage() {
                 <div className="previewLine">Reply-To: {replyToEmail || "Not set"}</div>
 
                 <div className="previewSignature">
+                  {logoUrl && (
+                    <div className="logoBox">
+                      <img className="logoPreview" src={logoUrl} alt={`${name || "Brand"} logo`} />
+                    </div>
+                  )}
+
                   <div className="previewName">{fromName || name || "CoreHQ"}</div>
                   <div className="previewRole">
                     {signatureTitle || "Outreach Team"}
                     {signatureCompany ? ` · ${signatureCompany}` : ""}
                   </div>
-                  {signatureWebsite && <div className="previewLine">{signatureWebsite}</div>}
-                  {signaturePhone && <div className="previewLine">{signaturePhone}</div>}
-                  {signatureAddress && <div className="previewLine">{signatureAddress}</div>}
+
+                  {signatureWebsite && <div className="previewLine">🌐 {signatureWebsite}</div>}
+                  {signaturePhone && <div className="previewLine">📞 {signaturePhone}</div>}
+                  {signatureAddress && <div className="previewLine">📍 {signatureAddress}</div>}
                   {footerText && <div className="previewLine">{footerText}</div>}
-                  {signatureDisclaimer && <div className="previewLine">{signatureDisclaimer}</div>}
+                  {signatureDisclaimer && (
+                    <div className="previewLine" style={{ opacity: 0.7 }}>
+                      {signatureDisclaimer}
+                    </div>
+                  )}
                 </div>
 
                 {senderEmail.includes("onboarding@resend.dev") && (
