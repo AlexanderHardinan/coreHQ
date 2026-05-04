@@ -38,6 +38,12 @@ function InlineToast({
   );
 }
 
+type ContactRow = {
+  id: string;
+  name: string | null;
+  email: string | null;
+};
+
 type CampaignRow = {
   id: string;
   brand_id: string | null;
@@ -380,6 +386,16 @@ function parseRecipients(input: string) {
   return uniq;
 }
 
+function appendRecipient(current: string, email: string) {
+  const clean = email.trim();
+  if (!clean) return current;
+
+  const existing = parseRecipients(current).map((item) => item.toLowerCase());
+  if (existing.includes(clean.toLowerCase())) return current;
+
+  return current.trim() ? `${current.trim()}\n${clean}` : clean;
+}
+
 export default function CampaignPreviewPage() {
   const params = useSearchParams();
   const campaignId = (params.get("id") || "").trim();
@@ -398,9 +414,12 @@ export default function CampaignPreviewPage() {
   const SEND_FROM_KEY = "corehq.preview.sendFrom";
   const SEND_REPLYTO_KEY = "corehq.preview.replyTo";
 
+  const [contacts, setContacts] = useState<ContactRow[]>([]);
+  const [selectedContactEmail, setSelectedContactEmail] = useState("");
+
   const [sendToInput, setSendToInput] = useState("");
-  const [sendFrom, setSendFrom] = useState("CoreHQ <onboarding@resend.dev>");
-  const [sendReplyTo, setSendReplyTo] = useState("");
+  const [sendFrom, setSendFrom] = useState("CoreHQ <hello@corehq.company>");
+  const [sendReplyTo, setSendReplyTo] = useState("support@corehq.company");
 
   const [sending, setSending] = useState(false);
   const [sendingNow, setSendingNow] = useState(false);
@@ -453,6 +472,21 @@ export default function CampaignPreviewPage() {
       window.localStorage.setItem(SEND_REPLYTO_KEY, sendReplyTo);
     } catch {}
   }, [sendReplyTo]);
+
+  useEffect(() => {
+    const loadContacts = async () => {
+      const { data, error } = await supabase
+        .from("contacts")
+        .select("id,name,email")
+        .order("created_at", { ascending: false });
+
+      if (!error && data) {
+        setContacts((data as ContactRow[]).filter((contact) => !!contact.email));
+      }
+    };
+
+    loadContacts();
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -542,6 +576,17 @@ export default function CampaignPreviewPage() {
     }
   };
 
+  const addSelectedContact = () => {
+    if (!selectedContactEmail) {
+      showToast("error", "Select a contact first.");
+      return;
+    }
+
+    setSendToInput((current) => appendRecipient(current, selectedContactEmail));
+    setSelectedContactEmail("");
+    showToast("success", "Contact added to Send To.");
+  };
+
   const saveSnapshots = async () => {
     if (!campaign?.id) {
       showToast("error", "No campaign loaded.");
@@ -587,7 +632,7 @@ export default function CampaignPreviewPage() {
       return;
     }
 
-    const from = (sendFrom || "").trim() || "CoreHQ <onboarding@resend.dev>";
+    const from = (sendFrom || "").trim() || "CoreHQ <hello@corehq.company>";
     const replyTo = (sendReplyTo || "").trim();
 
     setSending(true);
@@ -632,7 +677,7 @@ export default function CampaignPreviewPage() {
       return;
     }
 
-    const from = (sendFrom || "").trim() || "CoreHQ <onboarding@resend.dev>";
+    const from = (sendFrom || "").trim() || "CoreHQ <hello@corehq.company>";
     const replyTo = (sendReplyTo || "").trim();
 
     setSendingNow(true);
@@ -891,7 +936,7 @@ export default function CampaignPreviewPage() {
           letter-spacing: 0.2px;
         }
 
-        .input, .textarea{
+        .input, .textarea, .select{
           width:100%;
           padding: 11px 12px;
           border-radius: 12px;
@@ -902,7 +947,7 @@ export default function CampaignPreviewPage() {
           transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
         }
 
-        .input:focus, .textarea:focus{
+        .input:focus, .textarea:focus, .select:focus{
           border-color: rgba(59,130,246,0.55);
           box-shadow: 0 0 0 4px rgba(59,130,246,0.16);
           transform: translateY(-1px);
@@ -911,6 +956,16 @@ export default function CampaignPreviewPage() {
         .textarea{
           min-height: 92px;
           resize: vertical;
+        }
+
+        .contactRow{
+          display:flex;
+          gap:10px;
+          align-items:center;
+        }
+
+        .contactRow .select{
+          flex:1;
         }
 
         .toast{
@@ -981,10 +1036,14 @@ export default function CampaignPreviewPage() {
           iframe{ height: 560px; min-width:0; }
         }
 
+        @media (max-width: 640px){
+          .contactRow{ flex-direction:column; align-items:stretch; }
+        }
+
         @media (prefers-reduced-motion: reduce){
           .card, .shine, .toastOpen, .toastClose { animation: none !important; }
           .card{ opacity: 1; transform: none; }
-          .btn, .input, .textarea{ transition: none !important; }
+          .btn, .input, .textarea, .select{ transition: none !important; }
           .toast{ opacity: 1; transform:none; }
         }
       `}</style>
@@ -1056,6 +1115,37 @@ export default function CampaignPreviewPage() {
                   <p className="panelTitle">Phase 8 — Send (uses /api/send-campaign)</p>
 
                   <div className="field">
+                    <label className="label" htmlFor="contact_select">
+                      Add Contact
+                    </label>
+                    <div className="contactRow">
+                      <select
+                        id="contact_select"
+                        className="select"
+                        value={selectedContactEmail}
+                        onChange={(e) => setSelectedContactEmail(e.target.value)}
+                      >
+                        <option value="">
+                          {contacts.length ? "Select contact email" : "No contacts found"}
+                        </option>
+                        {contacts.map((contact) => (
+                          <option key={contact.id} value={contact.email || ""}>
+                            {(contact.name || "Unnamed Contact") + " — " + (contact.email || "")}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="btn"
+                        type="button"
+                        onClick={addSelectedContact}
+                        disabled={!selectedContactEmail}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="field">
                     <label className="label" htmlFor="send_to">
                       Send To (comma / newline separated)
                     </label>
@@ -1077,7 +1167,7 @@ export default function CampaignPreviewPage() {
                       className="input"
                       value={sendFrom}
                       onChange={(e) => setSendFrom(e.target.value)}
-                      placeholder="CoreHQ <onboarding@resend.dev>"
+                      placeholder="CoreHQ <hello@corehq.company>"
                       autoComplete="off"
                     />
                   </div>
@@ -1091,7 +1181,7 @@ export default function CampaignPreviewPage() {
                       className="input"
                       value={sendReplyTo}
                       onChange={(e) => setSendReplyTo(e.target.value)}
-                      placeholder="support@corehq.io"
+                      placeholder="support@corehq.company"
                       autoComplete="off"
                       inputMode="email"
                     />
@@ -1139,6 +1229,7 @@ export default function CampaignPreviewPage() {
               <div className="hint">
                 Notes:
                 <br />• Open tracking pixel is inserted into saved HTML snapshots.
+                <br />• Select a contact and click <b>Add</b> to place the email into Send To.
                 <br />• Send Now queues recipients and immediately runs the worker.
                 <br />• Send Campaign only queues recipients; go to <b>/campaigns</b> and click <b>Run Worker</b>.
                 <br />• If sending says “No email snapshots found…”, click <b>Save Snapshots</b> first.
