@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "../../../../src/lib/supabaseClient";
 
 type ToastKind = "success" | "error" | "info";
@@ -26,6 +27,30 @@ type TemplateRow = {
   subject: string | null;
   html_body: string | null;
   created_at: string | null;
+};
+
+type CampaignEditRow = {
+  id: string;
+  brand_id: string | null;
+  name: string | null;
+  subject: string | null;
+  preview_text: string | null;
+  scheduled_at: string | null;
+  status: string | null;
+  segment_id: string | null;
+  template_id: string | null;
+  featured_url: string | null;
+  primary_banner_url: string | null;
+  cta_primary_text: string | null;
+  cta_primary_url: string | null;
+  cta_secondary_text: string | null;
+  cta_secondary_url: string | null;
+  extra_banner_url_1: string | null;
+  extra_banner_url_2: string | null;
+  youtube_url: string | null;
+  footer_text: string | null;
+  compliance_text: string | null;
+  unsubscribe_url: string | null;
 };
 
 function InlineToast({
@@ -59,11 +84,26 @@ function InlineToast({
   );
 }
 
+function toDatetimeLocal(value: string | null) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
+}
+
 export default function NewCampaignPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const BRAND_STORAGE_KEY = "corehq.activeBrand";
+  const editId = (searchParams.get("id") || "").trim();
 
   const [activeBrand, setActiveBrand] = useState<string>("(loading brand…)");
-
   const [campaignId, setCampaignId] = useState<string | null>(null);
 
   const [name, setName] = useState("");
@@ -89,8 +129,9 @@ export default function NewCampaignPage() {
   const [unsubscribeUrl, setUnsubscribeUrl] = useState("");
 
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [loadingCampaign, setLoadingCampaign] = useState(false);
 
-  // ✅ ADDED — Phase 7.1 campaign builder selectors only
   const [brands, setBrands] = useState<BrandRow[]>([]);
   const [brandId, setBrandId] = useState("");
   const [segments, setSegments] = useState<SegmentRow[]>([]);
@@ -157,14 +198,16 @@ export default function NewCampaignPage() {
     return () => window.removeEventListener("corehq:brand", onBrand as any);
   }, []);
 
-  // ✅ ADDED — Phase 7.1 load brands/templates only
   useEffect(() => {
     const loadBuilderData = async () => {
       setBuilderLoading(true);
 
       const [brandRes, templateRes] = await Promise.all([
         supabase.from("brands").select("id,name,slug").order("name", { ascending: true }),
-        supabase.from("templates").select("id,name,subject,html_body,created_at").order("created_at", { ascending: false }),
+        supabase
+          .from("templates")
+          .select("id,name,subject,html_body,created_at")
+          .order("created_at", { ascending: false }),
       ]);
 
       setBuilderLoading(false);
@@ -172,10 +215,10 @@ export default function NewCampaignPage() {
       if (brandRes.error) {
         showToast("error", brandRes.error.message || "Failed to load brands.");
       } else {
-        const nextBrands = ((brandRes.data ?? []) as unknown) as BrandRow[];
+        const nextBrands = (brandRes.data ?? []) as BrandRow[];
         setBrands(nextBrands);
 
-        if (!brandId && nextBrands.length > 0) {
+        if (!brandId && !editId && nextBrands.length > 0) {
           setBrandId(nextBrands[0].id);
         }
       }
@@ -183,7 +226,7 @@ export default function NewCampaignPage() {
       if (templateRes.error) {
         showToast("error", templateRes.error.message || "Failed to load templates.");
       } else {
-        setTemplates(((templateRes.data ?? []) as unknown) as TemplateRow[]);
+        setTemplates((templateRes.data ?? []) as TemplateRow[]);
       }
     };
 
@@ -191,7 +234,76 @@ export default function NewCampaignPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ ADDED — Phase 7.1 load saved segments by selected brand only
+  useEffect(() => {
+    if (!editId) return;
+
+    const loadCampaign = async () => {
+      setLoadingCampaign(true);
+
+      try {
+        const { data, error } = await supabase
+          .from("campaigns")
+          .select(
+            [
+              "id",
+              "brand_id",
+              "name",
+              "subject",
+              "preview_text",
+              "scheduled_at",
+              "status",
+              "segment_id",
+              "template_id",
+              "featured_url",
+              "primary_banner_url",
+              "cta_primary_text",
+              "cta_primary_url",
+              "cta_secondary_text",
+              "cta_secondary_url",
+              "extra_banner_url_1",
+              "extra_banner_url_2",
+              "youtube_url",
+              "footer_text",
+              "compliance_text",
+              "unsubscribe_url",
+            ].join(",")
+          )
+          .eq("id", editId)
+          .single<CampaignEditRow>();
+
+        if (error) throw new Error(error.message || "Failed to load campaign.");
+
+        setCampaignId(data.id);
+        setBrandId(data.brand_id || "");
+        setName(data.name || "");
+        setSubject(data.subject || "");
+        setPreviewText(data.preview_text || "");
+        setScheduleAt(toDatetimeLocal(data.scheduled_at));
+        setSegmentId(data.segment_id || "");
+        setTemplateId(data.template_id || "");
+        setFeaturedUrl(data.featured_url || "");
+        setPrimaryBannerUrl(data.primary_banner_url || "");
+        setCtaPrimaryText(data.cta_primary_text || "");
+        setCtaPrimaryUrl(data.cta_primary_url || "");
+        setCtaSecondaryText(data.cta_secondary_text || "");
+        setCtaSecondaryUrl(data.cta_secondary_url || "");
+        setExtraBannerUrl1(data.extra_banner_url_1 || "");
+        setExtraBannerUrl2(data.extra_banner_url_2 || "");
+        setYoutubeUrl(data.youtube_url || "");
+        setFooterText(data.footer_text || "");
+        setComplianceText(data.compliance_text || "");
+        setUnsubscribeUrl(data.unsubscribe_url || "");
+      } catch (e: any) {
+        showToast("error", e?.message || "Failed to load campaign.");
+      } finally {
+        setLoadingCampaign(false);
+      }
+    };
+
+    loadCampaign();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId]);
+
   useEffect(() => {
     const loadSegments = async () => {
       if (!brandId) {
@@ -213,23 +325,24 @@ export default function NewCampaignPage() {
         return;
       }
 
-      const nextSegments = ((data ?? []) as unknown) as SegmentRow[];
+      const nextSegments = (data ?? []) as SegmentRow[];
       setSegments(nextSegments);
-      setSegmentId((current) => (nextSegments.some((segment) => segment.id === current) ? current : ""));
+      setSegmentId((current) =>
+        nextSegments.some((segment) => segment.id === current) ? current : ""
+      );
     };
 
     loadSegments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [brandId]);
 
-  // ✅ ADDED — Phase 7.1 apply selected template to campaign subject only
   useEffect(() => {
     if (!selectedTemplate) return;
 
-    if (selectedTemplate.subject) {
+    if (selectedTemplate.subject && !editId) {
       setSubject(selectedTemplate.subject);
     }
-  }, [selectedTemplate]);
+  }, [selectedTemplate, editId]);
 
   function normalizeBrandCandidates(brandLabel: string) {
     const raw = (brandLabel || "").trim();
@@ -250,11 +363,11 @@ export default function NewCampaignPage() {
 
     const candidates = normalizeBrandCandidates(brandLabel);
 
-    for (const name of candidates) {
+    for (const brandName of candidates) {
       const { data, error } = await supabase
         .from("brands")
         .select("id")
-        .eq("name", name)
+        .eq("name", brandName)
         .limit(1)
         .maybeSingle();
 
@@ -312,7 +425,6 @@ export default function NewCampaignPage() {
         scheduled_at: normalizeScheduledAt(scheduleAt),
         status: "draft" as any,
 
-        // ✅ ADDED — Phase 7.1 preserve selected segment/template links if columns exist
         segment_id: normalizeTextOrNull(segmentId),
         template_id: normalizeTextOrNull(templateId),
 
@@ -349,6 +461,7 @@ export default function NewCampaignPage() {
         if (error) throw new Error(error.message || "Failed to create campaign.");
         setCampaignId(data.id);
         showToast("success", "Draft campaign created.");
+        router.replace(`/campaigns/new?id=${data.id}`);
       } else {
         const { error } = await supabase.from("campaigns").update(payload).eq("id", campaignId);
         if (error) throw new Error(error.message || "Failed to update campaign.");
@@ -358,6 +471,38 @@ export default function NewCampaignPage() {
       showToast("error", e?.message || "Save failed.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteCampaign = async () => {
+    if (!campaignId) {
+      showToast("error", "No campaign selected to delete.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Delete this campaign permanently? This will also delete related queue items, logs, and saved email snapshots."
+    );
+
+    if (!confirmed) return;
+
+    setDeleting(true);
+
+    try {
+      await supabase.from("campaign_queue").delete().eq("campaign_id", campaignId);
+      await supabase.from("campaign_logs").delete().eq("campaign_id", campaignId);
+      await supabase.from("emails").delete().eq("campaign_id", campaignId);
+
+      const { error } = await supabase.from("campaigns").delete().eq("id", campaignId);
+
+      if (error) throw new Error(error.message || "Failed to delete campaign.");
+
+      showToast("success", "Campaign deleted.");
+      router.push("/campaigns");
+    } catch (e: any) {
+      showToast("error", e?.message || "Delete failed.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -474,6 +619,17 @@ export default function NewCampaignPage() {
           box-shadow: 0 22px 48px rgba(168,85,247,0.16);
         }
 
+        .btnDanger{
+          border: 1px solid rgba(239,68,68,0.35);
+          background: rgba(239,68,68,0.12);
+          color: rgba(254,202,202,1);
+        }
+
+        .btnDanger:hover{
+          border-color: rgba(239,68,68,0.58);
+          background: rgba(239,68,68,0.18);
+        }
+
         .btn:disabled{
           cursor:not-allowed;
           opacity: 0.55;
@@ -562,7 +718,6 @@ export default function NewCampaignPage() {
           white-space: pre-wrap;
         }
 
-        /* Toast */
         .toast{
           position: fixed;
           right: 16px;
@@ -639,13 +794,15 @@ export default function NewCampaignPage() {
 
           <div className="top">
             <div>
-              <h1 className="title">New Campaign</h1>
+              <h1 className="title">{campaignId ? "Edit Campaign" : "New Campaign"}</h1>
               <p className="meta">
                 Active brand: <b>{activeBrand}</b>
               </p>
-              {campaignId ? (
+              {loadingCampaign ? (
+                <p className="idLine">Loading campaign…</p>
+              ) : campaignId ? (
                 <p className="idLine">
-                  Draft campaign ID: <b>{campaignId}</b>
+                  Campaign ID: <b>{campaignId}</b>
                 </p>
               ) : (
                 <p className="idLine">Not saved yet — click Save Draft to create it.</p>
@@ -656,13 +813,30 @@ export default function NewCampaignPage() {
               <Link className="btn" href="/campaigns">
                 ← Back
               </Link>
-              <button className="btn btnPrimary" onClick={handleSaveDraft} disabled={saving}>
+
+              {campaignId && (
+                <Link className="btn" href={`/campaigns/preview?id=${campaignId}`}>
+                  Preview
+                </Link>
+              )}
+
+              {campaignId && (
+                <button
+                  className="btn btnDanger"
+                  onClick={handleDeleteCampaign}
+                  disabled={deleting || saving}
+                  type="button"
+                >
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+              )}
+
+              <button className="btn btnPrimary" onClick={handleSaveDraft} disabled={saving || deleting}>
                 {saving ? "Saving…" : "Save Draft"}
               </button>
             </div>
           </div>
 
-          {/* ✅ ADDED — Phase 7.1 Builder Selectors */}
           <div className="sectionTitle">Phase 7.1 — Campaign Targeting</div>
           <div className="grid" aria-label="Campaign targeting form">
             <div className="field">
@@ -674,7 +848,7 @@ export default function NewCampaignPage() {
                 className="input"
                 value={brandId}
                 onChange={(e) => setBrandId(e.target.value)}
-                disabled={builderLoading}
+                disabled={builderLoading || loadingCampaign}
               >
                 {brands.length === 0 ? (
                   <option value="">No brands found</option>
@@ -697,7 +871,7 @@ export default function NewCampaignPage() {
                 className="input"
                 value={segmentId}
                 onChange={(e) => setSegmentId(e.target.value)}
-                disabled={!brandId}
+                disabled={!brandId || loadingCampaign}
               >
                 <option value="">No segment selected</option>
                 {segments.map((segment) => (
@@ -717,6 +891,7 @@ export default function NewCampaignPage() {
                 className="input"
                 value={templateId}
                 onChange={(e) => setTemplateId(e.target.value)}
+                disabled={loadingCampaign}
               >
                 <option value="">No template selected</option>
                 {templates.map((template) => (
@@ -749,6 +924,7 @@ export default function NewCampaignPage() {
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Example: Tipsy February Offer"
                 autoComplete="off"
+                disabled={loadingCampaign}
               />
             </div>
 
@@ -763,6 +939,7 @@ export default function NewCampaignPage() {
                 onChange={(e) => setSubject(e.target.value)}
                 placeholder="Example: Limited-time offer — 20% off this week"
                 autoComplete="off"
+                disabled={loadingCampaign}
               />
             </div>
 
@@ -777,6 +954,7 @@ export default function NewCampaignPage() {
                 onChange={(e) => setPreviewText(e.target.value)}
                 placeholder="Short supporting line that appears in inbox preview…"
                 autoComplete="off"
+                disabled={loadingCampaign}
               />
             </div>
 
@@ -790,6 +968,7 @@ export default function NewCampaignPage() {
                 value={scheduleAt}
                 onChange={(e) => setScheduleAt(e.target.value)}
                 type="datetime-local"
+                disabled={loadingCampaign}
               />
             </div>
 
@@ -813,6 +992,7 @@ export default function NewCampaignPage() {
                 placeholder="https://your-offer-link.com"
                 autoComplete="off"
                 inputMode="url"
+                disabled={loadingCampaign}
               />
             </div>
 
@@ -828,6 +1008,7 @@ export default function NewCampaignPage() {
                 placeholder="https://your-cdn.com/banner.png"
                 autoComplete="off"
                 inputMode="url"
+                disabled={loadingCampaign}
               />
             </div>
           </div>
@@ -845,6 +1026,7 @@ export default function NewCampaignPage() {
                 onChange={(e) => setCtaPrimaryText(e.target.value)}
                 placeholder="Example: Claim Offer"
                 autoComplete="off"
+                disabled={loadingCampaign}
               />
             </div>
 
@@ -860,6 +1042,7 @@ export default function NewCampaignPage() {
                 placeholder="https://your-primary-cta-link.com"
                 autoComplete="off"
                 inputMode="url"
+                disabled={loadingCampaign}
               />
             </div>
 
@@ -874,6 +1057,7 @@ export default function NewCampaignPage() {
                 onChange={(e) => setCtaSecondaryText(e.target.value)}
                 placeholder="Example: Learn More"
                 autoComplete="off"
+                disabled={loadingCampaign}
               />
             </div>
 
@@ -889,6 +1073,7 @@ export default function NewCampaignPage() {
                 placeholder="https://your-secondary-cta-link.com"
                 autoComplete="off"
                 inputMode="url"
+                disabled={loadingCampaign}
               />
             </div>
           </div>
@@ -907,6 +1092,7 @@ export default function NewCampaignPage() {
                 placeholder="https://your-cdn.com/extra-banner-1.png"
                 autoComplete="off"
                 inputMode="url"
+                disabled={loadingCampaign}
               />
             </div>
 
@@ -922,6 +1108,7 @@ export default function NewCampaignPage() {
                 placeholder="https://your-cdn.com/extra-banner-2.png"
                 autoComplete="off"
                 inputMode="url"
+                disabled={loadingCampaign}
               />
             </div>
           </div>
@@ -940,6 +1127,7 @@ export default function NewCampaignPage() {
                 placeholder="https://www.youtube.com/watch?v=..."
                 autoComplete="off"
                 inputMode="url"
+                disabled={loadingCampaign}
               />
             </div>
           </div>
@@ -956,6 +1144,7 @@ export default function NewCampaignPage() {
                 value={footerText}
                 onChange={(e) => setFooterText(e.target.value)}
                 placeholder="Brand footer / address / contact info..."
+                disabled={loadingCampaign}
               />
             </div>
 
@@ -969,6 +1158,7 @@ export default function NewCampaignPage() {
                 value={complianceText}
                 onChange={(e) => setComplianceText(e.target.value)}
                 placeholder="Why they received this email, consent line, etc..."
+                disabled={loadingCampaign}
               />
             </div>
 
@@ -984,12 +1174,13 @@ export default function NewCampaignPage() {
                 placeholder="https://corehq.io/unsubscribe?..."
                 autoComplete="off"
                 inputMode="url"
+                disabled={loadingCampaign}
               />
             </div>
           </div>
 
           <div className="help">
-            Phase 7.1: Brand, Segment, and Template selection are now available. No sending is enabled yet.
+            Edit mode now supports full campaign control: update, preview, and permanent delete.
           </div>
         </div>
       </div>
