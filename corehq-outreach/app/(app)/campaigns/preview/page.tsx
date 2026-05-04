@@ -277,7 +277,7 @@ function buildEmailHtml(c: CampaignRow, brandName: string, appOrigin: string) {
   const wrapEnd = `
           <tr>
             <td style="padding:14px 18px 18px 18px;font-family:Arial,Helvetica,sans-serif;color:#6B7280;font-size:11px;line-height:1.6;">
-              Sent via CoreHQ • Internal preview
+              Sent via CoreHQ Company •
             </td>
           </tr>
         </table>
@@ -1056,7 +1056,7 @@ export default function CampaignPreviewPage() {
 
           <div className="top">
             <div>
-              <h1 className="title">Campaign Preview (Phase 6) + Send (Phase 8)</h1>
+              <h1 className="title">Campaign Preview </h1>
               <p className="meta">
                 {campaignId ? (
                   <>
@@ -1112,7 +1112,7 @@ export default function CampaignPreviewPage() {
                 </div>
 
                 <div className="panel">
-                  <p className="panelTitle">Phase 8 — Send (uses /api/send-campaign)</p>
+                  <p className="panelTitle"></p>
 
                   <div className="field">
                     <label className="label" htmlFor="contact_select">
