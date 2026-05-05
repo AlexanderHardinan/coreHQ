@@ -431,7 +431,7 @@ export default function BrandSettingsPage() {
         .toast{
           position: fixed;
           right: 16px;
-          top: 16px;
+          top: 80px; /* ⬅️ PUSH BELOW HEADER (IMPORTANT FIX) */
           width: min(420px, calc(100vw - 32px));
           border-radius: 14px;
           border: 1px solid rgba(255,255,255,0.12);
