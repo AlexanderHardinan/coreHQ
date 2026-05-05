@@ -431,7 +431,7 @@ export default function BrandSettingsPage() {
         .toast{
           position: fixed;
           right: 16px;
-          top: 80px; /* ⬅️ PUSH BELOW HEADER (IMPORTANT FIX) */
+          top: 80px;
           width: min(420px, calc(100vw - 32px));
           border-radius: 14px;
           border: 1px solid rgba(255,255,255,0.12);
@@ -464,7 +464,7 @@ export default function BrandSettingsPage() {
           width: 10px;
           border-radius: 999px;
           background: var(--toastAccent);
-          box-shadow: 0 0 0 4px color-mix(in srgb, var(--toastAccent) 25%, transparent);
+          box-shadow: 0 0 0 4px rgba(255,255,255,0.10);
           flex: 0 0 auto;
         }
         .toastText{ font-size: 13px; color: rgba(255,255,255,0.88); line-height: 1.45; }
