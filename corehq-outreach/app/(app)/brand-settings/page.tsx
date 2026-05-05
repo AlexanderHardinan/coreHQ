@@ -229,7 +229,7 @@ export default function BrandSettingsPage() {
   }>`;
 
   return (
-    <>
+    <div className="page">
       <style>{`
         .page{
           min-height: calc(100vh - 64px);
@@ -430,20 +430,19 @@ export default function BrandSettingsPage() {
 
         .toast{
           position: fixed;
-          right: 18px;
-          bottom: 18px;
-          width: min(380px, calc(100vw - 36px));
+          right: 16px;
+          top: 16px;
+          width: min(420px, calc(100vw - 32px));
           border-radius: 14px;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(8,8,8,0.94);
-          backdrop-filter: blur(18px);
-          box-shadow: 0 24px 90px rgba(0,0,0,0.85);
+          border: 1px solid rgba(255,255,255,0.12);
+          background: rgba(10,10,10,0.72);
+          backdrop-filter: blur(14px);
+          box-shadow: 0 20px 70px rgba(0,0,0,0.55);
           overflow:hidden;
-          transform: translateY(12px);
+          transform: translateY(-10px);
           opacity: 0;
           pointer-events:none;
-          z-index: 2147483647 !important;
-          isolation:isolate;
+          z-index: 9999;
         }
 
         .toastOpen{
@@ -457,14 +456,7 @@ export default function BrandSettingsPage() {
         }
 
         .toastBar{ height: 3px; background: var(--toastAccent); }
-
-        .toastBody{
-          display:flex;
-          gap: 10px;
-          padding: 12px;
-          align-items:flex-start;
-        }
-
+        .toastBody{ display:flex; gap: 10px; padding: 12px; align-items:flex-start; }
         .toastDot{
           margin-top: 3px;
           height: 10px;
@@ -474,12 +466,7 @@ export default function BrandSettingsPage() {
           box-shadow: 0 0 0 4px color-mix(in srgb, var(--toastAccent) 25%, transparent);
           flex: 0 0 auto;
         }
-
-        .toastText{
-          font-size: 13px;
-          color: rgba(255,255,255,0.92);
-          line-height: 1.45;
-        }
+        .toastText{ font-size: 13px; color: rgba(255,255,255,0.88); line-height: 1.45; }
 
         @keyframes cardIn{
           from{ transform: translateY(14px) scale(0.98); opacity: 0; }
@@ -492,215 +479,211 @@ export default function BrandSettingsPage() {
         }
 
         @keyframes toastIn{
-          from{ transform: translateY(12px); opacity: 0; }
+          from{ transform: translateY(-10px); opacity: 0; }
           to{ transform: translateY(0px); opacity: 1; }
         }
 
         @keyframes toastOut{
           from{ transform: translateY(0px); opacity: 1; }
-          to{ transform: translateY(12px); opacity: 0; }
+          to{ transform: translateY(-10px); opacity: 0; }
         }
 
         @media(max-width:760px){
           .grid{ grid-template-columns:1fr; }
-          .page{ align-items:flex-start; }
         }
 
         @media (prefers-reduced-motion: reduce){
           .card, .shine, .toastOpen, .toastClose { animation: none !important; }
           .card{ opacity: 1; transform: none; }
-          .toast{ opacity: 1; transform:none; }
         }
       `}</style>
 
       <Toast open={toastOpen} kind={toastKind} message={toastMsg} />
 
-      <div className="page">
-        <div className="card">
-          <div className="shine" />
+      <div className="card">
+        <div className="shine" />
 
-          <div className="content">
-            <h1 className="title">Brand Settings</h1>
-            <p className="sub">
-              Manage brand sender identity, reply-to, logo, dynamic commercial signature, footer text, and accent color.
-            </p>
+        <div className="content">
+          <h1 className="title">Brand Settings</h1>
+          <p className="sub">
+            Manage brand sender identity, reply-to, logo, dynamic commercial signature, footer text, and accent color.
+          </p>
 
-            {loading ? (
-              <p className="sub">Loading brand settings...</p>
-            ) : brands.length === 0 ? (
-              <p className="sub">No brands found.</p>
-            ) : (
-              <>
-                <div className="grid">
-                  <div className="field fieldFull">
-                    <div className="label">Brand</div>
-                    <select
-                      className="select"
-                      value={brandId}
-                      onChange={(e) => setBrandId(e.target.value)}
-                    >
-                      {brands.map((brand) => (
-                        <option key={brand.id} value={brand.id}>
-                          {brand.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="field">
-                    <div className="label">Brand Name</div>
-                    <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
-                  </div>
-
-                  <div className="field">
-                    <div className="label">From Name</div>
-                    <input className="input" value={fromName} onChange={(e) => setFromName(e.target.value)} />
-                  </div>
-
-                  <div className="field">
-                    <div className="label">Sender Email</div>
-                    <input className="input" value={senderEmail} onChange={(e) => setSenderEmail(e.target.value)} />
-                  </div>
-
-                  <div className="field">
-                    <div className="label">Reply-To Email</div>
-                    <input className="input" value={replyToEmail} onChange={(e) => setReplyToEmail(e.target.value)} />
-                  </div>
-
-                  <div className="field">
-                    <div className="label">Accent Color</div>
-                    <input className="input" type="color" value={accentColor} onChange={(e) => setAccentColor(e.target.value)} />
-                  </div>
-
-                  <div className="field fieldFull">
-                    <div className="label">Logo URL</div>
-                    <input
-                      className="input"
-                      value={logoUrl}
-                      onChange={(e) => setLogoUrl(e.target.value)}
-                      placeholder="https://yourdomain.com/logo.png"
-                    />
-                  </div>
+          {loading ? (
+            <p className="sub">Loading brand settings...</p>
+          ) : brands.length === 0 ? (
+            <p className="sub">No brands found.</p>
+          ) : (
+            <>
+              <div className="grid">
+                <div className="field fieldFull">
+                  <div className="label">Brand</div>
+                  <select
+                    className="select"
+                    value={brandId}
+                    onChange={(e) => setBrandId(e.target.value)}
+                  >
+                    {brands.map((brand) => (
+                      <option key={brand.id} value={brand.id}>
+                        {brand.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                <div className="sectionTitle">Commercial Signature</div>
-
-                <div className="grid">
-                  <div className="field">
-                    <div className="label">Signature Title / Role</div>
-                    <input
-                      className="input"
-                      value={signatureTitle}
-                      onChange={(e) => setSignatureTitle(e.target.value)}
-                      placeholder="Example: Outreach Team"
-                    />
-                  </div>
-
-                  <div className="field">
-                    <div className="label">Signature Company</div>
-                    <input
-                      className="input"
-                      value={signatureCompany}
-                      onChange={(e) => setSignatureCompany(e.target.value)}
-                      placeholder="Example: CoreHQ"
-                    />
-                  </div>
-
-                  <div className="field">
-                    <div className="label">Website</div>
-                    <input
-                      className="input"
-                      value={signatureWebsite}
-                      onChange={(e) => setSignatureWebsite(e.target.value)}
-                      placeholder="https://corehq.company"
-                    />
-                  </div>
-
-                  <div className="field">
-                    <div className="label">Phone</div>
-                    <input
-                      className="input"
-                      value={signaturePhone}
-                      onChange={(e) => setSignaturePhone(e.target.value)}
-                      placeholder="+63..."
-                    />
-                  </div>
-
-                  <div className="field fieldFull">
-                    <div className="label">Address</div>
-                    <input
-                      className="input"
-                      value={signatureAddress}
-                      onChange={(e) => setSignatureAddress(e.target.value)}
-                      placeholder="Business address or location"
-                    />
-                  </div>
-
-                  <div className="field fieldFull">
-                    <div className="label">Signature Disclaimer</div>
-                    <textarea
-                      className="textarea"
-                      value={signatureDisclaimer}
-                      onChange={(e) => setSignatureDisclaimer(e.target.value)}
-                      placeholder="Commercial disclaimer, confidentiality note, or brand note..."
-                    />
-                  </div>
-
-                  <div className="field fieldFull">
-                    <div className="label">Footer Text</div>
-                    <textarea
-                      className="textarea"
-                      value={footerText}
-                      onChange={(e) => setFooterText(e.target.value)}
-                      placeholder="Optional brand footer text..."
-                    />
-                  </div>
+                <div className="field">
+                  <div className="label">Brand Name</div>
+                  <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
                 </div>
 
-                <div className="preview">
-                  <div className="previewBadge">{fromName || name || "Brand"}</div>
-                  <div className="previewLine">From: {senderPreview}</div>
-                  <div className="previewLine">Reply-To: {replyToEmail || "Not set"}</div>
+                <div className="field">
+                  <div className="label">From Name</div>
+                  <input className="input" value={fromName} onChange={(e) => setFromName(e.target.value)} />
+                </div>
 
-                  <div className="previewSignature">
-                    {logoUrl && (
-                      <div className="logoBox">
-                        <img className="logoPreview" src={logoUrl} alt={`${name || "Brand"} logo`} />
-                      </div>
-                    )}
+                <div className="field">
+                  <div className="label">Sender Email</div>
+                  <input className="input" value={senderEmail} onChange={(e) => setSenderEmail(e.target.value)} />
+                </div>
 
-                    <div className="previewName">{fromName || name || "CoreHQ"}</div>
-                    <div className="previewRole">
-                      {signatureTitle || "Outreach Team"}
-                      {signatureCompany ? ` · ${signatureCompany}` : ""}
+                <div className="field">
+                  <div className="label">Reply-To Email</div>
+                  <input className="input" value={replyToEmail} onChange={(e) => setReplyToEmail(e.target.value)} />
+                </div>
+
+                <div className="field">
+                  <div className="label">Accent Color</div>
+                  <input className="input" type="color" value={accentColor} onChange={(e) => setAccentColor(e.target.value)} />
+                </div>
+
+                <div className="field fieldFull">
+                  <div className="label">Logo URL</div>
+                  <input
+                    className="input"
+                    value={logoUrl}
+                    onChange={(e) => setLogoUrl(e.target.value)}
+                    placeholder="https://yourdomain.com/logo.png"
+                  />
+                </div>
+              </div>
+
+              <div className="sectionTitle">Commercial Signature</div>
+
+              <div className="grid">
+                <div className="field">
+                  <div className="label">Signature Title / Role</div>
+                  <input
+                    className="input"
+                    value={signatureTitle}
+                    onChange={(e) => setSignatureTitle(e.target.value)}
+                    placeholder="Example: Outreach Team"
+                  />
+                </div>
+
+                <div className="field">
+                  <div className="label">Signature Company</div>
+                  <input
+                    className="input"
+                    value={signatureCompany}
+                    onChange={(e) => setSignatureCompany(e.target.value)}
+                    placeholder="Example: CoreHQ"
+                  />
+                </div>
+
+                <div className="field">
+                  <div className="label">Website</div>
+                  <input
+                    className="input"
+                    value={signatureWebsite}
+                    onChange={(e) => setSignatureWebsite(e.target.value)}
+                    placeholder="https://corehq.company"
+                  />
+                </div>
+
+                <div className="field">
+                  <div className="label">Phone</div>
+                  <input
+                    className="input"
+                    value={signaturePhone}
+                    onChange={(e) => setSignaturePhone(e.target.value)}
+                    placeholder="+63..."
+                  />
+                </div>
+
+                <div className="field fieldFull">
+                  <div className="label">Address</div>
+                  <input
+                    className="input"
+                    value={signatureAddress}
+                    onChange={(e) => setSignatureAddress(e.target.value)}
+                    placeholder="Business address or location"
+                  />
+                </div>
+
+                <div className="field fieldFull">
+                  <div className="label">Signature Disclaimer</div>
+                  <textarea
+                    className="textarea"
+                    value={signatureDisclaimer}
+                    onChange={(e) => setSignatureDisclaimer(e.target.value)}
+                    placeholder="Commercial disclaimer, confidentiality note, or brand note..."
+                  />
+                </div>
+
+                <div className="field fieldFull">
+                  <div className="label">Footer Text</div>
+                  <textarea
+                    className="textarea"
+                    value={footerText}
+                    onChange={(e) => setFooterText(e.target.value)}
+                    placeholder="Optional brand footer text..."
+                  />
+                </div>
+              </div>
+
+              <div className="preview">
+                <div className="previewBadge">{fromName || name || "Brand"}</div>
+                <div className="previewLine">From: {senderPreview}</div>
+                <div className="previewLine">Reply-To: {replyToEmail || "Not set"}</div>
+
+                <div className="previewSignature">
+                  {logoUrl && (
+                    <div className="logoBox">
+                      <img className="logoPreview" src={logoUrl} alt={`${name || "Brand"} logo`} />
                     </div>
+                  )}
 
-                    {signatureWebsite && <div className="previewLine">🌐 {signatureWebsite}</div>}
-                    {signaturePhone && <div className="previewLine">📞 {signaturePhone}</div>}
-                    {signatureAddress && <div className="previewLine">📍 {signatureAddress}</div>}
-                    {footerText && <div className="previewLine">{footerText}</div>}
-                    {signatureDisclaimer && (
-                      <div className="previewLine" style={{ opacity: 0.7 }}>
-                        {signatureDisclaimer}
-                      </div>
-                    )}
+                  <div className="previewName">{fromName || name || "CoreHQ"}</div>
+                  <div className="previewRole">
+                    {signatureTitle || "Outreach Team"}
+                    {signatureCompany ? ` · ${signatureCompany}` : ""}
                   </div>
 
-                  {senderEmail.includes("onboarding@resend.dev") && (
-                    <div className="warning">
-                      Development sender is active. Real production campaigns should use a verified Resend domain.
+                  {signatureWebsite && <div className="previewLine">🌐 {signatureWebsite}</div>}
+                  {signaturePhone && <div className="previewLine">📞 {signaturePhone}</div>}
+                  {signatureAddress && <div className="previewLine">📍 {signatureAddress}</div>}
+                  {footerText && <div className="previewLine">{footerText}</div>}
+                  {signatureDisclaimer && (
+                    <div className="previewLine" style={{ opacity: 0.7 }}>
+                      {signatureDisclaimer}
                     </div>
                   )}
                 </div>
 
-                <button className="btn" onClick={saveBrand} disabled={saving}>
-                  {saving ? "Saving..." : "Save Brand Settings"}
-                </button>
-              </>
-            )}
-          </div>
+                {senderEmail.includes("onboarding@resend.dev") && (
+                  <div className="warning">
+                    Development sender is active. Real production campaigns should use a verified Resend domain.
+                  </div>
+                )}
+              </div>
+
+              <button className="btn" onClick={saveBrand} disabled={saving}>
+                {saving ? "Saving..." : "Save Brand Settings"}
+              </button>
+            </>
+          )}
         </div>
       </div>
-    </>
+    </div>
   );
 }
