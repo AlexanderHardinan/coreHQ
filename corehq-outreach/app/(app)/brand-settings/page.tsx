@@ -430,16 +430,16 @@ export default function BrandSettingsPage() {
 
         .toast{
           position: fixed;
-          right: 18px;
-          bottom: 18px;
-          width: min(380px, calc(100vw - 36px));
+          left: 50%;
+          bottom: 22px;
+          width: min(420px, calc(100vw - 32px));
           border-radius: 14px;
           border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(8,8,8,0.94);
+          background: rgba(8,8,8,0.96);
           backdrop-filter: blur(18px);
           box-shadow: 0 24px 90px rgba(0,0,0,0.85);
           overflow:hidden;
-          transform: translateY(12px);
+          transform: translateX(-50%) translateY(18px);
           opacity: 0;
           pointer-events:none;
           z-index: 2147483647 !important;
@@ -492,13 +492,13 @@ export default function BrandSettingsPage() {
         }
 
         @keyframes toastIn{
-          from{ transform: translateY(12px); opacity: 0; }
-          to{ transform: translateY(0px); opacity: 1; }
+          from{ transform: translateX(-50%) translateY(18px); opacity: 0; }
+          to{ transform: translateX(-50%) translateY(0px); opacity: 1; }
         }
 
         @keyframes toastOut{
-          from{ transform: translateY(0px); opacity: 1; }
-          to{ transform: translateY(12px); opacity: 0; }
+          from{ transform: translateX(-50%) translateY(0px); opacity: 1; }
+          to{ transform: translateX(-50%) translateY(18px); opacity: 0; }
         }
 
         @media(max-width:760px){
@@ -509,7 +509,7 @@ export default function BrandSettingsPage() {
         @media (prefers-reduced-motion: reduce){
           .card, .shine, .toastOpen, .toastClose { animation: none !important; }
           .card{ opacity: 1; transform: none; }
-          .toast{ opacity: 1; transform:none; }
+          .toast{ opacity: 1; transform: translateX(-50%) translateY(0); }
         }
       `}</style>
 
