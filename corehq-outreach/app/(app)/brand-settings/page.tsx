@@ -226,7 +226,7 @@ export default function BrandSettingsPage() {
 
   const senderPreview = `${fromName || name || "Brand"} <${
     senderEmail || "hello@corehq.company"
-  }>`;
+  }>`;  
 
   return (
     <div className="page">
@@ -442,7 +442,8 @@ export default function BrandSettingsPage() {
           transform: translateY(-10px);
           opacity: 0;
           pointer-events:none;
-          z-index: 9999;
+          z-index: 2147483647;
+          isolation: isolate;
         }
 
         .toastOpen{

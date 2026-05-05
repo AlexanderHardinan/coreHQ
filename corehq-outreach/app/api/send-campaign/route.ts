@@ -13,6 +13,11 @@ type EmailSnapshotRow = {
   created_at: string | null;
 };
 
+type ContactRow = {
+  email: string;
+  name: string | null;
+};
+
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ ok: false, error: message }, { status });
 }
@@ -85,8 +90,9 @@ export async function POST(req: Request) {
     const recipients = uniqueEmails(asStringArray((body as any).to));
 
     if (!campaignId) return jsonError("campaignId is required.");
-    if (!recipients.length) return jsonError("to is required (string or string[]).");
+    if (!recipients.length) return jsonError("to is required.");
 
+    // ✅ LOAD SNAPSHOT
     const { data, error } = await supabase
       .from("emails")
       .select("id,campaign_id,brand_id,subject,preview_text,html_snapshot,text_snapshot,created_at")
@@ -95,19 +101,31 @@ export async function POST(req: Request) {
       .limit(1)
       .maybeSingle<EmailSnapshotRow>();
 
-    if (error) return jsonError(error.message || "Failed to load email snapshots.", 500);
-
+    if (error) return jsonError(error.message || "Failed to load snapshot.", 500);
     if (!data) {
-      return jsonError(
-        "No email snapshots found for this campaign. Open Preview and click “Save Snapshots” first.",
-        400
-      );
+      return jsonError("No email snapshot found. Save snapshot first.", 400);
     }
 
-    const queueRows = recipients.map((recipientEmail) => ({
+    // ✅ LOAD CONTACT NAMES (KEY FIX)
+    const { data: contacts } = await supabase
+      .from("contacts")
+      .select("email,name")
+      .in("email", recipients);
+
+    const contactMap = new Map<string, string>();
+
+    (contacts || []).forEach((c: ContactRow) => {
+      if (c.email) {
+        contactMap.set(c.email.toLowerCase(), c.name || "");
+      }
+    });
+
+    // ✅ BUILD QUEUE WITH NAME INCLUDED
+    const queueRows = recipients.map((email) => ({
       campaign_id: campaignId,
       email_snapshot_id: data.id,
-      recipient_email: recipientEmail,
+      recipient_email: email,
+      recipient_name: contactMap.get(email.toLowerCase()) || "",
       status: "queued",
       attempts: 0,
       error: null,
@@ -116,7 +134,7 @@ export async function POST(req: Request) {
     const { error: queueError } = await supabase.from("campaign_queue").insert(queueRows);
 
     if (queueError) {
-      return jsonError(queueError.message || "Failed to queue campaign recipients.", 500);
+      return jsonError(queueError.message || "Queue insert failed.", 500);
     }
 
     await supabase
@@ -127,24 +145,10 @@ export async function POST(req: Request) {
       })
       .eq("id", campaignId);
 
-    await supabase.from("campaign_logs").insert({
-      campaign_id: campaignId,
-      email_snapshot_id: data.id,
-      recipients,
-      status: "queued",
-      resend_id: null,
-      event: "queued",
-      email: null,
-      error: null,
-    });
-
     return NextResponse.json({
       ok: true,
-      mode: "queued",
       campaignId,
-      snapshotEmailId: data.id,
       queued: recipients.length,
-      recipients,
     });
   } catch (e: any) {
     return jsonError(e?.message || "Unexpected server error.", 500);
