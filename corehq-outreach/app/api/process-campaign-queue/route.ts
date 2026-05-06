@@ -207,14 +207,22 @@ async function processQueue() {
         // ✅ FIXED: FORCE REPLY-TO
         const FORCED_REPLY_TO = "media@corehq.company";
 
-        const sendRes = await resend.emails.send({
-          from: sender.from,
-          to: [job.recipient_email],
-          subject,
-          replyTo: FORCED_REPLY_TO,
-          ...(html ? { html } : {}),
-          ...(text ? { text } : {}),
-        });
+        const sendRes = = html
+          ? await resend.emails.send({
+            from: sender.from,
+            to: [job.recipient_email],
+            subject,
+            replyTo: FORCED_REPLY_TO,
+            html,
+            ...(text ? { text } : {}),
+          })
+        : await resend.emails.send({
+           from: sender.from,
+           to: [job.recipient_email],
+           subject,
+           replyTo: FORCED_REPLY_TO,
+           text,
+         });
 
         await supabase
           .from("campaign_queue")
