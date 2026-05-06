@@ -141,6 +141,21 @@ function removeRecipient(current: string, email: string) {
     .join("\n");
 }
 
+function renderProfessionalParagraphs(value: string) {
+  const paragraphs = value
+    .split(/\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  if (!paragraphs.length) return "No body";
+
+  return paragraphs.map((paragraph, index) => (
+    <p key={index} style={{ margin: "0 0 10px 0" }}>
+      {paragraph}
+    </p>
+  ));
+}
+
 export default function NewCampaignPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -932,6 +947,10 @@ export default function NewCampaignPage() {
           white-space: pre-wrap;
         }
 
+        .previewBody p{
+          margin: 0 0 10px 0;
+        }
+
         .toast{
           position: fixed;
           right: 16px;
@@ -1230,18 +1249,7 @@ export default function NewCampaignPage() {
             <div className="builderPreview">
               <div className="label">Selected Template Preview</div>
               <div className="previewSubject">{templatePreviewSubject || "No subject"}</div>
-              <div className="previewBody">
-               {templatePreviewBody
-                 ? templatePreviewBody
-                 .split(/\n+/)
-                 .map((p) => p.trim())
-                 .filter(Boolean)
-                 .map((p, i) => (
-                  <p key={i} style={{ marginBottom: "10px" }}>
-                    {p}
-                  </p>
-                ))
-              : "No body"}
+              <div className="previewBody">{renderProfessionalParagraphs(templatePreviewBody)}</div>
             </div>
           )}
 
