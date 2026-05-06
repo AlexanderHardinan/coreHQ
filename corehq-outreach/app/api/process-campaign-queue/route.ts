@@ -130,9 +130,7 @@ async function processQueue() {
       const isRetry = job.status === "failed";
 
       try {
-        if (!job.email_snapshot_id) {
-          throw new Error("Missing snapshot");
-        }
+        if (!job.email_snapshot_id) throw new Error("Missing snapshot");
 
         const { data: snap } = await supabase
           .from("emails")
@@ -151,9 +149,7 @@ async function processQueue() {
             .eq("id", job.campaign_id)
             .maybeSingle<CampaignRow>();
 
-          if (error) {
-            throw new Error(error.message || "Failed to load campaign brand.");
-          }
+          if (error) throw new Error(error.message);
 
           campaignRow = data || null;
           campaignCache.set(job.campaign_id, campaignRow);
@@ -197,39 +193,28 @@ async function processQueue() {
           contactCache.set(contactKey, contact);
         }
 
-        const recipientName = safeText(job.recipient_name) || safeText(contact?.name);
-        const brandName = safeText(brand?.name) || "CoreHQ";
-        const companyName = safeText(brand?.signature_company) || brandName;
-
         const personalization: PersonalizationData = {
-          name: recipientName,
+          name: safeText(job.recipient_name) || safeText(contact?.name),
           email: job.recipient_email,
-          brand: brandName,
-          company: companyName,
+          brand: safeText(brand?.name) || "CoreHQ",
+          company: safeText(brand?.signature_company) || "CoreHQ",
         };
 
         const subject = replacePlaceholders(snap.subject || "Campaign", personalization);
         const html = replacePlaceholders(snap.html_snapshot || "", personalization);
         const text = replacePlaceholders(snap.text_snapshot || "", personalization);
 
-        if (!html && !text) throw new Error("Empty email content");
+        // ✅ FIXED: FORCE REPLY-TO
+        const FORCED_REPLY_TO = "media@corehq.company";
 
-        const sendRes = html
-          ? await resend.emails.send({
-              from: sender.from,
-              to: [job.recipient_email],
-              subject,
-              ...(sender.replyTo ? { replyTo: sender.replyTo } : {}),
-              html,
-              ...(text ? { text } : {}),
-            })
-          : await resend.emails.send({
-              from: sender.from,
-              to: [job.recipient_email],
-              subject,
-              ...(sender.replyTo ? { replyTo: sender.replyTo } : {}),
-              text,
-            });
+        const sendRes = await resend.emails.send({
+          from: sender.from,
+          to: [job.recipient_email],
+          subject,
+          replyTo: FORCED_REPLY_TO,
+          ...(html ? { html } : {}),
+          ...(text ? { text } : {}),
+        });
 
         await supabase
           .from("campaign_queue")
@@ -241,60 +226,27 @@ async function processQueue() {
           })
           .eq("id", job.id);
 
-        await supabase.from("campaign_logs").insert({
-          campaign_id: job.campaign_id,
-          email_snapshot_id: job.email_snapshot_id,
-          recipients: [job.recipient_email],
-          status: isRetry ? "retry_sent" : "sent",
-          resend_id: (sendRes as any)?.data?.id || null,
-          event: isRetry ? "retry_sent" : "sent",
-          email: job.recipient_email,
-          error: null,
-        });
-
         processed++;
         if (isRetry) retried++;
       } catch (err: any) {
         const finalStatus = nextAttempts >= MAX_ATTEMPTS ? "failed_permanent" : "failed";
-        const errorMessage = err?.message || "Send failed";
 
         await supabase
           .from("campaign_queue")
           .update({
             status: finalStatus,
             attempts: nextAttempts,
-            error: errorMessage,
+            error: err?.message || "Send failed",
           })
           .eq("id", job.id);
-
-        await supabase.from("campaign_logs").insert({
-          campaign_id: job.campaign_id,
-          email_snapshot_id: job.email_snapshot_id,
-          recipients: [job.recipient_email],
-          status: finalStatus,
-          resend_id: null,
-          event: finalStatus,
-          email: job.recipient_email,
-          error: errorMessage,
-        });
 
         failed++;
       }
     }
 
-    return NextResponse.json({
-      ok: true,
-      processed,
-      retried,
-      failed,
-      batchSize: queue.length,
-      maxAttempts: MAX_ATTEMPTS,
-    });
+    return NextResponse.json({ ok: true, processed, retried, failed });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || "Worker failed" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: e?.message }, { status: 500 });
   }
 }
 
