@@ -11,13 +11,14 @@ function pickEnv(...keys: string[]) {
 }
 
 export async function getSenderByBrand(brandId?: string | null) {
-  const DEFAULT_FROM = "CoreHQ <hello@corehq.company>";
+  const DEFAULT_FROM = "CoreHQ <media@corehq.company>";
+  const DEFAULT_REPLY_TO = "media@corehq.company";
 
   try {
     if (!brandId) {
       return {
         from: DEFAULT_FROM,
-        replyTo: "support@corehq.company",
+        replyTo: DEFAULT_REPLY_TO,
       };
     }
 
@@ -27,7 +28,7 @@ export async function getSenderByBrand(brandId?: string | null) {
     if (!SUPABASE_URL || !SERVICE_KEY) {
       return {
         from: DEFAULT_FROM,
-        replyTo: "support@corehq.company",
+        replyTo: DEFAULT_REPLY_TO,
       };
     }
 
@@ -44,28 +45,24 @@ export async function getSenderByBrand(brandId?: string | null) {
     if (error || !data) {
       return {
         from: DEFAULT_FROM,
-        replyTo: "support@corehq.company",
+        replyTo: DEFAULT_REPLY_TO,
       };
     }
 
     const fromName = (data.from_name || data.name || "CoreHQ").trim();
     const senderEmail = (data.sender_email || "").trim();
-    const replyTo = (data.reply_to_email || "support@corehq.company").trim();
 
-    const isSafe =
-      senderEmail.endsWith("@corehq.company") ||
-      senderEmail.endsWith("@resend.dev");
-
+    const isSafe = senderEmail.endsWith("@corehq.company");
     const finalFrom = senderEmail && isSafe ? `${fromName} <${senderEmail}>` : DEFAULT_FROM;
 
     return {
       from: finalFrom,
-      replyTo,
+      replyTo: DEFAULT_REPLY_TO,
     };
   } catch {
     return {
       from: DEFAULT_FROM,
-      replyTo: "support@corehq.company",
+      replyTo: DEFAULT_REPLY_TO,
     };
   }
 }
