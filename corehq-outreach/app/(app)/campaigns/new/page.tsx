@@ -46,6 +46,7 @@ type CampaignEditRow = {
   preview_text: string | null;
   scheduled_at: string | null;
   status: string | null;
+  html_body: string | null;
   featured_url: string | null;
   primary_banner_url: string | null;
   cta_primary_text: string | null;
@@ -154,6 +155,7 @@ export default function NewCampaignPage() {
   const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
   const [previewText, setPreviewText] = useState("");
+  const [htmlBody, setHtmlBody] = useState("");
   const [scheduleAt, setScheduleAt] = useState("");
 
   const [featuredUrl, setFeaturedUrl] = useState("");
@@ -344,6 +346,7 @@ export default function NewCampaignPage() {
               "name",
               "subject",
               "preview_text",
+              "html_body",
               "scheduled_at",
               "status",
               "featured_url",
@@ -372,6 +375,7 @@ export default function NewCampaignPage() {
         setName(row.name || "");
         setSubject(row.subject || "");
         setPreviewText(row.preview_text || "");
+        setHtmlBody(row.html_body || "");
         setScheduleAt(toDatetimeLocal(row.scheduled_at));
         setFeaturedUrl(row.featured_url || "");
         setPrimaryBannerUrl(row.primary_banner_url || "");
@@ -430,6 +434,10 @@ export default function NewCampaignPage() {
 
     if (selectedTemplate.subject) {
       setSubject(selectedTemplate.subject);
+    }
+
+    if (selectedTemplate.html_body) {
+      setHtmlBody(selectedTemplate.html_body);
     }
   }, [selectedTemplate]);
 
@@ -551,6 +559,7 @@ export default function NewCampaignPage() {
         name: name.trim(),
         subject: subject.trim(),
         preview_text: normalizeTextOrNull(previewText),
+        html_body: normalizeTextOrNull(htmlBody),
         scheduled_at: normalizeScheduledAt(scheduleAt),
         status: "draft" as any,
 

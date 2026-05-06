@@ -36,6 +36,7 @@ type CampaignRow = {
   name: string | null;
   subject: string | null;
   preview_text: string | null;
+  html_body: string | null;
   featured_url: string | null;
   primary_banner_url: string | null;
   cta_primary_text: string | null;
@@ -65,6 +66,31 @@ function escHtml(s: string) {
 
 function normalizeUrlOrEmpty(v: string | null | undefined) {
   return (v || "").trim();
+}
+
+function replaceTemplateTokens(value: string) {
+  return value
+    .replaceAll("{{name}}", "Alex")
+    .replaceAll("{{email}}", "alex@example.com")
+    .replaceAll("{{company}}", "The Globe")
+    .replaceAll("{{country}}", "Thailand");
+}
+
+function htmlToPlainText(value: string) {
+  return value
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n\s+/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 function tryGetYouTubeId(url: string) {
@@ -248,6 +274,7 @@ function buildEmailHtml(c: CampaignRow, brand: BrandRow | null, appOrigin: strin
 
   const subject = safeText(c.subject) || "Campaign";
   const preview = safeText(c.preview_text);
+  const htmlBody = replaceTemplateTokens(safeText(c.html_body));
   const featuredUrl = normalizeUrlOrEmpty(c.featured_url);
   const banner = normalizeUrlOrEmpty(c.primary_banner_url);
 
@@ -328,6 +355,14 @@ function buildEmailHtml(c: CampaignRow, brand: BrandRow | null, appOrigin: strin
     ? `<tr>
          <td style="padding:0 18px 0 18px;">
            <img src="${escHtml(banner)}" alt="" width="604" style="width:100%;max-width:604px;height:auto;border-radius:12px;display:block;border:1px solid #1F2937;" />
+         </td>
+       </tr>`
+    : "";
+
+  const bodyBlock = htmlBody
+    ? `<tr>
+         <td style="padding:16px 18px 0 18px;font-family:Arial,Helvetica,sans-serif;color:#D1D5DB;font-size:14px;line-height:1.65;">
+           ${htmlBody}
          </td>
        </tr>`
     : "";
@@ -437,6 +472,7 @@ function buildEmailHtml(c: CampaignRow, brand: BrandRow | null, appOrigin: strin
   return (
     wrapStart +
     bannerBlock +
+    bodyBlock +
     featuredBlock +
     ctaBlock +
     extraBlock +
@@ -452,6 +488,8 @@ function buildEmailText(c: CampaignRow, brand: BrandRow | null) {
   const brandName = getBrandName(brand);
   const subject = safeText(c.subject) || "Campaign";
   const preview = safeText(c.preview_text);
+  const htmlBody = replaceTemplateTokens(safeText(c.html_body));
+  const bodyText = htmlToPlainText(htmlBody);
 
   lines.push(`${brandName}`);
   lines.push(subject);
@@ -459,6 +497,11 @@ function buildEmailText(c: CampaignRow, brand: BrandRow | null) {
   if (preview) {
     lines.push("");
     lines.push(preview);
+  }
+
+  if (bodyText) {
+    lines.push("");
+    lines.push(bodyText);
   }
 
   const featuredUrl = normalizeUrlOrEmpty(c.featured_url);
@@ -660,6 +703,7 @@ export default function CampaignPreviewPage() {
               "name",
               "subject",
               "preview_text",
+              "html_body",
               "featured_url",
               "primary_banner_url",
               "cta_primary_text",
