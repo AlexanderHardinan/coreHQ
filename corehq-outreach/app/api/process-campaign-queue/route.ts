@@ -207,7 +207,7 @@ async function processQueue() {
         // ✅ FIXED: FORCE REPLY-TO
         const FORCED_REPLY_TO = "media@corehq.company";
 
-        const sendRes = = html
+        const sendRes = html
           ? await resend.emails.send({
             from: sender.from,
             to: [job.recipient_email],
