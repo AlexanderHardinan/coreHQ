@@ -1230,7 +1230,18 @@ export default function NewCampaignPage() {
             <div className="builderPreview">
               <div className="label">Selected Template Preview</div>
               <div className="previewSubject">{templatePreviewSubject || "No subject"}</div>
-              <div className="previewBody">{templatePreviewBody || "No body"}</div>
+              <div className="previewBody">
+               {templatePreviewBody
+                 ? templatePreviewBody
+                 .split(/\n+/)
+                 .map((p) => p.trim())
+                 .filter(Boolean)
+                 .map((p, i) => (
+                  <p key={i} style={{ marginBottom: "10px" }}>
+                    {p}
+                  </p>
+                ))
+              : "No body"}
             </div>
           )}
 
