@@ -76,6 +76,35 @@ function replaceTemplateTokens(value: string) {
     .replaceAll("{{country}}", "Thailand");
 }
 
+function hasHtmlBlock(value: string) {
+  return /<\s*(p|div|table|section|article|h[1-6]|ul|ol|li|blockquote|br|span|strong|em|a|img)\b/i.test(value);
+}
+
+function buildProfessionalBodyHtml(value: string) {
+  const body = replaceTemplateTokens(value).trim();
+
+  if (!body) return "";
+
+  if (hasHtmlBlock(body)) {
+    return body;
+  }
+
+  const paragraphs = body
+    .split(/\n{2,}|\r\n{2,}/g)
+    .flatMap((block) => block.split(/\r?\n/g))
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  return paragraphs
+    .map(
+      (paragraph) =>
+        `<p style="margin:0 0 14px 0;font-family:Arial,Helvetica,sans-serif;color:#D1D5DB;font-size:14px;line-height:1.75;">${escHtml(
+          paragraph
+        )}</p>`
+    )
+    .join("");
+}
+
 function htmlToPlainText(value: string) {
   return value
     .replace(/<style[\s\S]*?<\/style>/gi, "")
@@ -274,7 +303,7 @@ function buildEmailHtml(c: CampaignRow, brand: BrandRow | null, appOrigin: strin
 
   const subject = safeText(c.subject) || "Campaign";
   const preview = safeText(c.preview_text);
-  const htmlBody = replaceTemplateTokens(safeText(c.html_body));
+  const htmlBody = buildProfessionalBodyHtml(safeText(c.html_body));
   const featuredUrl = normalizeUrlOrEmpty(c.featured_url);
   const banner = normalizeUrlOrEmpty(c.primary_banner_url);
 
@@ -361,7 +390,7 @@ function buildEmailHtml(c: CampaignRow, brand: BrandRow | null, appOrigin: strin
 
   const bodyBlock = htmlBody
     ? `<tr>
-         <td style="padding:16px 18px 0 18px;font-family:Arial,Helvetica,sans-serif;color:#D1D5DB;font-size:14px;line-height:1.65;">
+         <td style="padding:16px 18px 0 18px;font-family:Arial,Helvetica,sans-serif;color:#D1D5DB;font-size:14px;line-height:1.75;">
            ${htmlBody}
          </td>
        </tr>`
@@ -488,7 +517,7 @@ function buildEmailText(c: CampaignRow, brand: BrandRow | null) {
   const brandName = getBrandName(brand);
   const subject = safeText(c.subject) || "Campaign";
   const preview = safeText(c.preview_text);
-  const htmlBody = replaceTemplateTokens(safeText(c.html_body));
+  const htmlBody = buildProfessionalBodyHtml(safeText(c.html_body));
   const bodyText = htmlToPlainText(htmlBody);
 
   lines.push(`${brandName}`);
