@@ -43,10 +43,14 @@ function emptyEventMap() {
   };
 }
 
+const LOGS_PER_PAGE = 5;
+
 export default function AnalyticsPage() {
   const [logs, setLogs] = useState<CampaignLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [logsOpen, setLogsOpen] = useState(true);
+  const [logsPage, setLogsPage] = useState(1);
 
   useEffect(() => {
     const loadAnalytics = async () => {
@@ -77,6 +81,20 @@ export default function AnalyticsPage() {
     if (!selectedCampaignId) return logs;
     return logs.filter((log) => log.campaign_id === selectedCampaignId);
   }, [logs, selectedCampaignId]);
+
+  const totalLogPages = useMemo(() => {
+    return Math.max(1, Math.ceil(scopedLogs.length / LOGS_PER_PAGE));
+  }, [scopedLogs.length]);
+
+  const paginatedLogs = useMemo(() => {
+    const start = (logsPage - 1) * LOGS_PER_PAGE;
+    return scopedLogs.slice(start, start + LOGS_PER_PAGE);
+  }, [scopedLogs, logsPage]);
+
+  const handleCampaignChange = (value: string) => {
+    setSelectedCampaignId(value);
+    setLogsPage(1);
+  };
 
   const metrics = useMemo(() => {
     const eventMap = emptyEventMap();
@@ -257,11 +275,30 @@ export default function AnalyticsPage() {
           border:1px solid rgba(255,255,255,0.08);
         }
 
+        .sectionHeader{
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:12px;
+          margin-bottom:12px;
+        }
+
         .sectionTitle{
-          margin:0 0 12px 0;
+          margin:0;
           font-size:13px;
           font-weight:900;
           color:rgba(255,255,255,0.86);
+        }
+
+        .collapseBtn{
+          border:1px solid rgba(255,255,255,0.12);
+          background:rgba(255,255,255,0.06);
+          color:white;
+          border-radius:999px;
+          padding:7px 10px;
+          font-size:12px;
+          font-weight:900;
+          cursor:pointer;
         }
 
         .timeline{
@@ -308,7 +345,6 @@ export default function AnalyticsPage() {
         }
 
         .logs{
-          margin-top:18px;
           display:flex;
           flex-direction:column;
           gap:8px;
@@ -344,6 +380,42 @@ export default function AnalyticsPage() {
           color:rgba(147,197,253,1);
         }
 
+        .pagination{
+          margin-top:12px;
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:10px;
+          flex-wrap:wrap;
+        }
+
+        .pageText{
+          font-size:12px;
+          color:rgba(255,255,255,0.66);
+          font-weight:800;
+        }
+
+        .pageActions{
+          display:flex;
+          gap:8px;
+        }
+
+        .pageBtn{
+          border:1px solid rgba(255,255,255,0.12);
+          background:rgba(255,255,255,0.06);
+          color:white;
+          border-radius:10px;
+          padding:8px 10px;
+          font-size:12px;
+          font-weight:900;
+          cursor:pointer;
+        }
+
+        .pageBtn:disabled{
+          opacity:0.45;
+          cursor:not-allowed;
+        }
+
         @keyframes cardIn{
           from{ transform: translateY(14px) scale(0.98); opacity: 0; }
           to{ transform: translateY(0px) scale(1); opacity: 1; }
@@ -361,6 +433,7 @@ export default function AnalyticsPage() {
         @media (max-width: 520px){
           .grid{ grid-template-columns: 1fr; }
           .breakdown{ grid-template-columns: 1fr; }
+          .sectionHeader{ align-items:flex-start; flex-direction:column; }
         }
 
         @media (prefers-reduced-motion: reduce){
@@ -374,9 +447,7 @@ export default function AnalyticsPage() {
 
         <div className="content">
           <h1 className="title">Analytics</h1>
-          <p className="sub">
-            
-          </p>
+          <p className="sub"></p>
 
           {loading ? (
             <p className="sub">Loading analytics...</p>
@@ -387,7 +458,7 @@ export default function AnalyticsPage() {
                 <select
                   className="select"
                   value={selectedCampaignId}
-                  onChange={(e) => setSelectedCampaignId(e.target.value)}
+                  onChange={(e) => handleCampaignChange(e.target.value)}
                 >
                   <option value="">All Campaigns</option>
                   {campaignIds.map((id) => (
@@ -461,7 +532,9 @@ export default function AnalyticsPage() {
               </div>
 
               <div className="section">
-                <h2 className="sectionTitle">Event Timeline (Last 14 Active Days)</h2>
+                <div className="sectionHeader">
+                  <h2 className="sectionTitle">Event Timeline (Last 14 Active Days)</h2>
+                </div>
                 {timeline.length === 0 ? (
                   <p className="sub">No timeline data yet.</p>
                 ) : (
@@ -478,7 +551,9 @@ export default function AnalyticsPage() {
               </div>
 
               <div className="section">
-                <h2 className="sectionTitle">Event Breakdown</h2>
+                <div className="sectionHeader">
+                  <h2 className="sectionTitle">Event Breakdown</h2>
+                </div>
                 {eventBreakdown.length === 0 ? (
                   <p className="sub">No event data yet.</p>
                 ) : (
@@ -493,26 +568,73 @@ export default function AnalyticsPage() {
                 )}
               </div>
 
-              <div className="logs">
-                {scopedLogs.slice(0, 10).map((log) => (
-                  <div key={log.id} className="log">
-                    <div className="logTop">
-                      <div>
-                        <b>Campaign:</b> {log.campaign_id || "—"}
-                      </div>
-                      <div className="badge">{normalizeEvent(log) || "event"}</div>
-                    </div>
-                    <div>Email: {log.email || "—"}</div>
-                    <div>Recipients: {(log.recipients || []).length}</div>
-                    {log.clicked_url && (
-                      <div className="clickedUrl">
-                        Clicked URL: {log.clicked_url}
+              <div className="section">
+                <div className="sectionHeader">
+                  <h2 className="sectionTitle">Recent Event Logs</h2>
+                  <button
+                    type="button"
+                    className="collapseBtn"
+                    onClick={() => setLogsOpen((current) => !current)}
+                  >
+                    {logsOpen ? "Collapse" : "Expand"}
+                  </button>
+                </div>
+
+                {logsOpen && (
+                  <>
+                    {paginatedLogs.length === 0 ? (
+                      <p className="sub">No logs found.</p>
+                    ) : (
+                      <div className="logs">
+                        {paginatedLogs.map((log) => (
+                          <div key={log.id} className="log">
+                            <div className="logTop">
+                              <div>
+                                <b>Campaign:</b> {log.campaign_id || "—"}
+                              </div>
+                              <div className="badge">{normalizeEvent(log) || "event"}</div>
+                            </div>
+                            <div>Email: {log.email || "—"}</div>
+                            <div>Recipients: {(log.recipients || []).length}</div>
+                            {log.clicked_url && (
+                              <div className="clickedUrl">
+                                Clicked URL: {log.clicked_url}
+                              </div>
+                            )}
+                            <div>{fmtDate(log.created_at)}</div>
+                            {log.error && <div>Error: {log.error}</div>}
+                          </div>
+                        ))}
                       </div>
                     )}
-                    <div>{fmtDate(log.created_at)}</div>
-                    {log.error && <div>Error: {log.error}</div>}
-                  </div>
-                ))}
+
+                    <div className="pagination">
+                      <div className="pageText">
+                        Page {logsPage} of {totalLogPages} • Showing max {LOGS_PER_PAGE} rows
+                      </div>
+
+                      <div className="pageActions">
+                        <button
+                          type="button"
+                          className="pageBtn"
+                          onClick={() => setLogsPage((page) => Math.max(1, page - 1))}
+                          disabled={logsPage <= 1}
+                        >
+                          Previous
+                        </button>
+
+                        <button
+                          type="button"
+                          className="pageBtn"
+                          onClick={() => setLogsPage((page) => Math.min(totalLogPages, page + 1))}
+                          disabled={logsPage >= totalLogPages}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </>
           )}
