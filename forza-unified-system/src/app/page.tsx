@@ -62,10 +62,18 @@ export default function HomePage() {
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Link
                   href="/dashboard"
-                  className="forza-button-hover forza-transition inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-6 py-4 text-sm font-bold text-white shadow-xl"
+                  style={{ color: "#ffffff" }}
+                  className="group inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-6 py-4 text-sm font-black text-white shadow-xl transition duration-200 hover:-translate-y-0.5 hover:bg-slate-800 hover:text-white active:text-white"
                 >
-                  Enter Dashboard
-                  <ArrowRight size={18} />
+                  <span className="text-white group-hover:text-white group-active:text-white">
+                    Enter Dashboard
+                  </span>
+                  <ArrowRight
+                    size={18}
+                    className="text-white group-hover:text-white group-active:text-white"
+                    color="#ffffff"
+                    strokeWidth={2.5}
+                  />
                 </Link>
               </div>
             </div>
