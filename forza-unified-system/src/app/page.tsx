@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Boxes,
   ChefHat,
+  Crown,
   LockKeyhole,
   MapPin,
   ShieldCheck,
@@ -11,23 +12,27 @@ import {
 
 const highlights = [
   {
-    title: "Multi-Brand Control",
-    description: "Centralized operations for Forza, Fusion, and future brands.",
+    title: "Built for Modern Brands",
+    description:
+      "Designed for restaurant groups that need clarity, control, and premium operational flow.",
     icon: Boxes,
   },
   {
-    title: "Kitchen and Bar Ops",
-    description: "Realtime stock, production, sold items, and SKU control.",
+    title: "For Culinary Operations",
+    description:
+      "Created for kitchens, bars, teams, branches, and daily restaurant execution.",
     icon: ChefHat,
   },
   {
-    title: "Private System",
-    description: "Reports, analytics, and operational data are hidden publicly.",
+    title: "Private by Design",
+    description:
+      "A secure private workspace for authorized teams, managers, and ownership.",
     icon: LockKeyhole,
   },
   {
-    title: "Private Role-Based Access",
-    description: "Super Admin, Manager, BOH Staff, and FOH Staff permissions.",
+    title: "Premium Brand Control",
+    description:
+      "A polished command environment for growing hospitality brands.",
     icon: ShieldCheck,
   },
 ];
@@ -49,9 +54,9 @@ export default function HomePage() {
               </h1>
 
               <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-                A private liquid-glass system for multi-brand restaurant
-                operations, kitchen ops, bar ops, inventory, recipe costing,
-                budgets, payroll, alerts, and protected executive management.
+                A private premium platform designed for modern restaurant
+                brands, created to bring every branch, team, and daily operation
+                into one refined, secure, and beautifully organized workspace.
               </p>
 
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -73,7 +78,7 @@ export default function HomePage() {
                 <div className="relative z-10 mb-4 flex items-center justify-between">
                   <div>
                     <p className="text-sm font-bold text-slate-400">
-                      Branch Network
+                      Branch Presence
                     </p>
                     <h2 className="text-2xl font-black text-slate-950">
                       North Macedonia
@@ -96,7 +101,7 @@ export default function HomePage() {
                         </span>
                         <div>
                           <p className="text-xs font-black uppercase tracking-wide text-red-600">
-                            Active Branch
+                            Branch Focus
                           </p>
                           <p className="text-sm font-black text-slate-950">
                             Skopje Area
@@ -109,7 +114,7 @@ export default function HomePage() {
                       viewBox="0 0 520 360"
                       className="h-auto w-full animate-[floatMap_5s_ease-in-out_infinite]"
                       role="img"
-                      aria-label="Animated North Macedonia map with Skopje branch highlight"
+                      aria-label="Animated North Macedonia map with Skopje area branch highlight"
                     >
                       <defs>
                         <linearGradient
@@ -124,7 +129,13 @@ export default function HomePage() {
                           <stop offset="100%" stopColor="#dbeafe" />
                         </linearGradient>
 
-                        <filter id="mapShadow" x="-20%" y="-20%" width="140%" height="140%">
+                        <filter
+                          id="mapShadow"
+                          x="-20%"
+                          y="-20%"
+                          width="140%"
+                          height="140%"
+                        >
                           <feDropShadow
                             dx="0"
                             dy="18"
@@ -198,21 +209,39 @@ export default function HomePage() {
                         className="animate-ping"
                       />
 
-                      <circle cx="316" cy="184" r="6" fill="#0f172a" opacity="0.7" />
-                      <circle cx="372" cy="229" r="6" fill="#0f172a" opacity="0.7" />
-                      <circle cx="258" cy="248" r="6" fill="#0f172a" opacity="0.7" />
+                      <circle
+                        cx="316"
+                        cy="184"
+                        r="6"
+                        fill="#0f172a"
+                        opacity="0.7"
+                      />
+                      <circle
+                        cx="372"
+                        cy="229"
+                        r="6"
+                        fill="#0f172a"
+                        opacity="0.7"
+                      />
+                      <circle
+                        cx="258"
+                        cy="248"
+                        r="6"
+                        fill="#0f172a"
+                        opacity="0.7"
+                      />
                     </svg>
                   </div>
                 </div>
 
                 <div className="relative z-10 mt-4 rounded-2xl border border-slate-200 bg-white/80 p-4">
-                  <p className="text-sm font-bold text-slate-700">
-                    Default branch focus:{" "}
-                    <span className="text-slate-950">Skopje Area</span>
+                  <p className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                    <Crown size={16} />
+                    Designed for premium restaurant brand leadership.
                   </p>
                   <p className="mt-1 text-xs font-semibold text-slate-500">
-                    Public homepage shows brand presence only. Reports and
-                    internal analytics remain private.
+                    Built to support focused teams, polished service standards,
+                    and confident multi-branch growth.
                   </p>
                 </div>
               </div>
@@ -241,6 +270,12 @@ export default function HomePage() {
               );
             })}
           </div>
+
+          <footer className="mt-10 border-t border-slate-200 pt-6 text-center">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
+              Developer Rights Chef Alex @FORZA 2026
+            </p>
+          </footer>
         </div>
       </section>
     </main>
