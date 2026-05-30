@@ -180,3 +180,17 @@ textarea {
 .forza-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
+
+@keyframes floatMap {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-8px) scale(1.015);
+  }
+
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
