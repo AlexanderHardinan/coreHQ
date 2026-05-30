@@ -73,12 +73,35 @@ textarea {
     box-shadow 220ms ease,
     border-color 220ms ease,
     background 220ms ease,
+    color 220ms ease,
     opacity 220ms ease;
 }
 
 .forza-hover:hover {
   transform: translateY(-2px);
-  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+  color: #ffffff !important;
+  background: #0f172a !important;
+  border-color: rgba(15, 23, 42, 0.95) !important;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18);
+}
+
+.forza-hover:hover * {
+  color: #ffffff !important;
+}
+
+.forza-hover:hover svg {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
+.forza-hover:hover .text-slate-950,
+.forza-hover:hover .text-slate-900,
+.forza-hover:hover .text-slate-800,
+.forza-hover:hover .text-slate-700,
+.forza-hover:hover .text-slate-600,
+.forza-hover:hover .text-slate-500,
+.forza-hover:hover .text-slate-400 {
+  color: #ffffff !important;
 }
 
 .forza-scrollbar::-webkit-scrollbar {
