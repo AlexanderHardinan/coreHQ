@@ -3,62 +3,84 @@ import {
   BarChart3,
   Bell,
   Boxes,
+  Building2,
   CalendarClock,
   CircleDollarSign,
+  Layers3,
   PieChart,
   ShieldCheck,
+  Store,
 } from "lucide-react";
 import { redirect } from "next/navigation";
-import { DashboardShell } from "@/components/layout/dashboard-shell";
+import { DashboardShell, type DashboardBrand } from "@/components/layout/dashboard-shell";
 import { getAllowedModules, type UserRole } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
-const metrics = [
+type DashboardPageProps = {
+  searchParams?: Promise<{
+    brand?: string;
+  }>;
+};
+
+const protectedMetrics = [
   {
-    label: "Sales Performance",
-    value: "₱0.00",
-    status: "Ready",
-    icon: CircleDollarSign,
+    label: "Brand Workspace",
+    value: "Protected",
+    status: "Private",
+    icon: ShieldCheck,
   },
   {
-    label: "Budget Status",
-    value: "On Budget",
-    status: "Trigger Ready",
-    icon: PieChart,
+    label: "Branch Context",
+    value: "Active",
+    status: "Selected",
+    icon: Store,
   },
   {
-    label: "Stock Health",
+    label: "Operations Health",
     value: "On Track",
-    status: "Realtime Ready",
+    status: "Ready",
     icon: Boxes,
   },
   {
-    label: "Expiry Alerts",
-    value: "0",
-    status: "Monitoring Ready",
+    label: "Expiry Watch",
+    value: "Monitoring",
+    status: "Ready",
     icon: CalendarClock,
   },
 ];
 
 const alerts = [
   {
-    title: "Over Budget / On Budget",
-    description: "Budget trigger system prepared for payroll and operations.",
+    title: "Budget Watch",
+    description: "Protected budget status monitoring for authorized users.",
     icon: AlertTriangle,
   },
   {
-    title: "Over Stocked / Low Stock",
-    description: "Inventory thresholds will monitor product stock health.",
+    title: "Stock Watch",
+    description: "Private stock condition monitoring by selected brand context.",
     icon: Bell,
   },
   {
-    title: "Inventory Discrepancy / On Track",
-    description: "Stock count versus system balance validation is ready.",
+    title: "Inventory Accuracy",
+    description: "Internal stock-count validation remains inside the dashboard.",
     icon: ShieldCheck,
   },
 ];
 
-export default async function DashboardPage() {
+function normalizeBrandCode(value: string | undefined) {
+  const brand = String(value || "FORZA").trim().toUpperCase();
+
+  if (brand === "FUSION") {
+    return "FUSION";
+  }
+
+  return "FORZA";
+}
+
+export default async function DashboardPage({ searchParams }: DashboardPageProps) {
+  const resolvedSearchParams = await searchParams;
+  const requestedBrandCode = normalizeBrandCode(resolvedSearchParams?.brand);
+
   const supabase = await createSupabaseServerClient();
 
   const {
@@ -83,15 +105,72 @@ export default async function DashboardPage() {
   const role = (profile?.role || "manager") as UserRole;
   const modules = getAllowedModules(role);
 
+  const { data: brandsData } = await supabase
+    .from("brands")
+    .select("id, name, code, description, icon")
+    .in("code", ["FORZA", "FUSION"])
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+
+  const brands = ((brandsData || []) as DashboardBrand[]).sort((a, b) => {
+    const order = ["FORZA", "FUSION"];
+    return order.indexOf(a.code) - order.indexOf(b.code);
+  });
+
+  const selectedBrand =
+    brands.find((brand) => brand.code === requestedBrandCode) ||
+    brands.find((brand) => brand.code === "FORZA") ||
+    null;
+
+  const selectedBrandCode = selectedBrand?.code || requestedBrandCode;
+  const selectedBrandName =
+    selectedBrand?.name || (selectedBrandCode === "FUSION" ? "Fusion" : "Forza");
+
   return (
     <DashboardShell
       fullName={profile?.full_name || user.email || "Forza User"}
       avatarUrl={profile?.avatar_url || null}
       role={role}
       modules={modules}
+      brands={brands}
+      selectedBrand={selectedBrand}
     >
+      <section className="glass-panel rounded-[2rem] p-6">
+        <div className="grid gap-6 lg:grid-cols-[1fr_340px] lg:items-center">
+          <div>
+            <p className="text-sm font-black uppercase tracking-wide text-slate-400">
+              Protected Brand Workspace
+            </p>
+            <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
+              {selectedBrandName} Command View
+            </h2>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+              This dashboard is private and displays internal tools only after
+              authentication. Brand context is controlled here, keeping public
+              pages separate from protected operations.
+            </p>
+          </div>
+
+          <div className="rounded-[2rem] border border-slate-200 bg-white/80 p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-950 text-white">
+                <Building2 size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+                  Active Brand
+                </p>
+                <p className="text-2xl font-black text-slate-950">
+                  {selectedBrandName}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric) => {
+        {protectedMetrics.map((metric) => {
           const Icon = metric.icon;
 
           return (
@@ -123,7 +202,7 @@ export default async function DashboardPage() {
           <div className="mb-5 flex items-center justify-between">
             <div>
               <p className="text-sm font-bold uppercase tracking-wide text-slate-400">
-                Private Role-Based Access
+                {selectedBrandName} Access
               </p>
               <h2 className="text-2xl font-black text-slate-950">
                 Available Modules
@@ -135,8 +214,8 @@ export default async function DashboardPage() {
           <div className="grid gap-4 md:grid-cols-2">
             {modules.map((module) => (
               <a
-                key={module.href}
-                href={module.href}
+                key={`${module.href}-${module.title}`}
+                href={`${module.href}?brand=${selectedBrandCode}`}
                 className="forza-transition forza-hover rounded-3xl border border-slate-200 bg-white/75 p-5 shadow-sm"
               >
                 <h3 className="text-lg font-black text-slate-950">
@@ -152,10 +231,10 @@ export default async function DashboardPage() {
 
         <div className="glass-panel rounded-[2rem] p-6">
           <p className="text-sm font-bold uppercase tracking-wide text-slate-400">
-            Trigger System
+            Protected Alerts
           </p>
           <h2 className="mt-2 text-2xl font-black text-slate-950">
-            Alerts Ready
+            {selectedBrandName} Watch Center
           </h2>
 
           <div className="mt-5 space-y-3">
@@ -186,6 +265,34 @@ export default async function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {role === "super_admin" ? (
+        <section className="glass-panel rounded-[2rem] p-6">
+          <div className="grid gap-5 lg:grid-cols-[1fr_280px] lg:items-center">
+            <div>
+              <p className="text-sm font-black uppercase tracking-wide text-slate-400">
+                Super Admin Control
+              </p>
+              <h2 className="mt-2 text-2xl font-black text-slate-950">
+                Brand Management Entry
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Super Admin can manage brands, brand groups, categories,
+                branches, user access, and protected settings from the private
+                workspace.
+              </p>
+            </div>
+
+            <a
+              href={`/settings?brand=${selectedBrandCode}`}
+              className="forza-button-hover flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white shadow-xl"
+            >
+              <Layers3 size={18} />
+              Open Brand Control
+            </a>
+          </div>
+        </section>
+      ) : null}
     </DashboardShell>
   );
 }

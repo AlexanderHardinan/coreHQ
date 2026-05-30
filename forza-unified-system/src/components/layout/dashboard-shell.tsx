@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   BarChart3,
   Boxes,
+  Building2,
   ChefHat,
+  ChevronDown,
   ClipboardList,
   GlassWater,
   LayoutDashboard,
@@ -18,7 +20,7 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { AppModule, UserRole } from "@/lib/auth/permissions";
 import { roleLabels } from "@/lib/auth/permissions";
@@ -36,6 +38,15 @@ const iconMap = {
   BarChart3,
   Settings,
   ShieldCheck,
+  Building2,
+};
+
+export type DashboardBrand = {
+  id: string;
+  name: string;
+  code: string;
+  description: string | null;
+  icon: string | null;
 };
 
 type DashboardShellProps = {
@@ -43,6 +54,8 @@ type DashboardShellProps = {
   avatarUrl: string | null;
   role: UserRole;
   modules: AppModule[];
+  brands?: DashboardBrand[];
+  selectedBrand?: DashboardBrand | null;
   children: React.ReactNode;
 };
 
@@ -51,10 +64,48 @@ export function DashboardShell({
   avatarUrl,
   role,
   modules,
+  brands = [],
+  selectedBrand = null,
   children,
 }: DashboardShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [isOpen, setIsOpen] = useState(false);
+
+  const currentBrandCode = selectedBrand?.code || "FORZA";
+
+  const brandOptions = useMemo(() => {
+    if (brands.length > 0) {
+      return brands;
+    }
+
+    return [
+      {
+        id: "forza-fallback",
+        name: "Forza",
+        code: "FORZA",
+        description: "Primary brand workspace.",
+        icon: "Building2",
+      },
+      {
+        id: "fusion-fallback",
+        name: "Fusion",
+        code: "FUSION",
+        description: "Secondary brand workspace.",
+        icon: "Sparkles",
+      },
+    ];
+  }, [brands]);
+
+  function handleBrandChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    const nextBrand = event.target.value;
+    const params = new URLSearchParams(searchParams.toString());
+
+    params.set("brand", nextBrand);
+
+    router.push(`${pathname}?${params.toString()}`);
+  }
 
   async function handleSignOut() {
     const supabase = createSupabaseBrowserClient();
@@ -79,6 +130,7 @@ export function DashboardShell({
             <SidebarContent
               pathname={pathname}
               modules={modules}
+              currentBrandCode={currentBrandCode}
               onClose={() => setIsOpen(false)}
               onSignOut={handleSignOut}
               isMobile
@@ -92,6 +144,7 @@ export function DashboardShell({
           <SidebarContent
             pathname={pathname}
             modules={modules}
+            currentBrandCode={currentBrandCode}
             onClose={() => setIsOpen(false)}
             onSignOut={handleSignOut}
           />
@@ -99,7 +152,7 @@ export function DashboardShell({
 
         <section className="space-y-6 pt-14 lg:pt-0">
           <header className="glass-panel rounded-[2rem] p-5 md:p-6">
-            <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
               <div>
                 <p className="text-sm font-black uppercase tracking-wide text-slate-400">
                   Forza Unified System
@@ -109,27 +162,52 @@ export function DashboardShell({
                 </h1>
               </div>
 
-              <div className="flex items-center gap-3 rounded-3xl border border-slate-200 bg-white/80 p-3 shadow-sm">
-                {avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={avatarUrl}
-                    alt={fullName}
-                    className="h-12 w-12 rounded-2xl object-cover"
-                  />
-                ) : (
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-sm font-black text-white">
-                    {fullName.slice(0, 1).toUpperCase()}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="relative">
+                  <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-400">
+                    Active Brand
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={currentBrandCode}
+                      onChange={handleBrandChange}
+                      className="w-full appearance-none rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 pr-10 text-sm font-black text-slate-950 shadow-sm outline-none transition focus:border-slate-950 sm:min-w-[190px]"
+                    >
+                      {brandOptions.map((brand) => (
+                        <option key={brand.id} value={brand.code}>
+                          {brand.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown
+                      size={18}
+                      className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
                   </div>
-                )}
+                </div>
 
-                <div>
-                  <p className="text-sm font-black text-slate-950">
-                    {fullName}
-                  </p>
-                  <p className="text-xs font-bold text-slate-400">
-                    {roleLabels[role]}
-                  </p>
+                <div className="flex items-center gap-3 rounded-3xl border border-slate-200 bg-white/80 p-3 shadow-sm">
+                  {avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={avatarUrl}
+                      alt={fullName}
+                      className="h-12 w-12 rounded-2xl object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-sm font-black text-white">
+                      {fullName.slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="text-sm font-black text-slate-950">
+                      {fullName}
+                    </p>
+                    <p className="text-xs font-bold text-slate-400">
+                      {roleLabels[role]}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -145,6 +223,7 @@ export function DashboardShell({
 type SidebarContentProps = {
   pathname: string;
   modules: AppModule[];
+  currentBrandCode: string;
   onClose: () => void;
   onSignOut: () => void;
   isMobile?: boolean;
@@ -153,6 +232,7 @@ type SidebarContentProps = {
 function SidebarContent({
   pathname,
   modules,
+  currentBrandCode,
   onClose,
   onSignOut,
   isMobile = false,
@@ -161,7 +241,7 @@ function SidebarContent({
     <div className="flex min-h-full flex-col">
       <div className="mb-8 flex items-center justify-between gap-3">
         <Link
-          href="/dashboard"
+          href={`/dashboard?brand=${currentBrandCode}`}
           className="forza-button-hover flex items-center gap-3 rounded-2xl p-2"
         >
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white">
@@ -186,6 +266,15 @@ function SidebarContent({
         ) : null}
       </div>
 
+      <div className="mb-4 rounded-3xl border border-slate-200 bg-white/70 p-4 shadow-sm">
+        <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+          Current Brand
+        </p>
+        <p className="mt-1 text-lg font-black text-slate-950">
+          {currentBrandCode}
+        </p>
+      </div>
+
       <nav className="flex-1 space-y-2">
         {modules.map((module) => {
           const Icon = iconMap[module.icon as keyof typeof iconMap];
@@ -194,8 +283,8 @@ function SidebarContent({
 
           return (
             <Link
-              key={module.href}
-              href={module.href}
+              key={`${module.href}-${module.title}`}
+              href={`${module.href}?brand=${currentBrandCode}`}
               onClick={onClose}
               className={`forza-transition forza-sidebar-item flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold ${
                 isActive ? "forza-sidebar-item-active" : ""

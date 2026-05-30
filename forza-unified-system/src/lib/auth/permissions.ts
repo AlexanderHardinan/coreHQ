@@ -5,6 +5,7 @@ export type AppModule = {
   href: string;
   description: string;
   icon: string;
+  superAdminOnly?: boolean;
 };
 
 export const roleLabels: Record<UserRole, string> = {
@@ -18,7 +19,7 @@ const allModules: AppModule[] = [
   {
     title: "Dashboard",
     href: "/dashboard",
-    description: "Executive overview, alerts, analytics, and trigger status.",
+    description: "Private command center for authorized brand operations.",
     icon: "LayoutDashboard",
   },
   {
@@ -48,7 +49,7 @@ const allModules: AppModule[] = [
   {
     title: "Payroll Budget",
     href: "/payroll-budget",
-    description: "FOH, BOH, Management, Support, and payroll variance.",
+    description: "Department payroll budgets and variance tracking.",
     icon: "Users",
   },
   {
@@ -60,19 +61,26 @@ const allModules: AppModule[] = [
   {
     title: "Sales Performance",
     href: "/sales-performance",
-    description: "Daily, weekly, monthly, yearly, and custom sales analytics.",
+    description: "Protected sales performance workspace for authorized users.",
     icon: "TrendingUp",
   },
   {
     title: "Reports",
     href: "/reports",
-    description: "PDF, CSV, filtered reports, headers, and footers.",
+    description: "Private PDF, CSV, filtered reports, headers, and footers.",
     icon: "BarChart3",
+  },
+  {
+    title: "Brand Management",
+    href: "/settings",
+    description: "Super Admin brand, unit, group, and category control.",
+    icon: "Building2",
+    superAdminOnly: true,
   },
   {
     title: "Settings",
     href: "/settings",
-    description: "System settings, units, categories, alerts, and preferences.",
+    description: "System settings, alert thresholds, and preferences.",
     icon: "Settings",
   },
   {
@@ -80,6 +88,7 @@ const allModules: AppModule[] = [
     href: "/users",
     description: "Super Admin only user creation, roles, and permissions.",
     icon: "ShieldCheck",
+    superAdminOnly: true,
   },
 ];
 
@@ -91,7 +100,9 @@ export function getAllowedModules(role: UserRole): AppModule[] {
   if (role === "manager") {
     return allModules.filter(
       (module) =>
-        module.href !== "/payroll-budget" && module.href !== "/users",
+        module.href !== "/payroll-budget" &&
+        module.href !== "/users" &&
+        !module.superAdminOnly,
     );
   }
 
