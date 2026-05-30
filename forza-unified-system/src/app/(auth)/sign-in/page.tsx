@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowRight, LockKeyhole, Sparkles } from "lucide-react";
+import { ArrowRight, LockKeyhole, ShieldCheck, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 
@@ -53,10 +53,19 @@ export default function SignInPage() {
           </div>
         </div>
 
-        <div className="mb-6 rounded-3xl border border-slate-200 bg-white/75 p-4">
-          <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
-            <Sparkles size={16} />
-            Secure role-based access
+        <div className="mb-6 space-y-3">
+          <div className="rounded-3xl border border-slate-200 bg-white/75 p-4">
+            <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
+              <Sparkles size={16} />
+              Private premium commercial system
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-4">
+            <div className="flex items-center gap-2 text-sm font-bold text-emerald-800">
+              <ShieldCheck size={16} />
+              Accounts are created only by Super Admin
+            </div>
           </div>
         </div>
 
@@ -98,11 +107,14 @@ export default function SignInPage() {
         </form>
 
         <p className="mt-6 text-center text-sm font-semibold text-slate-500">
-          No account yet?{" "}
-          <Link href="/sign-up" className="font-black text-slate-950">
-            Create account
-          </Link>
+          Need access? Contact your Super Admin.
         </p>
+
+        <div className="mt-4 text-center">
+          <Link href="/" className="text-sm font-black text-slate-950">
+            Back to Home
+          </Link>
+        </div>
       </section>
     </main>
   );

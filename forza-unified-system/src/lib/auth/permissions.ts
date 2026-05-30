@@ -78,7 +78,7 @@ const allModules: AppModule[] = [
   {
     title: "Users",
     href: "/users",
-    description: "Users, access, roles, and overrides.",
+    description: "Super Admin only user creation, roles, and permissions.",
     icon: "ShieldCheck",
   },
 ];
@@ -89,7 +89,10 @@ export function getAllowedModules(role: UserRole): AppModule[] {
   }
 
   if (role === "manager") {
-    return allModules.filter((module) => module.href !== "/payroll-budget");
+    return allModules.filter(
+      (module) =>
+        module.href !== "/payroll-budget" && module.href !== "/users",
+    );
   }
 
   if (role === "boh_staff") {

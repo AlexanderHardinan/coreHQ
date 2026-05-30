@@ -10,10 +10,7 @@ import {
 } from "lucide-react";
 import { redirect } from "next/navigation";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
-import {
-  getAllowedModules,
-  type UserRole,
-} from "@/lib/auth/permissions";
+import { getAllowedModules, type UserRole } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 const metrics = [
@@ -66,17 +63,22 @@ export default async function DashboardPage() {
 
   const {
     data: { user },
+    error: userError,
   } = await supabase.auth.getUser();
 
-  if (!user) {
+  if (userError || !user) {
     redirect("/sign-in");
   }
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, avatar_url, role")
+    .select("full_name, avatar_url, role, is_active")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
+
+  if (profile?.is_active === false) {
+    redirect("/sign-in");
+  }
 
   const role = (profile?.role || "manager") as UserRole;
   const modules = getAllowedModules(role);
@@ -121,7 +123,7 @@ export default async function DashboardPage() {
           <div className="mb-5 flex items-center justify-between">
             <div>
               <p className="text-sm font-bold uppercase tracking-wide text-slate-400">
-                Role-Based Module Access
+                Private Role-Based Access
               </p>
               <h2 className="text-2xl font-black text-slate-950">
                 Available Modules
