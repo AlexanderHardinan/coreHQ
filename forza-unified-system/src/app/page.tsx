@@ -11,8 +11,8 @@ import {
 
 const highlights = [
   {
-    title: "Multi-Unit Control",
-    description: "Centralized operations for restaurant groups and branches.",
+    title: "Multi-Brand Control",
+    description: "Centralized operations for Forza, Fusion, and future brands.",
     icon: Boxes,
   },
   {
@@ -26,8 +26,8 @@ const highlights = [
     icon: BarChart3,
   },
   {
-    title: "Role-Based Access",
-    description: "BOH, FOH, Manager, and Super Admin permission structure.",
+    title: "Private Role-Based Access",
+    description: "Super Admin, Manager, BOH Staff, and FOH Staff permissions.",
     icon: ShieldCheck,
   },
 ];
@@ -39,7 +39,7 @@ export default function HomePage() {
         <div className="glass-panel rounded-[2rem] p-8 md:p-12">
           <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/70 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm">
             <Sparkles size={16} />
-            Premium Multi-Unit Restaurant Platform
+            Premium Multi-Brand Restaurant Platform
           </div>
 
           <div className="grid gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
@@ -49,15 +49,16 @@ export default function HomePage() {
               </h1>
 
               <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-                A modern liquid-glass system for restaurant operations, kitchen
-                ops, bar ops, inventory, recipe costing, budgets, payroll,
-                alerts, sales performance, and executive reports.
+                A modern liquid-glass system for multi-brand restaurant
+                operations, kitchen ops, bar ops, inventory, recipe costing,
+                budgets, payroll, alerts, sales performance, and executive
+                reports.
               </p>
 
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Link
                   href="/dashboard"
-                  className="forza-transition inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-6 py-4 text-sm font-bold text-white shadow-xl hover:-translate-y-0.5 hover:bg-slate-800"
+                  className="forza-button-hover forza-transition inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-6 py-4 text-sm font-bold text-white shadow-xl"
                 >
                   Enter Dashboard
                   <ArrowRight size={18} />
@@ -65,7 +66,7 @@ export default function HomePage() {
 
                 <Link
                   href="/reports"
-                  className="forza-transition inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white/75 px-6 py-4 text-sm font-bold text-slate-900 shadow-sm hover:-translate-y-0.5 hover:bg-white"
+                  className="forza-button-hover forza-transition inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white/75 px-6 py-4 text-sm font-bold text-slate-900 shadow-sm"
                 >
                   View Reports
                   <ClipboardList size={18} />
@@ -91,9 +92,9 @@ export default function HomePage() {
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   {[
+                    ["Brands", "2"],
                     ["Sales", "₱0.00"],
                     ["Inventory Accuracy", "100%"],
-                    ["Budget Usage", "0%"],
                     ["Stock Alerts", "0"],
                   ].map(([label, value]) => (
                     <div
@@ -112,8 +113,8 @@ export default function HomePage() {
 
                 <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 p-4">
                   <p className="text-sm font-bold text-amber-800">
-                    Phase 1 foundation active. Database and role system will be
-                    added next.
+                    Multi-brand foundation active: Forza and Fusion are the
+                    default brands.
                   </p>
                 </div>
               </div>

@@ -18,6 +18,9 @@
   --glass-bg: rgba(255, 255, 255, 0.68);
   --glass-border: rgba(255, 255, 255, 0.58);
   --glass-shadow: 0 24px 80px rgba(15, 23, 42, 0.08);
+
+  --hover-dark: #020617;
+  --hover-dark-soft: #0f172a;
 }
 
 * {
@@ -77,31 +80,91 @@ textarea {
     opacity 220ms ease;
 }
 
-.forza-hover:hover {
+.forza-hover:hover,
+.forza-hover:focus-visible {
   transform: translateY(-2px);
   color: #ffffff !important;
-  background: #0f172a !important;
-  border-color: rgba(15, 23, 42, 0.95) !important;
+  background: var(--hover-dark) !important;
+  border-color: rgba(2, 6, 23, 0.95) !important;
   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18);
 }
 
-.forza-hover:hover * {
+.forza-hover:hover *,
+.forza-hover:focus-visible * {
   color: #ffffff !important;
 }
 
-.forza-hover:hover svg {
+.forza-hover:hover svg,
+.forza-hover:focus-visible svg {
   color: #ffffff !important;
   stroke: #ffffff !important;
 }
 
-.forza-hover:hover .text-slate-950,
-.forza-hover:hover .text-slate-900,
-.forza-hover:hover .text-slate-800,
-.forza-hover:hover .text-slate-700,
-.forza-hover:hover .text-slate-600,
-.forza-hover:hover .text-slate-500,
-.forza-hover:hover .text-slate-400 {
+.forza-hover:hover .bg-white,
+.forza-hover:hover .bg-white\/70,
+.forza-hover:hover .bg-white\/75,
+.forza-hover:hover .bg-white\/80,
+.forza-hover:hover .bg-slate-50,
+.forza-hover:hover .bg-emerald-50,
+.forza-hover:hover .bg-amber-50 {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+.forza-hover:hover .border-slate-100,
+.forza-hover:hover .border-slate-200,
+.forza-hover:hover .border-amber-100,
+.forza-hover:hover .border-emerald-100 {
+  border-color: rgba(255, 255, 255, 0.22) !important;
+}
+
+.forza-sidebar-item {
+  color: #0f172a;
+}
+
+.forza-sidebar-item svg {
+  color: #0f172a;
+  stroke: #0f172a;
+}
+
+.forza-sidebar-item:hover,
+.forza-sidebar-item:focus-visible,
+.forza-sidebar-item-active {
+  background: var(--hover-dark) !important;
   color: #ffffff !important;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.16);
+}
+
+.forza-sidebar-item:hover *,
+.forza-sidebar-item:focus-visible *,
+.forza-sidebar-item-active * {
+  color: #ffffff !important;
+}
+
+.forza-sidebar-item:hover svg,
+.forza-sidebar-item:focus-visible svg,
+.forza-sidebar-item-active svg {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
+.forza-button-hover:hover,
+.forza-button-hover:focus-visible {
+  background: var(--hover-dark) !important;
+  border-color: var(--hover-dark) !important;
+  color: #ffffff !important;
+  transform: translateY(-2px);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18);
+}
+
+.forza-button-hover:hover *,
+.forza-button-hover:focus-visible * {
+  color: #ffffff !important;
+}
+
+.forza-button-hover:hover svg,
+.forza-button-hover:focus-visible svg {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
 }
 
 .forza-scrollbar::-webkit-scrollbar {

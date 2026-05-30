@@ -68,7 +68,7 @@ export function DashboardShell({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="fixed left-4 top-4 z-40 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-xl lg:hidden"
+        className="forza-button-hover fixed left-4 top-4 z-40 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-xl lg:hidden"
       >
         <Menu size={22} />
       </button>
@@ -160,7 +160,10 @@ function SidebarContent({
   return (
     <div className="flex min-h-full flex-col">
       <div className="mb-8 flex items-center justify-between gap-3">
-        <Link href="/dashboard" className="flex items-center gap-3">
+        <Link
+          href="/dashboard"
+          className="forza-button-hover flex items-center gap-3 rounded-2xl p-2"
+        >
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white">
             <LayoutDashboard size={22} />
           </div>
@@ -176,7 +179,7 @@ function SidebarContent({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-950 shadow-sm"
+            className="forza-button-hover flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-950 shadow-sm"
           >
             <X size={20} />
           </button>
@@ -194,14 +197,12 @@ function SidebarContent({
               key={module.href}
               href={module.href}
               onClick={onClose}
-              className={`forza-transition flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold ${
-                isActive
-                  ? "bg-slate-950 text-white shadow-xl"
-                  : "text-slate-700 hover:bg-white hover:text-slate-950 hover:shadow-sm"
+              className={`forza-transition forza-sidebar-item flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold ${
+                isActive ? "forza-sidebar-item-active" : ""
               }`}
             >
               <Icon size={18} />
-              {module.title}
+              <span>{module.title}</span>
             </Link>
           );
         })}
@@ -210,7 +211,7 @@ function SidebarContent({
       <button
         type="button"
         onClick={onSignOut}
-        className="forza-transition mt-6 flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm font-black text-slate-700 hover:bg-white hover:text-red-600"
+        className="forza-button-hover mt-6 flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm font-black text-slate-700"
       >
         <LogOut size={18} />
         Sign Out
