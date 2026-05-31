@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Calculator,
   ChefHat,
@@ -93,6 +93,13 @@ function formatCurrency(value: number) {
   }).format(value || 0);
 }
 
+function formatQty(value: number) {
+  return Number(value || 0).toLocaleString("en-US", {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  });
+}
+
 function getAllowedOpsAreas(role: UserRole): OpsArea[] {
   if (role === "boh_staff") {
     return ["kitchen"];
@@ -119,7 +126,9 @@ function calculateRecipeTotals(
     Number(portionYield || 0) > 0 ? totalRecipeCost / Number(portionYield) : 0;
 
   const foodCostPercent =
-    Number(sellingPrice || 0) > 0 ? (costPerPortion / Number(sellingPrice)) * 100 : 0;
+    Number(sellingPrice || 0) > 0
+      ? (costPerPortion / Number(sellingPrice)) * 100
+      : 0;
 
   return {
     total_recipe_cost: totalRecipeCost,
@@ -137,9 +146,10 @@ export function RecipeMakerPanel({
   recipes,
   recipeItems,
 }: RecipeMakerPanelProps) {
-  const supabase = createSupabaseBrowserClient();
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const allowedOpsAreas = getAllowedOpsAreas(role);
 
+  const [productList, setProductList] = useState(products);
   const [recipeList, setRecipeList] = useState(recipes);
   const [itemList, setItemList] = useState(recipeItems);
 
@@ -162,15 +172,142 @@ export function RecipeMakerPanel({
   const [ingredientQty, setIngredientQty] = useState("0");
   const [isIngredientSaving, setIsIngredientSaving] = useState(false);
 
+  useEffect(() => {
+    setProductList(products);
+  }, [products]);
+
+  useEffect(() => {
+    setRecipeList(recipes);
+  }, [recipes]);
+
+  useEffect(() => {
+    setItemList(recipeItems);
+  }, [recipeItems]);
+
+  async function refreshProducts() {
+    if (!selectedBrand?.id) {
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("products")
+      .select(
+        "id, brand_id, brand_unit_id, ops_area, product_name, sku, unit, unit_cost, current_stock, is_active",
+      )
+      .eq("brand_id", selectedBrand.id)
+      .eq("is_active", true)
+      .order("product_name", { ascending: true });
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    setProductList((data || []) as RecipeProduct[]);
+  }
+
+  async function refreshRecipesAndItems() {
+    if (!selectedBrand?.id) {
+      return;
+    }
+
+    const { data: recipesData, error: recipesError } = await supabase
+      .from("recipes")
+      .select(
+        "id, brand_id, brand_unit_id, ops_area, recipe_name, recipe_category, batch_yield, portion_yield, selling_price, food_cost_percent, total_recipe_cost, cost_per_portion, is_active",
+      )
+      .eq("brand_id", selectedBrand.id)
+      .eq("is_active", true)
+      .order("recipe_name", { ascending: true });
+
+    if (recipesError) {
+      toast.error(recipesError.message);
+      return;
+    }
+
+    const nextRecipes = (recipesData || []) as RecipeRecord[];
+    const recipeIds = nextRecipes.map((recipe) => recipe.id);
+
+    setRecipeList(nextRecipes);
+
+    if (recipeIds.length === 0) {
+      setItemList([]);
+      setActiveRecipeId("");
+      return;
+    }
+
+    const { data: itemsData, error: itemsError } = await supabase
+      .from("recipe_items")
+      .select(
+        "id, recipe_id, product_id, quantity, unit, unit_cost_snapshot, total_cost",
+      )
+      .in("recipe_id", recipeIds);
+
+    if (itemsError) {
+      toast.error(itemsError.message);
+      return;
+    }
+
+    setItemList((itemsData || []) as RecipeItemRecord[]);
+  }
+
+  useEffect(() => {
+    if (!selectedBrand?.id) {
+      return;
+    }
+
+    const channel = supabase
+      .channel(`recipe-maker-live-${selectedBrand.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "products",
+        },
+        () => {
+          refreshProducts();
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "recipes",
+        },
+        () => {
+          refreshRecipesAndItems();
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "recipe_items",
+        },
+        () => {
+          refreshRecipesAndItems();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBrand?.id]);
+
   const visibleProducts = useMemo(
     () =>
-      products.filter(
+      productList.filter(
         (product) =>
           product.brand_unit_id === selectedUnitId &&
           product.ops_area === selectedOpsArea &&
           product.is_active,
       ),
-    [products, selectedOpsArea, selectedUnitId],
+    [productList, selectedOpsArea, selectedUnitId],
   );
 
   const visibleRecipes = useMemo(
@@ -381,8 +518,12 @@ export function RecipeMakerPanel({
       return;
     }
 
-    setItemList((current) => current.filter((item) => item.recipe_id !== recipeId));
-    setRecipeList((current) => current.filter((recipe) => recipe.id !== recipeId));
+    setItemList((current) =>
+      current.filter((item) => item.recipe_id !== recipeId),
+    );
+    setRecipeList((current) =>
+      current.filter((recipe) => recipe.id !== recipeId),
+    );
     setActiveRecipeId("");
     toast.success("Recipe deleted successfully.");
   }
@@ -395,10 +536,22 @@ export function RecipeMakerPanel({
       return;
     }
 
-    const product = products.find((item) => item.id === ingredientProductId);
+    const product = productList.find((item) => item.id === ingredientProductId);
 
     if (!product) {
       toast.error("Select an inventory product.");
+      return;
+    }
+
+    const alreadyAdded = itemList.some(
+      (item) =>
+        item.recipe_id === activeRecipeId && item.product_id === product.id,
+    );
+
+    if (alreadyAdded) {
+      toast.error(
+        "This product is already added to this recipe. Remove it first before adding again.",
+      );
       return;
     }
 
@@ -476,9 +629,9 @@ export function RecipeMakerPanel({
               {selectedBrand?.name || "Selected Brand"} Recipe Costing
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-              Build recipes from inventory products. When the recipe is sold,
-              the ingredient quantity is deducted automatically from inventory
-              through the sold consumption ledger.
+              Build recipes from inventory product names. The system stores the
+              correct product connection internally, so every sold dish deducts
+              the proper raw material quantity from inventory.
             </p>
           </div>
 
@@ -721,17 +874,17 @@ export function RecipeMakerPanel({
           </div>
 
           <form onSubmit={saveIngredient} className="grid gap-4 md:grid-cols-2">
-            <Field label="Inventory Product">
+            <Field label="Product Name">
               <select
                 value={ingredientProductId}
                 onChange={(event) => setIngredientProductId(event.target.value)}
                 className="forza-input"
               >
-                <option value="">Select raw material</option>
+                <option value="">Select product name</option>
                 {visibleProducts.map((product) => (
                   <option key={product.id} value={product.id}>
-                    {product.product_name} — {product.current_stock}{" "}
-                    {product.unit}
+                    {product.product_name} — Actual Qty Left:{" "}
+                    {formatQty(product.current_stock)} {product.unit}
                   </option>
                 ))}
               </select>
@@ -761,7 +914,7 @@ export function RecipeMakerPanel({
 
           <div className="mt-6 space-y-3">
             {activeRecipeItems.map((item) => {
-              const product = products.find(
+              const product = productList.find(
                 (productItem) => productItem.id === item.product_id,
               );
 
@@ -776,9 +929,15 @@ export function RecipeMakerPanel({
                         {product?.product_name || "Unknown Product"}
                       </h3>
                       <p className="mt-1 text-sm font-bold text-slate-500">
-                        {item.quantity} {item.unit} ×{" "}
+                        Qty used: {item.quantity} {item.unit} ×{" "}
                         {formatCurrency(item.unit_cost_snapshot)} ={" "}
                         {formatCurrency(item.total_cost)}
+                      </p>
+                      <p className="mt-1 text-xs font-black uppercase tracking-wide text-slate-400">
+                        Actual Qty Left:{" "}
+                        {product
+                          ? `${formatQty(product.current_stock)} ${product.unit}`
+                          : "Unavailable"}
                       </p>
                     </div>
 
