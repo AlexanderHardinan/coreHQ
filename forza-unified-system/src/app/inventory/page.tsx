@@ -8,6 +8,7 @@ import {
   type InventoryCategory,
   type InventoryProduct,
   type InventoryUnit,
+  type OpsArea,
 } from "@/components/inventory/inventory-panel";
 import { getAllowedModules, type UserRole } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
@@ -15,6 +16,8 @@ import { createSupabaseServerClient } from "@/lib/supabase-server";
 type InventoryPageProps = {
   searchParams?: Promise<{
     brand?: string;
+    unit?: string;
+    area?: string;
   }>;
 };
 
@@ -26,6 +29,28 @@ function normalizeBrandCode(value: string | undefined) {
   }
 
   return "FORZA";
+}
+
+function normalizeOpsArea(value: string | undefined, role: UserRole): OpsArea {
+  const area = String(value || "").trim().toLowerCase();
+
+  if (role === "boh_staff") {
+    return "kitchen";
+  }
+
+  if (role === "foh_staff") {
+    return "bar";
+  }
+
+  if (area === "bar") {
+    return "bar";
+  }
+
+  if (area === "global") {
+    return "global";
+  }
+
+  return "kitchen";
 }
 
 export default async function InventoryPage({ searchParams }: InventoryPageProps) {
@@ -55,6 +80,7 @@ export default async function InventoryPage({ searchParams }: InventoryPageProps
 
   const role = profile.role as UserRole;
   const modules = getAllowedModules(role);
+  const requestedArea = normalizeOpsArea(resolvedSearchParams?.area, role);
 
   const { data: brandsData } = await supabase
     .from("brands")
@@ -99,6 +125,11 @@ export default async function InventoryPage({ searchParams }: InventoryPageProps
 
   const units = (unitsData || []) as InventoryUnit[];
 
+  const requestedUnitId = String(resolvedSearchParams?.unit || "").trim();
+
+  const selectedUnit =
+    units.find((unit) => unit.id === requestedUnitId) || units[0] || null;
+
   const { data: categoriesData } = await supabase
     .from("product_categories")
     .select("id, brand_id, brand_unit_id, ops_area, name, icon, is_active")
@@ -138,6 +169,8 @@ export default async function InventoryPage({ searchParams }: InventoryPageProps
         units={units}
         categories={(categoriesData || []) as InventoryCategory[]}
         products={(productsData || []) as InventoryProduct[]}
+        initialUnitId={selectedUnit?.id || ""}
+        initialOpsArea={requestedArea}
       />
     </DashboardShell>
   );

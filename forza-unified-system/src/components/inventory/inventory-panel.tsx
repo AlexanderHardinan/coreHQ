@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   Boxes,
@@ -71,6 +72,8 @@ type InventoryPanelProps = {
   units: InventoryUnit[];
   categories: InventoryCategory[];
   products: InventoryProduct[];
+  initialUnitId: string;
+  initialOpsArea: OpsArea;
 };
 
 type EditMode = "create" | "edit";
@@ -92,9 +95,10 @@ function toCode(value: string) {
 }
 
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-PH", {
+  return new Intl.NumberFormat("mk-MK", {
     style: "currency",
-    currency: "PHP",
+    currency: "EUR",
+    currencyDisplay: "symbol",
   }).format(value || 0);
 }
 
@@ -166,25 +170,40 @@ function getAllowedOpsAreas(role: UserRole): OpsArea[] {
   return ["kitchen", "bar", "global"];
 }
 
+function normalizeOpsArea(area: OpsArea, allowedOpsAreas: OpsArea[]) {
+  if (allowedOpsAreas.includes(area)) {
+    return area;
+  }
+
+  return allowedOpsAreas[0] || "global";
+}
+
 export function InventoryPanel({
   role,
   selectedBrand,
   units,
   categories,
   products,
+  initialUnitId,
+  initialOpsArea,
 }: InventoryPanelProps) {
   const supabase = createSupabaseBrowserClient();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const allowedOpsAreas = getAllowedOpsAreas(role);
+  const safeInitialOpsArea = normalizeOpsArea(initialOpsArea, allowedOpsAreas);
+  const safeInitialUnitId =
+    units.find((unit) => unit.id === initialUnitId)?.id || units[0]?.id || "";
 
   const [productList, setProductList] = useState(products);
   const [mode, setMode] = useState<EditMode>("create");
   const [editId, setEditId] = useState("");
 
-  const [selectedUnitId, setSelectedUnitId] = useState(units[0]?.id || "");
-  const [selectedOpsArea, setSelectedOpsArea] = useState<OpsArea>(
-    allowedOpsAreas[0] || "global",
-  );
+  const [selectedUnitId, setSelectedUnitId] = useState(safeInitialUnitId);
+  const [selectedOpsArea, setSelectedOpsArea] =
+    useState<OpsArea>(safeInitialOpsArea);
   const [search, setSearch] = useState("");
 
   const [productName, setProductName] = useState("");
@@ -200,6 +219,23 @@ export function InventoryPanel({
   const [expiryDate, setExpiryDate] = useState("");
   const [storageArea, setStorageArea] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setProductList(products);
+  }, [products]);
+
+  useEffect(() => {
+    const nextUnitId =
+      units.find((unitItem) => unitItem.id === initialUnitId)?.id ||
+      units[0]?.id ||
+      "";
+
+    setSelectedUnitId(nextUnitId);
+  }, [initialUnitId, units]);
+
+  useEffect(() => {
+    setSelectedOpsArea(normalizeOpsArea(initialOpsArea, allowedOpsAreas));
+  }, [initialOpsArea, allowedOpsAreas]);
 
   const selectedUnit = useMemo(
     () => units.find((item) => item.id === selectedUnitId) || null,
@@ -246,7 +282,9 @@ export function InventoryPanel({
     ).length;
 
     const expiring = visibleProducts.filter((product) =>
-      ["Expired", "Expiring Soon"].includes(getExpiryStatus(product.expiry_date).label),
+      ["Expired", "Expiring Soon"].includes(
+        getExpiryStatus(product.expiry_date).label,
+      ),
     ).length;
 
     const value = visibleProducts.reduce(
@@ -262,6 +300,39 @@ export function InventoryPanel({
       value,
     };
   }, [visibleProducts]);
+
+  function updateInventoryUrl(nextUnitId: string, nextOpsArea: OpsArea) {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (selectedBrand?.code) {
+      params.set("brand", selectedBrand.code);
+    }
+
+    if (nextUnitId) {
+      params.set("unit", nextUnitId);
+    }
+
+    params.set("area", nextOpsArea);
+
+    router.replace(`${pathname}?${params.toString()}`, {
+      scroll: false,
+    });
+  }
+
+  function handleUnitChange(nextUnitId: string) {
+    setSelectedUnitId(nextUnitId);
+    resetForm();
+    updateInventoryUrl(nextUnitId, selectedOpsArea);
+  }
+
+  function handleOpsAreaChange(nextOpsArea: OpsArea) {
+    const safeArea = normalizeOpsArea(nextOpsArea, allowedOpsAreas);
+
+    setSelectedOpsArea(safeArea);
+    setCategoryId("");
+    resetForm();
+    updateInventoryUrl(selectedUnitId, safeArea);
+  }
 
   function resetForm() {
     setMode("create");
@@ -288,12 +359,16 @@ export function InventoryPanel({
     const categoryCode = category ? toCode(category.name) : "GENERAL";
 
     const existingCount =
-      productList.filter(
-        (product) =>
+      productList.filter((product) => {
+        const productCategoryId = product.category_id || "";
+        const activeCategoryId = categoryId || "";
+
+        return (
           product.brand_unit_id === selectedUnitId &&
           product.ops_area === selectedOpsArea &&
-          product.category_id === categoryId,
-      ).length + 1;
+          productCategoryId === activeCategoryId
+        );
+      }).length + 1;
 
     const nextNumber = String(existingCount).padStart(5, "0");
 
@@ -317,6 +392,7 @@ export function InventoryPanel({
     setUnitCost(String(product.unit_cost || 0));
     setExpiryDate(product.expiry_date || "");
     setStorageArea(product.storage_area || "");
+    updateInventoryUrl(product.brand_unit_id, product.ops_area);
   }
 
   async function saveProduct(event: React.FormEvent<HTMLFormElement>) {
@@ -382,6 +458,7 @@ export function InventoryPanel({
         ),
       );
 
+      updateInventoryUrl(selectedUnitId, selectedOpsArea);
       toast.success("Product updated successfully.");
       resetForm();
       return;
@@ -403,6 +480,7 @@ export function InventoryPanel({
     }
 
     setProductList((current) => [...current, data as InventoryProduct]);
+    updateInventoryUrl(selectedUnitId, selectedOpsArea);
     toast.success("Product created successfully.");
     resetForm();
   }
@@ -449,7 +527,7 @@ export function InventoryPanel({
             </label>
             <select
               value={selectedUnitId}
-              onChange={(event) => setSelectedUnitId(event.target.value)}
+              onChange={(event) => handleUnitChange(event.target.value)}
               className="forza-input"
             >
               {units.map((item) => (
@@ -504,10 +582,9 @@ export function InventoryPanel({
           <div className="flex flex-col gap-3 sm:flex-row">
             <select
               value={selectedOpsArea}
-              onChange={(event) => {
-                setSelectedOpsArea(event.target.value as OpsArea);
-                setCategoryId("");
-              }}
+              onChange={(event) =>
+                handleOpsAreaChange(event.target.value as OpsArea)
+              }
               className="forza-input sm:min-w-[180px]"
             >
               {allowedOpsAreas.map((area) => (
@@ -627,7 +704,7 @@ export function InventoryPanel({
             />
           </Field>
 
-          <Field label="Unit Cost">
+          <Field label="Unit Cost (€)">
             <input
               type="number"
               step="0.0001"
