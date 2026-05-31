@@ -10,11 +10,11 @@ const allowedRoles: UserRole[] = [
   "super_admin",
 ];
 
-type CreateUserBody = {
+type UpdateUserBody = {
+  userId?: string;
   fullName?: string;
-  email?: string;
-  password?: string;
   role?: UserRole;
+  isActive?: boolean;
   brandId?: string;
   unitIds?: string[];
 };
@@ -43,68 +43,56 @@ export async function POST(request: NextRequest) {
     currentProfile.is_active === false
   ) {
     return NextResponse.json(
-      { message: "Only Super Admin can create users." },
+      { message: "Only Super Admin can update users." },
       { status: 403 },
     );
   }
 
-  const body = (await request.json()) as CreateUserBody;
+  const body = (await request.json()) as UpdateUserBody;
 
+  const targetUserId = String(body.userId || "").trim();
   const fullName = String(body.fullName || "").trim();
-  const email = String(body.email || "").trim().toLowerCase();
-  const password = String(body.password || "");
   const role = String(body.role || "manager") as UserRole;
+  const isActive = Boolean(body.isActive);
   const unitIds = Array.isArray(body.unitIds) ? body.unitIds : [];
 
-  if (!fullName || !email || !password || !allowedRoles.includes(role)) {
+  if (!targetUserId || !fullName || !allowedRoles.includes(role)) {
     return NextResponse.json(
-      { message: "Full name, email, password, and valid role are required." },
-      { status: 400 },
-    );
-  }
-
-  if (password.length < 6) {
-    return NextResponse.json(
-      { message: "Password must be at least 6 characters." },
+      { message: "User, full name, and valid role are required." },
       { status: 400 },
     );
   }
 
   const admin = createSupabaseAdminClient();
 
-  const { data: createdUser, error: createError } =
-    await admin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: fullName,
-      },
-    });
-
-  if (createError || !createdUser.user) {
-    return NextResponse.json(
-      { message: createError?.message || "Failed to create user." },
-      { status: 400 },
-    );
-  }
-
-  const { error: profileError } = await admin.from("profiles").upsert({
-    id: createdUser.user.id,
-    full_name: fullName,
-    email,
-    avatar_url: null,
-    role,
-    is_active: true,
-  });
+  const { error: profileError } = await admin
+    .from("profiles")
+    .update({
+      full_name: fullName,
+      role,
+      is_active: isActive,
+    })
+    .eq("id", targetUserId);
 
   if (profileError) {
     return NextResponse.json({ message: profileError.message }, { status: 400 });
   }
 
+  const { error: deleteAccessError } = await admin
+    .from("user_unit_access")
+    .delete()
+    .eq("user_id", targetUserId);
+
+  if (deleteAccessError) {
+    return NextResponse.json(
+      { message: deleteAccessError.message },
+      { status: 400 },
+    );
+  }
+
   if (unitIds.length > 0) {
     const accessRows = unitIds.map((unitId) => ({
-      user_id: createdUser.user.id,
+      user_id: targetUserId,
       brand_unit_id: unitId,
     }));
 
@@ -123,7 +111,7 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({
-    message: "User created successfully.",
-    userId: createdUser.user.id,
+    message: "User updated successfully.",
+    userId: targetUserId,
   });
 }
