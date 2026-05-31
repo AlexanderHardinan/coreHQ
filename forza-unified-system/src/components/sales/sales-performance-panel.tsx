@@ -238,7 +238,6 @@ export function SalesPerformancePanel({
         item_name: selectedRecipe.recipe_name,
         quantity: qty,
         selling_price: price,
-        total_sales: totalSales,
         sold_date: soldDate,
         created_by: userId,
       })
