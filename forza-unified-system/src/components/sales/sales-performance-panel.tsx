@@ -212,7 +212,6 @@ export function SalesPerformancePanel({
         sale_date: soldDate,
         gross_sales: totalSales,
         discounts: 0,
-        net_sales: totalSales,
         guest_count: 0,
         notes: notes.trim() || null,
         created_by: userId,

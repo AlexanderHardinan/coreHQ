@@ -417,7 +417,6 @@ export function RecipeMakerPanel({
       quantity: qty,
       unit: product.unit,
       unit_cost_snapshot: Number(product.unit_cost || 0),
-      total_cost: qty * Number(product.unit_cost || 0),
     };
 
     const { data, error } = await supabase
