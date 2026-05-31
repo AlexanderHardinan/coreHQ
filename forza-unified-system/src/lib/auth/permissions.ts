@@ -72,7 +72,7 @@ const allModules: AppModule[] = [
   },
   {
     title: "Brand Management",
-    href: "/settings",
+    href: "/brand-management",
     description: "Super Admin brand, unit, group, and category control.",
     icon: "Building2",
     superAdminOnly: true,
