@@ -156,6 +156,17 @@ function toCode(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+function normalizeText(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function formatQty(value: number) {
+  return Number(value || 0).toLocaleString("en-US", {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  });
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("mk-MK", {
     style: "currency",
@@ -277,6 +288,26 @@ function getMovementLabel(type: InventoryMovementType) {
 
 function getMovementDirection(type: InventoryMovementType) {
   return movementTypes.find((item) => item.value === type)?.direction || "count";
+}
+
+function isDuplicateInventoryError(message: string) {
+  const normalizedMessage = message.toLowerCase();
+
+  return (
+    normalizedMessage.includes("duplicate product") ||
+    normalizedMessage.includes("duplicate key") ||
+    normalizedMessage.includes("products_prevent_duplicate_active_products") ||
+    normalizedMessage.includes("products_unique_active_name_per_unit_area")
+  );
+}
+
+function isDuplicateSkuError(message: string) {
+  const normalizedMessage = message.toLowerCase();
+
+  return (
+    normalizedMessage.includes("duplicate sku") ||
+    normalizedMessage.includes("products_unique_active_sku_per_unit_area")
+  );
 }
 
 export function InventoryPanel({
@@ -715,6 +746,39 @@ export function InventoryPanel({
       return;
     }
 
+    const normalizedProductName = normalizeText(productName);
+    const normalizedSku = normalizeText(sku);
+
+    const duplicateProductName = productList.find(
+      (product) =>
+        product.is_active &&
+        product.brand_id === selectedBrand.id &&
+        product.brand_unit_id === selectedUnitId &&
+        product.ops_area === selectedOpsArea &&
+        normalizeText(product.product_name) === normalizedProductName &&
+        product.id !== editId,
+    );
+
+    if (duplicateProductName) {
+      toast.error("Product already exists. Use the existing product instead.");
+      return;
+    }
+
+    const duplicateSku = productList.find(
+      (product) =>
+        product.is_active &&
+        product.brand_id === selectedBrand.id &&
+        product.brand_unit_id === selectedUnitId &&
+        product.ops_area === selectedOpsArea &&
+        normalizeText(product.sku) === normalizedSku &&
+        product.id !== editId,
+    );
+
+    if (duplicateSku) {
+      toast.error("SKU already exists. Generate a different SKU.");
+      return;
+    }
+
     setIsSaving(true);
 
     const payload = {
@@ -744,6 +808,16 @@ export function InventoryPanel({
       setIsSaving(false);
 
       if (error) {
+        if (isDuplicateInventoryError(error.message)) {
+          toast.error("Product already exists. Use the existing product instead.");
+          return;
+        }
+
+        if (isDuplicateSkuError(error.message)) {
+          toast.error("SKU already exists. Generate a different SKU.");
+          return;
+        }
+
         toast.error(error.message);
         return;
       }
@@ -754,7 +828,6 @@ export function InventoryPanel({
         ),
       );
 
-      updateInventoryUrl(selectedUnitId, selectedOpsArea);
       toast.success("Product updated successfully.");
       resetForm();
       return;
@@ -774,6 +847,16 @@ export function InventoryPanel({
     setIsSaving(false);
 
     if (error) {
+      if (isDuplicateInventoryError(error.message)) {
+        toast.error("Product already exists. Use the existing product instead.");
+        return;
+      }
+
+      if (isDuplicateSkuError(error.message)) {
+        toast.error("SKU already exists. Generate a different SKU.");
+        return;
+      }
+
       toast.error(error.message);
       return;
     }
@@ -881,8 +964,9 @@ export function InventoryPanel({
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
               Opening stock plus product in and transfer in, less production,
               sold consumption, waste, shrinkage, and transfer out equals the
-              system remaining quantity. Physical count creates discrepancy
-              alerts for missing, over, or on-track stock.
+              system remaining quantity. Duplicate product names are blocked per
+              brand, branch, and area to protect recipe costing and ingredient
+              deduction.
             </p>
           </div>
 
@@ -1326,7 +1410,7 @@ export function InventoryPanel({
                 <th className="px-4">Product</th>
                 <th className="px-4">SKU</th>
                 <th className="px-4">Area</th>
-                <th className="px-4">System Qty</th>
+                <th className="px-4">Actual Qty Left</th>
                 <th className="px-4">Min</th>
                 <th className="px-4">Max</th>
                 <th className="px-4">Cost</th>
@@ -1359,7 +1443,7 @@ export function InventoryPanel({
                       {opsAreaLabels[product.ops_area]}
                     </td>
                     <td className="px-4 py-4 text-sm font-black text-slate-950">
-                      {product.current_stock} {product.unit}
+                      {formatQty(product.current_stock)} {product.unit}
                     </td>
                     <td className="px-4 py-4 text-sm font-bold text-slate-600">
                       {product.minimum_stock}
