@@ -10,6 +10,7 @@ import {
   CalendarClock,
   CheckCircle2,
   ClipboardList,
+  Download,
   Pencil,
   Plus,
   Save,
@@ -113,6 +114,7 @@ type InventoryPanelProps = {
 };
 
 type EditMode = "create" | "edit";
+type ReportScope = "all" | "product" | "category" | "date";
 
 const opsAreaLabels: Record<OpsArea, string> = {
   kitchen: "Kitchen",
@@ -162,10 +164,11 @@ function normalizeText(value: string) {
 
 function formatQty(value: number) {
   const safeValue = Number(value || 0);
+
   if (Number.isInteger(safeValue)) {
     return String(safeValue);
   }
-  
+
   return String(Number(safeValue.toFixed(3)));
 }
 
@@ -175,6 +178,15 @@ function formatCurrency(value: number) {
     currency: "EUR",
     currencyDisplay: "symbol",
   }).format(value || 0);
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function getStockStatus(product: InventoryProduct) {
@@ -365,6 +377,12 @@ export function InventoryPanel({
   const [movementDate, setMovementDate] = useState(todayDate());
   const [isMovementSaving, setIsMovementSaving] = useState(false);
 
+  const [reportScope, setReportScope] = useState<ReportScope>("all");
+  const [reportProductId, setReportProductId] = useState("");
+  const [reportCategoryId, setReportCategoryId] = useState("");
+  const [reportDateFrom, setReportDateFrom] = useState("");
+  const [reportDateTo, setReportDateTo] = useState("");
+
   useEffect(() => {
     setProductList(products);
   }, [products]);
@@ -429,6 +447,60 @@ export function InventoryPanel({
       visibleProductIds.includes(movement.product_id),
     );
   }, [movementList, visibleProducts]);
+
+  const reportProducts = useMemo(() => {
+    if (reportScope === "product") {
+      return visibleProducts.filter((product) => product.id === reportProductId);
+    }
+
+    if (reportScope === "category") {
+      return visibleProducts.filter(
+        (product) => product.category_id === reportCategoryId,
+      );
+    }
+
+    if (reportScope === "date") {
+      const productIdsFromDate = visibleMovements
+        .filter((movement) => {
+          const fromMatch = !reportDateFrom || movement.movement_date >= reportDateFrom;
+          const toMatch = !reportDateTo || movement.movement_date <= reportDateTo;
+
+          return fromMatch && toMatch;
+        })
+        .map((movement) => movement.product_id);
+
+      return visibleProducts.filter((product) =>
+        productIdsFromDate.includes(product.id),
+      );
+    }
+
+    return visibleProducts;
+  }, [
+    reportCategoryId,
+    reportDateFrom,
+    reportDateTo,
+    reportProductId,
+    reportScope,
+    visibleMovements,
+    visibleProducts,
+  ]);
+
+  const reportMovements = useMemo(() => {
+    const reportProductIds = reportProducts.map((product) => product.id);
+
+    return visibleMovements.filter((movement) => {
+      const productMatch = reportProductIds.includes(movement.product_id);
+
+      if (reportScope !== "date") {
+        return productMatch;
+      }
+
+      const fromMatch = !reportDateFrom || movement.movement_date >= reportDateFrom;
+      const toMatch = !reportDateTo || movement.movement_date <= reportDateTo;
+
+      return productMatch && fromMatch && toMatch;
+    });
+  }, [reportDateFrom, reportDateTo, reportProducts, reportScope, visibleMovements]);
 
   const latestDiscrepancy = useMemo(() => {
     const latestCount = [...visibleMovements].find(
@@ -698,6 +770,313 @@ export function InventoryPanel({
     setExpiryDate(product.expiry_date || "");
     setStorageArea(product.storage_area || "");
     updateInventoryUrl(product.brand_unit_id, product.ops_area);
+  }
+
+  function getCategoryName(categoryIdValue: string | null) {
+    if (!categoryIdValue) {
+      return "No category";
+    }
+
+    return (
+      categories.find((category) => category.id === categoryIdValue)?.name ||
+      "No category"
+    );
+  }
+
+  function downloadInventoryPdf() {
+    if (reportProducts.length === 0 && reportMovements.length === 0) {
+      toast.error("No inventory data available for this PDF filter.");
+      return;
+    }
+
+    const selectedReportProduct = productList.find(
+      (product) => product.id === reportProductId,
+    );
+    const selectedReportCategory = categories.find(
+      (category) => category.id === reportCategoryId,
+    );
+
+    const reportTitle =
+      reportScope === "product"
+        ? `Product Report — ${selectedReportProduct?.product_name || "Selected Product"}`
+        : reportScope === "category"
+          ? `Category Report — ${selectedReportCategory?.name || "Selected Category"}`
+          : reportScope === "date"
+            ? "Movement Date Report"
+            : "All Inventory Report";
+
+    const reportFilter =
+      reportScope === "date"
+        ? `${reportDateFrom || "Start"} to ${reportDateTo || "Today"}`
+        : reportScope === "product"
+          ? selectedReportProduct?.product_name || "Selected product"
+          : reportScope === "category"
+            ? selectedReportCategory?.name || "Selected category"
+            : "All products";
+
+    const productRows = reportProducts
+      .map((product) => {
+        const stockStatus = getStockStatus(product);
+        const expiryStatus = getExpiryStatus(product);
+
+        return `
+          <tr>
+            <td>${escapeHtml(product.product_name)}</td>
+            <td>${escapeHtml(product.sku)}</td>
+            <td>${escapeHtml(getCategoryName(product.category_id))}</td>
+            <td>${escapeHtml(opsAreaLabels[product.ops_area])}</td>
+            <td>${formatQty(product.current_stock)} ${escapeHtml(product.unit)}</td>
+            <td>${formatQty(product.minimum_stock)}</td>
+            <td>${formatQty(product.maximum_stock)}</td>
+            <td>${formatCurrency(product.unit_cost)}</td>
+            <td>${formatCurrency(product.current_stock * product.unit_cost)}</td>
+            <td>${escapeHtml(stockStatus.label)}</td>
+            <td>${escapeHtml(expiryStatus.label)}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    const movementRows = reportMovements
+      .slice(0, 200)
+      .map((movement) => {
+        const product = productList.find((item) => item.id === movement.product_id);
+        const direction = getMovementDirection(movement.movement_type);
+
+        return `
+          <tr>
+            <td>${escapeHtml(movement.movement_date)}</td>
+            <td>${escapeHtml(product?.product_name || "Unknown Product")}</td>
+            <td>${escapeHtml(getMovementLabel(movement.movement_type))}</td>
+            <td>${direction === "count" ? "-" : `${formatQty(movement.quantity)} ${escapeHtml(product?.unit || "")}`}</td>
+            <td>${movement.physical_count_qty === null ? "-" : formatQty(movement.physical_count_qty)}</td>
+            <td>${movement.system_balance_after === null ? "-" : formatQty(movement.system_balance_after)}</td>
+            <td>${movement.discrepancy_qty === null ? "-" : formatQty(movement.discrepancy_qty)}</td>
+            <td>${escapeHtml(movement.reference_code || "-")}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    const totalValue = reportProducts.reduce(
+      (total, product) => total + product.current_stock * product.unit_cost,
+      0,
+    );
+
+    const html = `
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${escapeHtml(reportTitle)}</title>
+          <style>
+            * { box-sizing: border-box; }
+            body {
+              margin: 0;
+              padding: 32px;
+              color: #0f172a;
+              font-family: Arial, Helvetica, sans-serif;
+              background: #ffffff;
+            }
+            .sheet {
+              max-width: 1180px;
+              margin: 0 auto;
+              border: 1px solid #e2e8f0;
+              border-radius: 24px;
+              overflow: hidden;
+            }
+            .header {
+              padding: 28px;
+              background: linear-gradient(135deg, #0f172a, #1e293b);
+              color: #ffffff;
+            }
+            .headerTop {
+              display: flex;
+              justify-content: space-between;
+              gap: 24px;
+              align-items: flex-start;
+            }
+            .brand {
+              font-size: 12px;
+              letter-spacing: 1.4px;
+              text-transform: uppercase;
+              font-weight: 900;
+              color: #d4af37;
+            }
+            h1 {
+              margin: 10px 0 0;
+              font-size: 30px;
+              line-height: 1.1;
+            }
+            .badge {
+              display: inline-block;
+              padding: 8px 12px;
+              border-radius: 999px;
+              background: rgba(255,255,255,.12);
+              font-size: 12px;
+              font-weight: 900;
+              white-space: nowrap;
+            }
+            .content {
+              padding: 28px;
+            }
+            .grid {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 12px;
+              margin-bottom: 24px;
+            }
+            .card {
+              border: 1px solid #e2e8f0;
+              border-radius: 18px;
+              padding: 14px;
+              background: #f8fafc;
+            }
+            .label {
+              font-size: 10px;
+              text-transform: uppercase;
+              letter-spacing: .8px;
+              color: #64748b;
+              font-weight: 900;
+            }
+            .value {
+              margin-top: 6px;
+              font-size: 15px;
+              color: #0f172a;
+              font-weight: 900;
+            }
+            h2 {
+              margin: 26px 0 12px;
+              font-size: 18px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              overflow: hidden;
+              border-radius: 16px;
+              font-size: 11px;
+            }
+            th {
+              text-align: left;
+              background: #0f172a;
+              color: #ffffff;
+              padding: 9px;
+              font-size: 9px;
+              text-transform: uppercase;
+              letter-spacing: .7px;
+            }
+            td {
+              border-bottom: 1px solid #e2e8f0;
+              padding: 9px;
+              vertical-align: top;
+            }
+            .footer {
+              margin-top: 28px;
+              padding-top: 18px;
+              border-top: 1px solid #e2e8f0;
+              display: flex;
+              justify-content: space-between;
+              gap: 18px;
+              font-size: 11px;
+              color: #64748b;
+              font-weight: 700;
+            }
+            @media print {
+              body { padding: 0; }
+              .sheet { border: 0; border-radius: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <main class="sheet">
+            <section class="header">
+              <div class="headerTop">
+                <div>
+                  <div class="brand">📦 Forza Unified System</div>
+                  <h1>${escapeHtml(reportTitle)}</h1>
+                </div>
+                <div class="badge">Inventory PDF Report</div>
+              </div>
+            </section>
+
+            <section class="content">
+              <div class="grid">
+                <div class="card"><div class="label">Brand</div><div class="value">${escapeHtml(selectedBrand?.name || "Selected Brand")}</div></div>
+                <div class="card"><div class="label">Branch</div><div class="value">${escapeHtml(selectedUnit?.name || "Selected Branch")}</div></div>
+                <div class="card"><div class="label">Area</div><div class="value">${escapeHtml(opsAreaLabels[selectedOpsArea])}</div></div>
+                <div class="card"><div class="label">Filter</div><div class="value">${escapeHtml(reportFilter)}</div></div>
+                <div class="card"><div class="label">Products</div><div class="value">${reportProducts.length}</div></div>
+                <div class="card"><div class="label">Movements</div><div class="value">${reportMovements.length}</div></div>
+                <div class="card"><div class="label">Inventory Value</div><div class="value">${formatCurrency(totalValue)}</div></div>
+                <div class="card"><div class="label">Generated</div><div class="value">${todayDate()}</div></div>
+              </div>
+
+              <h2>📋 Product Summary</h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>SKU</th>
+                    <th>Category</th>
+                    <th>Area</th>
+                    <th>Qty Left</th>
+                    <th>Min</th>
+                    <th>Max</th>
+                    <th>Unit Cost</th>
+                    <th>Value</th>
+                    <th>Stock</th>
+                    <th>Expiry</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${productRows || `<tr><td colspan="11">No products found.</td></tr>`}
+                </tbody>
+              </table>
+
+              <h2>🔁 Movement Ledger</h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Product</th>
+                    <th>Movement</th>
+                    <th>Qty</th>
+                    <th>Physical</th>
+                    <th>System Balance</th>
+                    <th>Discrepancy</th>
+                    <th>Reference</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${movementRows || `<tr><td colspan="8">No movement entries found.</td></tr>`}
+                </tbody>
+              </table>
+
+              <div class="footer">
+                <div>Report Type: ${escapeHtml(reportTitle)}</div>
+                <div>Developer Rights Chef Alex @FORZA 2026</div>
+              </div>
+            </section>
+          </main>
+          <script>
+            window.onload = function () {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "_blank", "width=1200,height=900");
+
+    if (!printWindow) {
+      toast.error("Allow popups to download the inventory PDF.");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
   }
 
   async function createOpeningStockMovement(product: InventoryProduct) {
@@ -1384,6 +1763,100 @@ export function InventoryPanel({
         <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <p className="text-sm font-black uppercase tracking-wide text-slate-400">
+              Inventory PDF Export
+            </p>
+            <h2 className="text-2xl font-black text-slate-950">
+              Download Filtered Report
+            </h2>
+          </div>
+
+          <button
+            type="button"
+            onClick={downloadInventoryPdf}
+            className="forza-button-hover inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl"
+          >
+            <Download size={18} />
+            Download PDF
+          </button>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <Field label="PDF Scope">
+            <select
+              value={reportScope}
+              onChange={(event) => setReportScope(event.target.value as ReportScope)}
+              className="forza-input"
+            >
+              <option value="all">All Products</option>
+              <option value="product">By Product</option>
+              <option value="category">By Category</option>
+              <option value="date">By Movement Date</option>
+            </select>
+          </Field>
+
+          <Field label="Product">
+            <select
+              value={reportProductId}
+              onChange={(event) => setReportProductId(event.target.value)}
+              disabled={reportScope !== "product"}
+              className="forza-input disabled:cursor-not-allowed disabled:bg-slate-100"
+            >
+              <option value="">Select product</option>
+              {visibleProducts.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.product_name}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Category">
+            <select
+              value={reportCategoryId}
+              onChange={(event) => setReportCategoryId(event.target.value)}
+              disabled={reportScope !== "category"}
+              className="forza-input disabled:cursor-not-allowed disabled:bg-slate-100"
+            >
+              <option value="">Select category</option>
+              {visibleCategories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Date From">
+            <input
+              type="date"
+              value={reportDateFrom}
+              onChange={(event) => setReportDateFrom(event.target.value)}
+              disabled={reportScope !== "date"}
+              className="forza-input disabled:cursor-not-allowed disabled:bg-slate-100"
+            />
+          </Field>
+
+          <Field label="Date To">
+            <input
+              type="date"
+              value={reportDateTo}
+              onChange={(event) => setReportDateTo(event.target.value)}
+              disabled={reportScope !== "date"}
+              className="forza-input disabled:cursor-not-allowed disabled:bg-slate-100"
+            />
+          </Field>
+        </div>
+
+        <p className="mt-4 text-sm font-bold text-slate-500">
+          PDF uses the current branch, area, and search result. Date filter uses
+          inventory movement date.
+        </p>
+      </section>
+
+      <section className="glass-panel rounded-[2rem] p-6">
+        <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-sm font-black uppercase tracking-wide text-slate-400">
               Product List
             </p>
             <h2 className="text-2xl font-black text-slate-950">
@@ -1580,19 +2053,25 @@ export function InventoryPanel({
                     <td className="px-4 py-4 text-sm font-black text-slate-950">
                       {direction === "count"
                         ? "-"
-                        : `${movement.quantity} ${product?.unit || ""}`}
+                        : `${formatQty(movement.quantity)} ${product?.unit || ""}`}
                     </td>
                     <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                      {movement.physical_count_qty ?? "-"}
+                      {movement.physical_count_qty === null
+                        ? "-"
+                        : formatQty(movement.physical_count_qty)}
                     </td>
                     <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                      {movement.system_balance_after ?? "-"}
+                      {movement.system_balance_after === null
+                        ? "-"
+                        : formatQty(movement.system_balance_after)}
                     </td>
                     <td className="px-4 py-4">
                       <span
                         className={`rounded-full px-3 py-1 text-xs font-black ${discrepancyStatus.className}`}
                       >
-                        {movement.discrepancy_qty ?? "-"}{" "}
+                        {movement.discrepancy_qty === null
+                          ? "-"
+                          : formatQty(movement.discrepancy_qty)}{" "}
                         {movement.discrepancy_qty === null
                           ? ""
                           : discrepancyStatus.label}
