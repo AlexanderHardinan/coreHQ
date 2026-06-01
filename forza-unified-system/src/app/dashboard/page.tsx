@@ -10,10 +10,17 @@ import {
   ChefHat,
   CircleDollarSign,
   ClipboardList,
+  Flame,
+  Gauge,
+  LayoutGrid,
   PieChart,
+  ShieldAlert,
   ShieldCheck,
+  Sparkles,
   Store,
+  TrendingDown,
   TrendingUp,
+  Zap,
 } from "lucide-react";
 import { redirect } from "next/navigation";
 import {
@@ -22,6 +29,8 @@ import {
 } from "@/components/layout/dashboard-shell";
 import { getAllowedModules, type UserRole } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
+
+export const dynamic = "force-dynamic";
 
 type DashboardPageProps = {
   searchParams?: Promise<{
@@ -85,6 +94,8 @@ type DashboardSoldItem = {
   sold_date: string;
 };
 
+type AlertPriority = "critical" | "warning" | "stable";
+
 const stockInTypes: DashboardMovementType[] = [
   "opening_stock",
   "product_in",
@@ -100,6 +111,12 @@ const stockOutTypes: DashboardMovementType[] = [
   "transfer_out",
   "adjustment_out",
 ];
+
+const opsAreaLabels: Record<OpsArea, string> = {
+  kitchen: "Kitchen",
+  bar: "Bar",
+  global: "Global",
+};
 
 function normalizeBrandCode(value: string | undefined) {
   const brand = String(value || "FORZA").trim().toUpperCase();
@@ -185,6 +202,36 @@ function getMovementLabel(type: DashboardMovementType) {
   return labels[type] || type;
 }
 
+function getPriorityClass(priority: AlertPriority) {
+  if (priority === "critical") {
+    return {
+      card: "border-red-200 bg-red-50/90 shadow-red-100",
+      icon: "bg-red-600 text-white shadow-red-200",
+      text: "text-red-700",
+      glow: "bg-red-500",
+      badge: "bg-red-600 text-white",
+    };
+  }
+
+  if (priority === "warning") {
+    return {
+      card: "border-amber-200 bg-amber-50/90 shadow-amber-100",
+      icon: "bg-amber-500 text-white shadow-amber-200",
+      text: "text-amber-700",
+      glow: "bg-amber-500",
+      badge: "bg-amber-500 text-white",
+    };
+  }
+
+  return {
+    card: "border-emerald-200 bg-emerald-50/90 shadow-emerald-100",
+    icon: "bg-emerald-600 text-white shadow-emerald-200",
+    text: "text-emerald-700",
+    glow: "bg-emerald-500",
+    badge: "bg-emerald-600 text-white",
+  };
+}
+
 export default async function DashboardPage({
   searchParams,
 }: DashboardPageProps) {
@@ -208,11 +255,11 @@ export default async function DashboardPage({
     .eq("id", user.id)
     .maybeSingle();
 
-  if (profile?.is_active === false) {
+  if (!profile || profile.is_active === false) {
     redirect("/sign-in");
   }
 
-  const role = (profile?.role || "manager") as UserRole;
+  const role = profile.role as UserRole;
   const modules = getAllowedModules(role);
 
   const { data: brandsData } = await supabase
@@ -265,12 +312,13 @@ export default async function DashboardPage({
   const productIds = products.map((product) => product.id);
 
   const { data: movementsData } =
-    productIds.length > 0
+    selectedBrandId && productIds.length > 0
       ? await supabase
           .from("inventory_movements")
           .select(
             "id, product_id, movement_type, quantity, movement_date, system_balance_after, physical_count_qty, discrepancy_qty",
           )
+          .eq("brand_id", selectedBrandId)
           .in("product_id", productIds)
           .order("movement_date", { ascending: false })
           .order("created_at", { ascending: false })
@@ -286,7 +334,7 @@ export default async function DashboardPage({
     )
     .eq("brand_id", selectedBrandId)
     .order("sold_date", { ascending: false })
-    .limit(150);
+    .limit(300);
 
   const soldItems = (soldItemsData || []) as DashboardSoldItem[];
 
@@ -296,23 +344,27 @@ export default async function DashboardPage({
     0,
   );
 
-  const lowStockCount = products.filter(
+  const lowStockProducts = products.filter(
     (product) => getStockStatus(product) === "low",
-  ).length;
+  );
 
-  const overStockCount = products.filter(
+  const overStockProducts = products.filter(
     (product) => getStockStatus(product) === "overstock",
-  ).length;
+  );
 
-  const expiryWatchCount = products.filter((product) =>
-    ["expired", "expiring_soon"].includes(getExpiryStatus(product.expiry_date)),
-  ).length;
+  const expiredProducts = products.filter(
+    (product) => getExpiryStatus(product.expiry_date) === "expired",
+  );
 
-  const discrepancyCount = movements.filter(
+  const expiringSoonProducts = products.filter(
+    (product) => getExpiryStatus(product.expiry_date) === "expiring_soon",
+  );
+
+  const discrepancyMovements = movements.filter(
     (movement) =>
       movement.movement_type === "stock_count" &&
       Number(movement.discrepancy_qty || 0) !== 0,
-  ).length;
+  );
 
   const stockInQty = movements
     .filter((movement) => stockInTypes.includes(movement.movement_type))
@@ -320,6 +372,14 @@ export default async function DashboardPage({
 
   const stockOutQty = movements
     .filter((movement) => stockOutTypes.includes(movement.movement_type))
+    .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
+
+  const wasteQty = movements
+    .filter((movement) => movement.movement_type === "waste")
+    .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
+
+  const shrinkageQty = movements
+    .filter((movement) => movement.movement_type === "shrinkage")
     .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
 
   const soldQty = soldItems.reduce(
@@ -331,6 +391,16 @@ export default async function DashboardPage({
     (total, item) => total + Number(item.total_sales || 0),
     0,
   );
+
+  const criticalScore =
+    expiredProducts.length * 5 +
+    lowStockProducts.length * 3 +
+    overStockProducts.length * 2 +
+    discrepancyMovements.length * 4 +
+    expiringSoonProducts.length;
+
+  const riskLevel: AlertPriority =
+    criticalScore > 8 ? "critical" : criticalScore > 0 ? "warning" : "stable";
 
   const consumedIngredientMap = new Map<
     string,
@@ -392,189 +462,443 @@ export default async function DashboardPage({
   });
 
   const topSoldDishes = Array.from(soldDishMap.values())
-    .sort((a, b) => b.quantity - a.quantity)
+    .sort((a, b) => b.totalSales - a.totalSales)
     .slice(0, 6);
 
-  const latestMovements = movements.slice(0, 8);
+  const topLowestStock = [...products]
+    .sort((a, b) => Number(a.current_stock || 0) - Number(b.current_stock || 0))
+    .slice(0, 8);
+
+  const latestMovements = movements.slice(0, 10);
+
+  const priorityAlerts = [
+    ...expiredProducts.slice(0, 4).map((product) => ({
+      id: `expired-${product.id}`,
+      title: "Expired Item Detected",
+      label: product.product_name,
+      meta: `${formatQty(product.current_stock)} ${product.unit} left`,
+      priority: "critical" as AlertPriority,
+      icon: Flame,
+    })),
+    ...lowStockProducts.slice(0, 4).map((product) => ({
+      id: `low-${product.id}`,
+      title: "Low Stock Alert",
+      label: product.product_name,
+      meta: `${formatQty(product.current_stock)} ${product.unit} left`,
+      priority: "critical" as AlertPriority,
+      icon: AlertTriangle,
+    })),
+    ...overStockProducts.slice(0, 4).map((product) => ({
+      id: `over-${product.id}`,
+      title: "Overstock Alert",
+      label: product.product_name,
+      meta: `${formatQty(product.current_stock)} ${product.unit} on hand`,
+      priority: "warning" as AlertPriority,
+      icon: Boxes,
+    })),
+    ...discrepancyMovements.slice(0, 4).map((movement) => {
+      const product = products.find((item) => item.id === movement.product_id);
+
+      return {
+        id: `discrepancy-${movement.id}`,
+        title: "Stock Count Discrepancy",
+        label: product?.product_name || "Unknown Product",
+        meta: `Difference: ${formatQty(Number(movement.discrepancy_qty || 0))}`,
+        priority: "critical" as AlertPriority,
+        icon: ShieldAlert,
+      };
+    }),
+    ...expiringSoonProducts.slice(0, 4).map((product) => ({
+      id: `expiring-${product.id}`,
+      title: "Expiry Watch",
+      label: product.product_name,
+      meta: product.expiry_date || "Expiring soon",
+      priority: "warning" as AlertPriority,
+      icon: CalendarClock,
+    })),
+  ].slice(0, 10);
 
   const metrics = [
     {
       label: "Inventory Value",
       value: formatCurrency(inventoryValue),
-      status: "Live",
+      sub: "Live product value",
       icon: CircleDollarSign,
+      priority: "stable" as AlertPriority,
     },
     {
-      label: "Total Sales",
+      label: "Net Revenue",
       value: formatCurrency(totalSales),
-      status: "Sold Items",
+      sub: "Sales performance",
       icon: TrendingUp,
+      priority: "stable" as AlertPriority,
     },
     {
       label: "Stock In",
       value: formatQty(stockInQty),
-      status: "Movement",
+      sub: "Inventory inflow",
       icon: ArrowUpCircle,
+      priority: "stable" as AlertPriority,
     },
     {
       label: "Stock Out",
       value: formatQty(stockOutQty),
-      status: "Movement",
+      sub: "Inventory outflow",
       icon: ArrowDownCircle,
+      priority: stockOutQty > stockInQty ? "warning" : "stable",
     },
   ];
 
-  const alertCards = [
+  const matrixCards = [
     {
-      title: "Low Stock",
-      value: String(lowStockCount),
-      description: "Products at or below minimum stock.",
-      icon: AlertTriangle,
+      title: "Expired",
+      value: String(expiredProducts.length),
+      description: "Items past expiry date",
+      icon: Flame,
+      priority: expiredProducts.length > 0 ? "critical" : "stable",
     },
     {
-      title: "Over Stock",
-      value: String(overStockCount),
-      description: "Products above maximum stock level.",
+      title: "Low Stock",
+      value: String(lowStockProducts.length),
+      description: "At or below minimum",
+      icon: AlertTriangle,
+      priority: lowStockProducts.length > 0 ? "critical" : "stable",
+    },
+    {
+      title: "Overstock",
+      value: String(overStockProducts.length),
+      description: "Above maximum level",
       icon: Boxes,
+      priority: overStockProducts.length > 0 ? "warning" : "stable",
     },
     {
       title: "Expiry Watch",
-      value: String(expiryWatchCount),
-      description: "Expired or expiring within 14 days.",
+      value: String(expiringSoonProducts.length),
+      description: "Expiring within 14 days",
       icon: CalendarClock,
+      priority: expiringSoonProducts.length > 0 ? "warning" : "stable",
     },
     {
-      title: "Discrepancies",
-      value: String(discrepancyCount),
-      description: "Stock counts with missing or over quantity.",
-      icon: ShieldCheck,
+      title: "Discrepancy",
+      value: String(discrepancyMovements.length),
+      description: "Physical count variance",
+      icon: ShieldAlert,
+      priority: discrepancyMovements.length > 0 ? "critical" : "stable",
+    },
+    {
+      title: "Waste",
+      value: formatQty(wasteQty),
+      description: "Waste movement total",
+      icon: PieChart,
+      priority: wasteQty > 0 ? "warning" : "stable",
+    },
+    {
+      title: "Shrinkage",
+      value: formatQty(shrinkageQty),
+      description: "Shrinkage movement total",
+      icon: Gauge,
+      priority: shrinkageQty > 0 ? "warning" : "stable",
+    },
+    {
+      title: "Sold Qty",
+      value: formatQty(soldQty),
+      description: "Total sold quantity",
+      icon: Store,
+      priority: "stable" as AlertPriority,
     },
   ];
 
+  const riskClass = getPriorityClass(riskLevel);
+
   return (
     <DashboardShell
-      fullName={profile?.full_name || user.email || "Forza User"}
-      avatarUrl={profile?.avatar_url || null}
+      fullName={profile.full_name || user.email || "Forza User"}
+      avatarUrl={profile.avatar_url || null}
       role={role}
       modules={modules}
       brands={brands}
       selectedBrand={selectedBrand}
     >
-      <section className="glass-panel rounded-[2rem] p-6">
-        <div className="grid gap-6 lg:grid-cols-[1fr_340px] lg:items-center">
+      <section className="glass-panel relative overflow-hidden rounded-[2.25rem] p-6 md:p-8">
+        <div className="absolute -right-24 -top-24 h-72 w-72 animate-pulse rounded-full bg-emerald-200/50 blur-3xl" />
+        <div className="absolute -bottom-24 -left-20 h-72 w-72 animate-pulse rounded-full bg-amber-200/50 blur-3xl" />
+        <div className="absolute left-1/2 top-10 h-48 w-48 -translate-x-1/2 animate-ping rounded-full bg-slate-200/20" />
+
+        <div className="relative z-10 grid gap-6 xl:grid-cols-[1fr_390px] xl:items-center">
           <div>
-            <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-              Live Brand Command Center
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-sm font-black text-slate-700 shadow-sm">
+              <Sparkles size={16} />
+              Premium Animated Matrix
+            </div>
+
+            <p className="text-sm font-black uppercase tracking-[0.24em] text-slate-400">
+              Executive Performance Command
             </p>
-            <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
-              {selectedBrandName} Live Operations View
+            <h2 className="mt-3 max-w-4xl text-4xl font-black tracking-tight text-slate-950 md:text-6xl">
+              {selectedBrandName} Live Operational Matrix
             </h2>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-              Realtime operational summary from inventory, movement ledger,
-              recipe consumption, and sold dish activity for the selected brand.
+            <p className="mt-4 max-w-3xl text-sm font-semibold leading-6 text-slate-600">
+              Premium live dashboard for revenue, inventory health, stock
+              movement, expiry, low stock, overstock, discrepancy, kitchen and
+              bar operational performance.
             </p>
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              <StatusPill
+                priority={riskLevel}
+                label={
+                  riskLevel === "critical"
+                    ? "Critical attention required"
+                    : riskLevel === "warning"
+                      ? "Warnings active"
+                      : "All systems stable"
+                }
+              />
+              <div className="rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-500 shadow-sm">
+                Brand: {selectedBrandCode}
+              </div>
+              <div className="rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-500 shadow-sm">
+                Products: {products.length}
+              </div>
+            </div>
           </div>
 
-          <div className="rounded-[2rem] border border-slate-200 bg-white/80 p-5 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-950 text-white">
-                <Building2 size={24} />
+          <div className={`rounded-[2rem] border p-5 shadow-xl ${riskClass.card}`}>
+            <div className="flex items-center gap-4">
+              <div
+                className={`relative flex h-16 w-16 items-center justify-center rounded-3xl shadow-xl ${riskClass.icon}`}
+              >
+                <span
+                  className={`absolute inline-flex h-full w-full animate-ping rounded-3xl opacity-40 ${riskClass.glow}`}
+                />
+                <Bell className="relative z-10" size={28} />
               </div>
+
               <div>
-                <p className="text-xs font-black uppercase tracking-wide text-slate-400">
-                  Active Brand
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
+                  Premium Alert Status
                 </p>
-                <p className="text-2xl font-black text-slate-950">
-                  {selectedBrandName}
-                </p>
+                <h3 className={`mt-1 text-2xl font-black ${riskClass.text}`}>
+                  {riskLevel === "critical"
+                    ? "Red Alert"
+                    : riskLevel === "warning"
+                      ? "Watch Mode"
+                      : "Stable"}
+                </h3>
               </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <div className="rounded-2xl bg-slate-50 p-3">
-                <p className="text-xs font-black uppercase tracking-wide text-slate-400">
-                  Products
-                </p>
-                <p className="mt-1 text-lg font-black text-slate-950">
-                  {products.length}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-slate-50 p-3">
-                <p className="text-xs font-black uppercase tracking-wide text-slate-400">
-                  Sold Qty
-                </p>
-                <p className="mt-1 text-lg font-black text-slate-950">
-                  {formatQty(soldQty)}
-                </p>
-              </div>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <MiniSignal label="Expired" value={expiredProducts.length} />
+              <MiniSignal label="Low" value={lowStockProducts.length} />
+              <MiniSignal label="Over" value={overStockProducts.length} />
+              <MiniSignal label="Variance" value={discrepancyMovements.length} />
             </div>
           </div>
         </div>
       </section>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric) => {
           const Icon = metric.icon;
 
           return (
-            <div
+            <PremiumMetricCard
               key={metric.label}
-              className="glass-panel forza-transition forza-hover rounded-[2rem] p-5"
-            >
-              <div className="mb-5 flex items-center justify-between">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white">
-                  <Icon size={22} />
-                </div>
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-                  {metric.status}
-                </span>
-              </div>
-              <p className="text-sm font-bold text-slate-400">
-                {metric.label}
-              </p>
-              <p className="mt-2 text-2xl font-black text-slate-950">
-                {metric.value}
-              </p>
-            </div>
-          );
-        })}
-      </div>
-
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {alertCards.map((alert) => {
-          const Icon = alert.icon;
-
-          return (
-            <div
-              key={alert.title}
-              className="glass-panel rounded-[2rem] p-5"
-            >
-              <div className="mb-4 flex items-center justify-between">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-50 text-amber-700">
-                  <Icon size={20} />
-                </div>
-                <p className="text-3xl font-black text-slate-950">
-                  {alert.value}
-                </p>
-              </div>
-              <h3 className="font-black text-slate-950">{alert.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                {alert.description}
-              </p>
-            </div>
+              label={metric.label}
+              value={metric.value}
+              sub={metric.sub}
+              priority={metric.priority}
+              icon={<Icon size={22} />}
+            />
           );
         })}
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
-        <div className="glass-panel rounded-[2rem] p-6">
+      <section className="glass-panel rounded-[2.25rem] p-6">
+        <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">
+              Alert Matrix
+            </p>
+            <h2 className="mt-1 text-3xl font-black text-slate-950">
+              Live Risk Performance Grid
+            </h2>
+          </div>
+          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-xs font-black uppercase tracking-wide text-white shadow-xl">
+            <Zap size={15} />
+            Realtime Performance Signals
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {matrixCards.map((card) => {
+            const Icon = card.icon;
+
+            return (
+              <MatrixCard
+                key={card.title}
+                title={card.title}
+                value={card.value}
+                description={card.description}
+                priority={card.priority}
+                icon={<Icon size={22} />}
+              />
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[430px_1fr]">
+        <section className="glass-panel rounded-[2.25rem] p-6">
+          <div className="mb-5">
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">
+              Premium Notifications
+            </p>
+            <h2 className="text-2xl font-black text-slate-950">
+              Alert Toast Feed
+            </h2>
+          </div>
+
+          <div className="space-y-3">
+            {priorityAlerts.map((alert) => {
+              const Icon = alert.icon;
+              const classes = getPriorityClass(alert.priority);
+
+              return (
+                <div
+                  key={alert.id}
+                  className={`relative overflow-hidden rounded-3xl border p-4 shadow-lg ${classes.card}`}
+                >
+                  <div
+                    className={`absolute right-4 top-4 h-3 w-3 rounded-full ${classes.glow}`}
+                  >
+                    <span
+                      className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-70 ${classes.glow}`}
+                    />
+                  </div>
+
+                  <div className="flex gap-3">
+                    <div
+                      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-lg ${classes.icon}`}
+                    >
+                      <Icon size={20} />
+                    </div>
+                    <div>
+                      <p className={`text-xs font-black uppercase ${classes.text}`}>
+                        {alert.title}
+                      </p>
+                      <h3 className="mt-1 font-black text-slate-950">
+                        {alert.label}
+                      </h3>
+                      <p className="mt-1 text-sm font-bold text-slate-600">
+                        {alert.meta}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {priorityAlerts.length === 0 ? (
+              <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 text-sm font-black text-emerald-700 shadow-sm">
+                No premium alerts. Operations are stable.
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="glass-panel rounded-[2.25rem] p-6">
           <div className="mb-5 flex items-center justify-between">
             <div>
-              <p className="text-sm font-bold uppercase tracking-wide text-slate-400">
-                {selectedBrandName} Access
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">
+                Product Matrix
               </p>
               <h2 className="text-2xl font-black text-slate-950">
-                Available Modules
+                Lowest Stock Radar
+              </h2>
+            </div>
+            <LayoutGrid className="text-slate-400" size={28} />
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            {topLowestStock.map((product) => {
+              const stockStatus = getStockStatus(product);
+              const expiryStatus = getExpiryStatus(product.expiry_date);
+              const priority: AlertPriority =
+                expiryStatus === "expired" || stockStatus === "low"
+                  ? "critical"
+                  : stockStatus === "overstock" || expiryStatus === "expiring_soon"
+                    ? "warning"
+                    : "stable";
+              const classes = getPriorityClass(priority);
+
+              return (
+                <div
+                  key={product.id}
+                  className={`relative overflow-hidden rounded-3xl border p-5 shadow-lg transition duration-300 hover:-translate-y-1 ${classes.card}`}
+                >
+                  {priority !== "stable" ? (
+                    <div
+                      className={`absolute right-4 top-4 h-3 w-3 rounded-full ${classes.glow}`}
+                    >
+                      <span
+                        className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-70 ${classes.glow}`}
+                      />
+                    </div>
+                  ) : null}
+
+                  <h3 className="font-black text-slate-950">
+                    {product.product_name}
+                  </h3>
+                  <p className="mt-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+                    {opsAreaLabels[product.ops_area]} · {product.sku}
+                  </p>
+
+                  <p className="mt-4 text-3xl font-black text-slate-950">
+                    {formatQty(product.current_stock)} {product.unit}
+                  </p>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span className={`rounded-full px-3 py-1 text-xs font-black ${classes.badge}`}>
+                      {stockStatus === "low"
+                        ? "Low Stock"
+                        : stockStatus === "overstock"
+                          ? "Overstock"
+                          : "On Track"}
+                    </span>
+                    <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-black text-slate-600">
+                      {expiryStatus === "expired"
+                        ? "Expired"
+                        : expiryStatus === "expiring_soon"
+                          ? "Expiring Soon"
+                          : expiryStatus === "safe"
+                            ? "Safe"
+                            : "No Expiry"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+
+            {topLowestStock.length === 0 ? (
+              <div className="rounded-3xl bg-white/75 p-5 text-sm font-bold text-slate-500 md:col-span-2">
+                No products found for this brand.
+              </div>
+            ) : null}
+          </div>
+        </section>
+      </section>
+
+      <div className="grid gap-6 xl:grid-cols-[1fr_390px]">
+        <section className="glass-panel rounded-[2.25rem] p-6">
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">
+                Brand Access
+              </p>
+              <h2 className="text-2xl font-black text-slate-950">
+                Performance Modules
               </h2>
             </div>
             <BarChart3 className="text-slate-400" size={28} />
@@ -585,7 +909,7 @@ export default async function DashboardPage({
               <a
                 key={`${module.href}-${module.title}`}
                 href={`${module.href}?brand=${selectedBrandCode}`}
-                className="forza-transition forza-hover rounded-3xl border border-slate-200 bg-white/75 p-5 shadow-sm"
+                className="group rounded-3xl border border-slate-200 bg-white/75 p-5 shadow-sm transition duration-300 hover:-translate-y-1 hover:border-slate-950 hover:shadow-xl"
               >
                 <h3 className="text-lg font-black text-slate-950">
                   {module.title}
@@ -593,13 +917,16 @@ export default async function DashboardPage({
                 <p className="mt-2 text-sm leading-6 text-slate-600">
                   {module.description}
                 </p>
+                <div className="mt-4 h-1 rounded-full bg-slate-100">
+                  <div className="h-1 w-1/3 rounded-full bg-slate-950 transition-all duration-500 group-hover:w-full" />
+                </div>
               </a>
             ))}
           </div>
-        </div>
+        </section>
 
-        <div className="glass-panel rounded-[2rem] p-6">
-          <p className="text-sm font-bold uppercase tracking-wide text-slate-400">
+        <section className="glass-panel rounded-[2.25rem] p-6">
+          <p className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">
             Consumption Watch
           </p>
           <h2 className="mt-2 text-2xl font-black text-slate-950">
@@ -610,7 +937,7 @@ export default async function DashboardPage({
             {topConsumedIngredients.map((item) => (
               <div
                 key={item.sku}
-                className="rounded-3xl border border-slate-200 bg-white/75 p-4"
+                className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg"
               >
                 <div className="flex gap-3">
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-50 text-red-700">
@@ -634,17 +961,17 @@ export default async function DashboardPage({
               </div>
             ) : null}
           </div>
-        </div>
+        </section>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <section className="glass-panel rounded-[2rem] p-6">
+        <section className="glass-panel rounded-[2.25rem] p-6">
           <div className="mb-5">
-            <p className="text-sm font-bold uppercase tracking-wide text-slate-400">
-              Sold Dish Summary
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">
+              Revenue Ranking
             </p>
             <h2 className="text-2xl font-black text-slate-950">
-              Top Sold Dishes
+              Top Sold Items
             </h2>
           </div>
 
@@ -652,7 +979,7 @@ export default async function DashboardPage({
             {topSoldDishes.map((dish) => (
               <div
                 key={dish.itemName}
-                className="rounded-3xl border border-slate-200 bg-white/75 p-4"
+                className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg"
               >
                 <div className="flex items-center justify-between gap-4">
                   <div>
@@ -672,16 +999,16 @@ export default async function DashboardPage({
 
             {topSoldDishes.length === 0 ? (
               <div className="rounded-3xl bg-white/75 p-5 text-sm font-bold text-slate-500">
-                No sold dishes recorded yet.
+                No sold items recorded yet.
               </div>
             ) : null}
           </div>
         </section>
 
-        <section className="glass-panel rounded-[2rem] p-6">
+        <section className="glass-panel rounded-[2.25rem] p-6">
           <div className="mb-5">
-            <p className="text-sm font-bold uppercase tracking-wide text-slate-400">
-              Movement Ledger
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">
+              Inventory Pulse
             </p>
             <h2 className="text-2xl font-black text-slate-950">
               Latest Stock Movements
@@ -697,7 +1024,7 @@ export default async function DashboardPage({
               return (
                 <div
                   key={movement.id}
-                  className="rounded-3xl border border-slate-200 bg-white/75 p-4"
+                  className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg"
                 >
                   <div className="flex items-center justify-between gap-4">
                     <div>
@@ -730,5 +1057,154 @@ export default async function DashboardPage({
         </section>
       </div>
     </DashboardShell>
+  );
+}
+
+type PremiumMetricCardProps = {
+  label: string;
+  value: string;
+  sub: string;
+  priority: AlertPriority;
+  icon: React.ReactNode;
+};
+
+function PremiumMetricCard({
+  label,
+  value,
+  sub,
+  priority,
+  icon,
+}: PremiumMetricCardProps) {
+  const classes = getPriorityClass(priority);
+
+  return (
+    <div
+      className={`relative overflow-hidden rounded-[2rem] border p-5 shadow-lg transition duration-300 hover:-translate-y-1 hover:shadow-xl ${classes.card}`}
+    >
+      <div className="absolute -right-10 -top-10 h-24 w-24 rounded-full bg-white/40 blur-2xl" />
+
+      {priority !== "stable" ? (
+        <div className={`absolute right-5 top-5 h-3 w-3 rounded-full ${classes.glow}`}>
+          <span
+            className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-70 ${classes.glow}`}
+          />
+        </div>
+      ) : null}
+
+      <div className="relative z-10 mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-xl">
+        {icon}
+      </div>
+
+      <p className="relative z-10 text-sm font-bold text-slate-500">{label}</p>
+      <p className="relative z-10 mt-2 text-2xl font-black text-slate-950">
+        {value}
+      </p>
+      <p className="relative z-10 mt-1 text-xs font-black uppercase tracking-wide text-slate-400">
+        {sub}
+      </p>
+    </div>
+  );
+}
+
+type MatrixCardProps = {
+  title: string;
+  value: string;
+  description: string;
+  priority: AlertPriority;
+  icon: React.ReactNode;
+};
+
+function MatrixCard({
+  title,
+  value,
+  description,
+  priority,
+  icon,
+}: MatrixCardProps) {
+  const classes = getPriorityClass(priority);
+
+  return (
+    <div
+      className={`relative overflow-hidden rounded-[2rem] border p-5 shadow-lg transition duration-300 hover:-translate-y-1 hover:shadow-xl ${classes.card}`}
+    >
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.85),transparent_35%)]" />
+
+      {priority !== "stable" ? (
+        <div className={`absolute right-5 top-5 h-4 w-4 rounded-full ${classes.glow}`}>
+          <span
+            className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${classes.glow}`}
+          />
+        </div>
+      ) : null}
+
+      <div
+        className={`relative z-10 mb-5 flex h-12 w-12 items-center justify-center rounded-2xl shadow-xl ${classes.icon}`}
+      >
+        {icon}
+      </div>
+      <h3 className="relative z-10 text-sm font-black uppercase tracking-wide text-slate-500">
+        {title}
+      </h3>
+      <p className="relative z-10 mt-2 text-4xl font-black text-slate-950">
+        {value}
+      </p>
+      <p className="relative z-10 mt-2 text-sm font-semibold leading-6 text-slate-600">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+type StatusPillProps = {
+  priority: AlertPriority;
+  label: string;
+};
+
+function StatusPill({ priority, label }: StatusPillProps) {
+  const classes = getPriorityClass(priority);
+
+  return (
+    <div
+      className={`relative inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-black uppercase tracking-wide shadow-sm ${classes.badge}`}
+    >
+      {priority !== "stable" ? (
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-white" />
+        </span>
+      ) : (
+        <span className="h-2.5 w-2.5 rounded-full bg-white" />
+      )}
+      {label}
+    </div>
+  );
+}
+
+type MiniSignalProps = {
+  label: string;
+  value: number;
+};
+
+function MiniSignal({ label, value }: MiniSignalProps) {
+  const isActive = value > 0;
+
+  return (
+    <div className="rounded-2xl bg-white/80 p-3 shadow-sm">
+      <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+        {label}
+      </p>
+      <div className="mt-2 flex items-center justify-between">
+        <p className="text-xl font-black text-slate-950">{value}</p>
+        <span
+          className={`relative h-3 w-3 rounded-full ${
+            isActive ? "bg-red-500" : "bg-emerald-500"
+          }`}
+        >
+          {isActive ? (
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-70" />
+          ) : null}
+        </span>
+      </div>
+    </div>
   );
 }
