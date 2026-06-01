@@ -817,7 +817,7 @@ export function InventoryPanel({
     const productRows = reportProducts
       .map((product) => {
         const stockStatus = getStockStatus(product);
-        const expiryStatus = getExpiryStatus(product);
+        const expiryStatus = getExpiryStatus(product.expiry_date);
 
         return `
           <tr>
