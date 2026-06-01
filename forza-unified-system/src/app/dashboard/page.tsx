@@ -545,7 +545,7 @@ export default async function DashboardPage({
       value: formatQty(stockOutQty),
       sub: "Inventory outflow",
       icon: ArrowDownCircle,
-      priority: stockOutQty > stockInQty ? "warning" : "stable",
+      priority: (stockOutQty > stockInQty ? "warning" : "stable") as AlertPriority,
     },
   ];
 
