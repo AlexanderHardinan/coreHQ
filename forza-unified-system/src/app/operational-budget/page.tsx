@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useState } from "react";
-import { redirect, useSearchParams } from "next/navigation";
+import { redirect } from "next/navigation";
 import {
   AlertTriangle,
   BarChart3,
@@ -219,9 +219,8 @@ function getEmptyForm(month: string): BudgetFormState {
 
 export default function OperationalBudgetPage() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-  const searchParams = useSearchParams();
 
-  const requestedBrandCode = normalizeBrandCode(searchParams.get("brand"));
+  const [requestedBrandCode, setRequestedBrandCode] = useState("FORZA");
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -240,6 +239,11 @@ export default function OperationalBudgetPage() {
   const [form, setForm] = useState<BudgetFormState>(() =>
     getEmptyForm(currentMonthValue()),
   );
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setRequestedBrandCode(normalizeBrandCode(params.get("brand")));
+  }, []);
 
   useEffect(() => {
     async function loadData() {
