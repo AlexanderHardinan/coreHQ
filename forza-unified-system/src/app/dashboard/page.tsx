@@ -549,14 +549,14 @@ export default async function DashboardPage({
     },
   ];
 
-  const matrixCards = [
-    {
-      title: "Expired",
-      value: String(expiredProducts.length),
-      description: "Items past expiry date",
-      icon: Flame,
-      priority: expiredProducts.length > 0 ? "critical" : "stable",
-    },
+  const matrixCards: {
+      title: string;
+      value: string;
+      description: string;
+      icon: Flame;
+      priority: AlertPriority;
+    }[] = [
+  
     {
       title: "Low Stock",
       value: String(lowStockProducts.length),
