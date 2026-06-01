@@ -1,13 +1,9 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
-import { useEffect, useMemo, useState } from "react";
-import { redirect } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
-  Building2,
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
@@ -17,12 +13,14 @@ import {
   PieChart,
   Plus,
   Save,
+  Search,
   Sparkles,
   Trash2,
   TrendingDown,
   TrendingUp,
   WalletCards,
 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   DashboardShell,
@@ -39,6 +37,18 @@ type BudgetUnit = {
   is_active: boolean;
 };
 
+type BudgetCategoryValue =
+  | "food"
+  | "beverage"
+  | "cleaning"
+  | "utilities"
+  | "maintenance"
+  | "packaging"
+  | "marketing"
+  | "rent"
+  | "subscriptions"
+  | "custom";
+
 type OperationalBudget = {
   id: string;
   brand_id: string;
@@ -46,6 +56,8 @@ type OperationalBudget = {
   budget_month: string;
   category: BudgetCategoryValue;
   custom_category: string | null;
+  revenue_base: number;
+  budget_percent: number;
   budget_amount: number;
   actual_amount: number;
   notes: string | null;
@@ -62,17 +74,13 @@ type ProfileRecord = {
   is_active: boolean;
 };
 
-type BudgetCategoryValue =
-  | "food"
-  | "beverage"
-  | "cleaning"
-  | "utilities"
-  | "maintenance"
-  | "packaging"
-  | "marketing"
-  | "rent"
-  | "subscriptions"
-  | "custom";
+type SoldRevenueRecord = {
+  id: string;
+  brand_id: string | null;
+  brand_unit_id: string;
+  total_sales: number;
+  sold_date: string;
+};
 
 type BudgetFormState = {
   id: string;
@@ -80,7 +88,8 @@ type BudgetFormState = {
   budgetMonth: string;
   category: BudgetCategoryValue;
   customCategory: string;
-  budgetAmount: string;
+  revenueBase: string;
+  budgetPercent: string;
   actualAmount: string;
   notes: string;
 };
@@ -165,6 +174,19 @@ function dateToMonth(value: string) {
   return String(value || "").slice(0, 7) || currentMonthValue();
 }
 
+function monthStartEnd(month: string) {
+  const safeMonth = month || currentMonthValue();
+  const startDate = `${safeMonth}-01`;
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+  const endDate = end.toISOString().slice(0, 10);
+
+  return {
+    startDate,
+    endDate,
+  };
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("mk-MK", {
     style: "currency",
@@ -174,25 +196,21 @@ function formatCurrency(value: number) {
 }
 
 function formatPercent(value: number) {
-  return `${Number(value || 0).toFixed(1)}%`;
+  return `${Number(value || 0).toFixed(2)}%`;
 }
 
-function formatQty(value: number) {
-  const safeValue = Number(value || 0);
-
-  if (Number.isInteger(safeValue)) {
-    return String(safeValue);
-  }
-
-  return String(Number(safeValue.toFixed(3)));
-}
-
-function getCategoryLabel(value: BudgetCategoryValue, customCategory?: string | null) {
+function getCategoryLabel(
+  value: BudgetCategoryValue,
+  customCategory?: string | null,
+) {
   if (value === "custom") {
     return customCategory?.trim() || "Custom";
   }
 
-  return budgetCategories.find((category) => category.value === value)?.label || value;
+  return (
+    budgetCategories.find((category) => category.value === value)?.label ||
+    value
+  );
 }
 
 function escapeHtml(value: string) {
@@ -204,23 +222,44 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
-function getEmptyForm(month: string): BudgetFormState {
+function calculateBudgetValue(revenueBase: number, budgetPercent: number) {
+  return (Number(revenueBase || 0) * Number(budgetPercent || 0)) / 100;
+}
+
+function calculateActualPercent(actualAmount: number, revenueBase: number) {
+  if (Number(revenueBase || 0) <= 0) {
+    return 0;
+  }
+
+  return (Number(actualAmount || 0) / Number(revenueBase || 0)) * 100;
+}
+
+function getEmptyForm(month: string, revenueBase = 0): BudgetFormState {
   return {
     id: "",
     brandUnitId: "all",
     budgetMonth: month,
     category: "food",
     customCategory: "",
-    budgetAmount: "0",
+    revenueBase: String(Number(revenueBase || 0)),
+    budgetPercent: "0",
     actualAmount: "0",
     notes: "",
   };
 }
 
 export default function OperationalBudgetPage() {
-  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  return (
+    <Suspense fallback={<OperationalBudgetLoading />}>
+      <OperationalBudgetClient />
+    </Suspense>
+  );
+}
 
-  const [requestedBrandCode, setRequestedBrandCode] = useState("FORZA");
+function OperationalBudgetClient() {
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const searchParams = useSearchParams();
+  const requestedBrandCode = normalizeBrandCode(searchParams.get("brand"));
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -229,9 +268,12 @@ export default function OperationalBudgetPage() {
   const [profile, setProfile] = useState<ProfileRecord | null>(null);
 
   const [brands, setBrands] = useState<DashboardBrand[]>([]);
-  const [selectedBrand, setSelectedBrand] = useState<DashboardBrand | null>(null);
+  const [selectedBrand, setSelectedBrand] = useState<DashboardBrand | null>(
+    null,
+  );
   const [units, setUnits] = useState<BudgetUnit[]>([]);
   const [budgets, setBudgets] = useState<OperationalBudget[]>([]);
+  const [soldRevenue, setSoldRevenue] = useState<SoldRevenueRecord[]>([]);
 
   const [selectedUnitId, setSelectedUnitId] = useState("all");
   const [selectedMonth, setSelectedMonth] = useState(currentMonthValue());
@@ -240,10 +282,21 @@ export default function OperationalBudgetPage() {
     getEmptyForm(currentMonthValue()),
   );
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setRequestedBrandCode(normalizeBrandCode(params.get("brand")));
-  }, []);
+  const role = profile?.role || "manager";
+  const modules = getAllowedModules(role);
+
+  const revenueSales = useMemo(() => {
+    return soldRevenue.reduce(
+      (total, sale) => total + Number(sale.total_sales || 0),
+      0,
+    );
+  }, [soldRevenue]);
+
+  function getRevenueForUnit(unitId: string) {
+    return soldRevenue
+      .filter((sale) => unitId === "all" || sale.brand_unit_id === unitId)
+      .reduce((total, sale) => total + Number(sale.total_sales || 0), 0);
+  }
 
   useEffect(() => {
     async function loadData() {
@@ -255,7 +308,8 @@ export default function OperationalBudgetPage() {
       } = await supabase.auth.getUser();
 
       if (userError || !user) {
-        redirect("/auth/sign-in");
+        window.location.href = "/auth/sign-in";
+        return;
       }
 
       setUserId(user.id);
@@ -268,7 +322,8 @@ export default function OperationalBudgetPage() {
         .maybeSingle();
 
       if (profileError || !profileData || profileData.is_active === false) {
-        redirect("/auth/sign-in");
+        window.location.href = "/auth/sign-in";
+        return;
       }
 
       const nextProfile = profileData as ProfileRecord;
@@ -286,25 +341,27 @@ export default function OperationalBudgetPage() {
         return;
       }
 
-      const sortedBrands = ((brandsData || []) as DashboardBrand[]).sort((a, b) => {
-        const order = ["FORZA", "FUSION"];
-        const aIndex = order.indexOf(a.code);
-        const bIndex = order.indexOf(b.code);
+      const sortedBrands = ((brandsData || []) as DashboardBrand[]).sort(
+        (a, b) => {
+          const order = ["FORZA", "FUSION"];
+          const aIndex = order.indexOf(a.code);
+          const bIndex = order.indexOf(b.code);
 
-        if (aIndex === -1 && bIndex === -1) {
-          return a.name.localeCompare(b.name);
-        }
+          if (aIndex === -1 && bIndex === -1) {
+            return a.name.localeCompare(b.name);
+          }
 
-        if (aIndex === -1) {
-          return 1;
-        }
+          if (aIndex === -1) {
+            return 1;
+          }
 
-        if (bIndex === -1) {
-          return -1;
-        }
+          if (bIndex === -1) {
+            return -1;
+          }
 
-        return aIndex - bIndex;
-      });
+          return aIndex - bIndex;
+        },
+      );
 
       setBrands(sortedBrands);
 
@@ -334,10 +391,33 @@ export default function OperationalBudgetPage() {
       const nextUnits = (unitsData || []) as BudgetUnit[];
       setUnits(nextUnits);
 
+      const { startDate, endDate } = monthStartEnd(selectedMonth);
+
+      const { data: revenueData, error: revenueError } = await supabase
+        .from("sold_items")
+        .select("id, brand_id, brand_unit_id, total_sales, sold_date")
+        .eq("brand_id", selectedBrandId)
+        .gte("sold_date", startDate)
+        .lte("sold_date", endDate);
+
+      if (revenueError) {
+        toast.error(revenueError.message);
+        setIsLoading(false);
+        return;
+      }
+
+      const nextSoldRevenue = (revenueData || []) as SoldRevenueRecord[];
+      setSoldRevenue(nextSoldRevenue);
+
+      const nextRevenueBase = nextSoldRevenue.reduce(
+        (total, sale) => total + Number(sale.total_sales || 0),
+        0,
+      );
+
       const { data: budgetsData, error: budgetsError } = await supabase
         .from("operational_budgets")
         .select(
-          "id, brand_id, brand_unit_id, budget_month, category, custom_category, budget_amount, actual_amount, notes, is_active, created_by, created_at, updated_at",
+          "id, brand_id, brand_unit_id, budget_month, category, custom_category, revenue_base, budget_percent, budget_amount, actual_amount, notes, is_active, created_by, created_at, updated_at",
         )
         .eq("brand_id", selectedBrandId)
         .eq("budget_month", monthToDate(selectedMonth))
@@ -351,16 +431,13 @@ export default function OperationalBudgetPage() {
       }
 
       setBudgets((budgetsData || []) as OperationalBudget[]);
-      setForm(getEmptyForm(selectedMonth));
+      setForm(getEmptyForm(selectedMonth, nextRevenueBase));
       setSelectedUnitId("all");
       setIsLoading(false);
     }
 
     loadData();
   }, [requestedBrandCode, selectedMonth, supabase]);
-
-  const role = profile?.role || "manager";
-  const modules = getAllowedModules(role);
 
   const filteredBudgets = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -383,7 +460,36 @@ export default function OperationalBudgetPage() {
     });
   }, [budgets, search, selectedUnitId]);
 
+  const selectedUnitRevenue = useMemo(
+    () => getRevenueForUnit(selectedUnitId),
+    [selectedUnitId, soldRevenue],
+  );
+
+  const formRevenueBase = Number(form.revenueBase || 0);
+  const formBudgetPercent = Number(form.budgetPercent || 0);
+  const formActualAmount = Number(form.actualAmount || 0);
+  const formBudgetAmount = calculateBudgetValue(
+    formRevenueBase,
+    formBudgetPercent,
+  );
+  const formActualPercent = calculateActualPercent(
+    formActualAmount,
+    formRevenueBase,
+  );
+  const formPercentVariance = formBudgetPercent - formActualPercent;
+  const formValueVariance = formBudgetAmount - formActualAmount;
+
   const totals = useMemo(() => {
+    const revenueTotal = filteredBudgets.reduce(
+      (total, budget) => total + Number(budget.revenue_base || 0),
+      0,
+    );
+
+    const budgetPercentTotal = filteredBudgets.reduce(
+      (total, budget) => total + Number(budget.budget_percent || 0),
+      0,
+    );
+
     const budgetTotal = filteredBudgets.reduce(
       (total, budget) => total + Number(budget.budget_amount || 0),
       0,
@@ -395,21 +501,22 @@ export default function OperationalBudgetPage() {
     );
 
     const variance = budgetTotal - actualTotal;
+    const actualPercent =
+      revenueTotal > 0 ? (actualTotal / revenueTotal) * 100 : 0;
     const usagePercent = budgetTotal > 0 ? (actualTotal / budgetTotal) * 100 : 0;
-    const remainingPercent =
-      budgetTotal > 0 ? Math.max(0, (variance / budgetTotal) * 100) : 0;
-
     const overBudgetCount = filteredBudgets.filter(
       (budget) =>
         Number(budget.actual_amount || 0) > Number(budget.budget_amount || 0),
     ).length;
 
     return {
+      revenueTotal,
+      budgetPercentTotal,
       budgetTotal,
       actualTotal,
       variance,
+      actualPercent,
       usagePercent,
-      remainingPercent,
       overBudgetCount,
       itemCount: filteredBudgets.length,
     };
@@ -419,20 +526,33 @@ export default function OperationalBudgetPage() {
     () =>
       [...filteredBudgets]
         .map((budget) => {
+          const revenueBase = Number(budget.revenue_base || 0);
+          const budgetPercent = Number(budget.budget_percent || 0);
           const budgetAmount = Number(budget.budget_amount || 0);
           const actualAmount = Number(budget.actual_amount || 0);
-          const variance = budgetAmount - actualAmount;
+          const actualPercent = calculateActualPercent(actualAmount, revenueBase);
+          const valueVariance = budgetAmount - actualAmount;
+          const percentVariance = budgetPercent - actualPercent;
           const usagePercent =
             budgetAmount > 0 ? (actualAmount / budgetAmount) * 100 : 0;
 
           return {
             ...budget,
             label: getCategoryLabel(budget.category, budget.custom_category),
-            variance,
+            revenueBase,
+            budgetPercent,
+            budgetAmount,
+            actualAmount,
+            actualPercent,
+            valueVariance,
+            percentVariance,
             usagePercent,
           };
         })
-        .sort((a, b) => Number(b.budget_amount || 0) - Number(a.budget_amount || 0)),
+        .sort(
+          (a, b) =>
+            Number(b.budget_amount || 0) - Number(a.budget_amount || 0),
+        ),
     [filteredBudgets],
   );
 
@@ -443,8 +563,29 @@ export default function OperationalBudgetPage() {
     }));
   }
 
+  function handleUnitChange(value: string) {
+    const nextRevenueBase = getRevenueForUnit(value);
+
+    setForm((current) => ({
+      ...current,
+      brandUnitId: value,
+      revenueBase: String(Number(nextRevenueBase || 0)),
+    }));
+  }
+
+  function useSalesRevenueAsBase() {
+    const nextRevenueBase = getRevenueForUnit(form.brandUnitId);
+
+    setForm((current) => ({
+      ...current,
+      revenueBase: String(Number(nextRevenueBase || 0)),
+    }));
+
+    toast.success("Revenue sales applied as budget base.");
+  }
+
   function resetForm() {
-    setForm(getEmptyForm(selectedMonth));
+    setForm(getEmptyForm(selectedMonth, getRevenueForUnit("all")));
   }
 
   async function refreshBudgets() {
@@ -455,7 +596,7 @@ export default function OperationalBudgetPage() {
     const { data, error } = await supabase
       .from("operational_budgets")
       .select(
-        "id, brand_id, brand_unit_id, budget_month, category, custom_category, budget_amount, actual_amount, notes, is_active, created_by, created_at, updated_at",
+        "id, brand_id, brand_unit_id, budget_month, category, custom_category, revenue_base, budget_percent, budget_amount, actual_amount, notes, is_active, created_by, created_at, updated_at",
       )
       .eq("brand_id", selectedBrand.id)
       .eq("budget_month", monthToDate(selectedMonth))
@@ -478,11 +619,13 @@ export default function OperationalBudgetPage() {
       return;
     }
 
-    const budgetAmount = Number(form.budgetAmount || 0);
+    const revenueBase = Number(form.revenueBase || 0);
+    const budgetPercent = Number(form.budgetPercent || 0);
     const actualAmount = Number(form.actualAmount || 0);
+    const budgetAmount = calculateBudgetValue(revenueBase, budgetPercent);
 
-    if (budgetAmount < 0 || actualAmount < 0) {
-      toast.error("Budget and actual amount cannot be negative.");
+    if (revenueBase < 0 || budgetPercent < 0 || actualAmount < 0) {
+      toast.error("Revenue, percentage, and actual amount cannot be negative.");
       return;
     }
 
@@ -500,6 +643,8 @@ export default function OperationalBudgetPage() {
       category: form.category,
       custom_category:
         form.category === "custom" ? form.customCategory.trim() : null,
+      revenue_base: revenueBase,
+      budget_percent: budgetPercent,
       budget_amount: budgetAmount,
       actual_amount: actualAmount,
       notes: form.notes.trim() || null,
@@ -515,6 +660,8 @@ export default function OperationalBudgetPage() {
             budget_month: payload.budget_month,
             category: payload.category,
             custom_category: payload.custom_category,
+            revenue_base: payload.revenue_base,
+            budget_percent: payload.budget_percent,
             budget_amount: payload.budget_amount,
             actual_amount: payload.actual_amount,
             notes: payload.notes,
@@ -529,7 +676,9 @@ export default function OperationalBudgetPage() {
       return;
     }
 
-    toast.success(form.id ? "Budget updated successfully." : "Budget saved successfully.");
+    toast.success(
+      form.id ? "Budget updated successfully." : "Budget saved successfully.",
+    );
     resetForm();
     await refreshBudgets();
   }
@@ -541,7 +690,8 @@ export default function OperationalBudgetPage() {
       budgetMonth: dateToMonth(budget.budget_month),
       category: budget.category,
       customCategory: budget.custom_category || "",
-      budgetAmount: String(Number(budget.budget_amount || 0)),
+      revenueBase: String(Number(budget.revenue_base || 0)),
+      budgetPercent: String(Number(budget.budget_percent || 0)),
       actualAmount: String(Number(budget.actual_amount || 0)),
       notes: budget.notes || "",
     });
@@ -580,9 +730,9 @@ export default function OperationalBudgetPage() {
     const rows = categoryPerformance
       .map((budget) => {
         const varianceStatus =
-          budget.variance < 0
+          budget.valueVariance < 0
             ? "Over Budget"
-            : budget.variance > 0
+            : budget.valueVariance > 0
               ? "Under Budget"
               : "On Target";
 
@@ -595,12 +745,14 @@ export default function OperationalBudgetPage() {
                     "Selected Unit"
                 : "All Units",
             )}</td>
-            <td>${formatCurrency(Number(budget.budget_amount || 0))}</td>
-            <td>${formatCurrency(Number(budget.actual_amount || 0))}</td>
-            <td>${formatCurrency(budget.variance)}</td>
-            <td>${formatPercent(budget.usagePercent)}</td>
+            <td>${formatCurrency(budget.revenueBase)}</td>
+            <td>${formatPercent(budget.budgetPercent)}</td>
+            <td>${formatCurrency(budget.budgetAmount)}</td>
+            <td>${formatCurrency(budget.actualAmount)}</td>
+            <td>${formatPercent(budget.actualPercent)}</td>
+            <td>${formatCurrency(budget.valueVariance)}</td>
+            <td>${formatPercent(budget.percentVariance)}</td>
             <td>${escapeHtml(varianceStatus)}</td>
-            <td>${escapeHtml(budget.notes || "-")}</td>
           </tr>
         `;
       })
@@ -678,20 +830,20 @@ export default function OperationalBudgetPage() {
             table {
               width: 100%;
               border-collapse: collapse;
-              font-size: 11px;
+              font-size: 10px;
             }
             th {
               text-align: left;
               background: #0f172a;
               color: #ffffff;
-              padding: 9px;
-              font-size: 9px;
+              padding: 8px;
+              font-size: 8px;
               text-transform: uppercase;
               letter-spacing: .7px;
             }
             td {
               border-bottom: 1px solid #e2e8f0;
-              padding: 9px;
+              padding: 8px;
               vertical-align: top;
             }
             .footer {
@@ -715,7 +867,7 @@ export default function OperationalBudgetPage() {
           <main class="sheet">
             <section class="header">
               <div class="brand">💶 Forza Unified System</div>
-              <h1>Operational Budget Report</h1>
+              <h1>Operational Budget Percentage Report</h1>
             </section>
 
             <section class="content">
@@ -723,34 +875,36 @@ export default function OperationalBudgetPage() {
                 <div class="card"><div class="label">Brand</div><div class="value">${escapeHtml(selectedBrand?.name || "Selected Brand")}</div></div>
                 <div class="card"><div class="label">Branch</div><div class="value">${escapeHtml(selectedUnit?.name || "All Units")}</div></div>
                 <div class="card"><div class="label">Month</div><div class="value">${escapeHtml(selectedMonth)}</div></div>
-                <div class="card"><div class="label">Categories</div><div class="value">${filteredBudgets.length}</div></div>
-                <div class="card"><div class="label">Budget</div><div class="value">${formatCurrency(totals.budgetTotal)}</div></div>
-                <div class="card"><div class="label">Actual</div><div class="value">${formatCurrency(totals.actualTotal)}</div></div>
+                <div class="card"><div class="label">Revenue Sales</div><div class="value">${formatCurrency(selectedUnitRevenue)}</div></div>
+                <div class="card"><div class="label">Budget %</div><div class="value">${formatPercent(totals.budgetPercentTotal)}</div></div>
+                <div class="card"><div class="label">Budget Value</div><div class="value">${formatCurrency(totals.budgetTotal)}</div></div>
+                <div class="card"><div class="label">Actual Spend</div><div class="value">${formatCurrency(totals.actualTotal)}</div></div>
                 <div class="card"><div class="label">Variance</div><div class="value">${formatCurrency(totals.variance)}</div></div>
-                <div class="card"><div class="label">Usage</div><div class="value">${formatPercent(totals.usagePercent)}</div></div>
               </div>
 
-              <h2>📊 Budget Category Performance</h2>
+              <h2>📊 Budget Weight of Scale</h2>
               <table>
                 <thead>
                   <tr>
                     <th>Category</th>
                     <th>Branch</th>
-                    <th>Budget</th>
+                    <th>Revenue Base</th>
+                    <th>Budget %</th>
+                    <th>Budget Value</th>
                     <th>Actual</th>
-                    <th>Variance</th>
-                    <th>Usage</th>
+                    <th>Actual %</th>
+                    <th>Value Variance</th>
+                    <th>% Variance</th>
                     <th>Status</th>
-                    <th>Notes</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${rows || `<tr><td colspan="8">No budget data found.</td></tr>`}
+                  ${rows || `<tr><td colspan="10">No budget data found.</td></tr>`}
                 </tbody>
               </table>
 
               <div class="footer">
-                <div>Operational Budget Report</div>
+                <div>Operational Budget Percentage Report</div>
                 <div>Developer Rights Chef Alex @FORZA 2026</div>
               </div>
             </section>
@@ -778,23 +932,7 @@ export default function OperationalBudgetPage() {
   }
 
   if (isLoading || !profile) {
-    return (
-      <main className="flex min-h-screen items-center justify-center p-6">
-        <section className="glass-panel relative w-full max-w-lg overflow-hidden rounded-[2rem] p-8 text-center">
-          <div className="absolute -right-16 -top-16 h-40 w-40 animate-pulse rounded-full bg-emerald-200/50 blur-3xl" />
-          <div className="absolute -bottom-16 -left-16 h-40 w-40 animate-pulse rounded-full bg-amber-200/50 blur-3xl" />
-          <div className="relative z-10 mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-xl">
-            <WalletCards className="animate-pulse" size={24} />
-          </div>
-          <h1 className="relative z-10 mt-5 text-2xl font-black text-slate-950">
-            Loading Operational Budget
-          </h1>
-          <p className="relative z-10 mt-2 text-sm font-bold text-slate-500">
-            Preparing brand budget workspace...
-          </p>
-        </section>
-      </main>
-    );
+    return <OperationalBudgetLoading />;
   }
 
   return (
@@ -815,19 +953,18 @@ export default function OperationalBudgetPage() {
           <div>
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-sm font-black text-slate-700 shadow-sm">
               <Sparkles size={16} />
-              Premium Budget Control
+              Percentage Budget Control
             </div>
 
             <p className="text-sm font-black uppercase tracking-[0.24em] text-slate-400">
               Operational Budget
             </p>
             <h1 className="mt-3 max-w-4xl text-4xl font-black tracking-tight text-slate-950 md:text-6xl">
-              {selectedBrand?.name || "Selected Brand"} Cost Control Matrix
+              {selectedBrand?.name || "Selected Brand"} Weight of Scale Matrix
             </h1>
             <p className="mt-4 max-w-3xl text-sm font-semibold leading-6 text-slate-600">
-              Monthly operational budget setup for food, beverage, cleaning,
-              utilities, maintenance, packaging, marketing, rent,
-              subscriptions, and custom categories.
+              Budget is calculated by percentage against revenue sales. Formula:
+              Revenue Sales × Budget % = Budget Value.
             </p>
           </div>
 
@@ -857,61 +994,86 @@ export default function OperationalBudgetPage() {
                 </option>
               ))}
             </select>
+
+            <div className="mt-4 rounded-2xl bg-slate-50 p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+                Revenue Sales Base
+              </p>
+              <p className="mt-1 text-xl font-black text-slate-950">
+                {formatCurrency(selectedUnitRevenue)}
+              </p>
+            </div>
           </div>
         </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          label="Budget Total"
-          value={formatCurrency(totals.budgetTotal)}
+          label="Revenue Sales"
+          value={formatCurrency(selectedUnitRevenue)}
           icon={<CircleDollarSign size={22} />}
           tone="dark"
         />
         <MetricCard
-          label="Actual Total"
+          label="Budget % Weight"
+          value={formatPercent(totals.budgetPercentTotal)}
+          icon={<PieChart size={22} />}
+          tone={totals.budgetPercentTotal > 100 ? "danger" : "stable"}
+        />
+        <MetricCard
+          label="Budget Value"
+          value={formatCurrency(totals.budgetTotal)}
+          icon={<WalletCards size={22} />}
+          tone="stable"
+        />
+        <MetricCard
+          label="Actual Spend"
           value={formatCurrency(totals.actualTotal)}
           icon={<TrendingUp size={22} />}
           tone={totals.actualTotal > totals.budgetTotal ? "danger" : "stable"}
-        />
-        <MetricCard
-          label="Variance"
-          value={formatCurrency(totals.variance)}
-          icon={totals.variance < 0 ? <TrendingDown size={22} /> : <CheckCircle2 size={22} />}
-          tone={totals.variance < 0 ? "danger" : "stable"}
-        />
-        <MetricCard
-          label="Budget Usage"
-          value={formatPercent(totals.usagePercent)}
-          icon={<PieChart size={22} />}
-          tone={totals.usagePercent > 100 ? "danger" : totals.usagePercent > 85 ? "warning" : "stable"}
         />
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          label="Categories"
-          value={String(totals.itemCount)}
+          label="Value Variance"
+          value={formatCurrency(totals.variance)}
+          icon={
+            totals.variance < 0 ? (
+              <TrendingDown size={22} />
+            ) : (
+              <CheckCircle2 size={22} />
+            )
+          }
+          tone={totals.variance < 0 ? "danger" : "stable"}
+        />
+        <MetricCard
+          label="Actual % of Revenue"
+          value={formatPercent(totals.actualPercent)}
           icon={<BarChart3 size={22} />}
-          tone="dark"
+          tone={
+            totals.actualPercent > totals.budgetPercentTotal
+              ? "danger"
+              : "stable"
+          }
+        />
+        <MetricCard
+          label="Budget Usage"
+          value={formatPercent(totals.usagePercent)}
+          icon={<CalendarDays size={22} />}
+          tone={
+            totals.usagePercent > 100
+              ? "danger"
+              : totals.usagePercent > 85
+                ? "warning"
+                : "stable"
+          }
         />
         <MetricCard
           label="Over Budget"
           value={String(totals.overBudgetCount)}
           icon={<AlertTriangle size={22} />}
           tone={totals.overBudgetCount > 0 ? "danger" : "stable"}
-        />
-        <MetricCard
-          label="Remaining"
-          value={formatCurrency(Math.max(0, totals.variance))}
-          icon={<WalletCards size={22} />}
-          tone="stable"
-        />
-        <MetricCard
-          label="Remaining %"
-          value={formatPercent(totals.remainingPercent)}
-          icon={<CalendarDays size={22} />}
-          tone="dark"
         />
       </section>
 
@@ -922,7 +1084,7 @@ export default function OperationalBudgetPage() {
               Budget Entry
             </p>
             <h2 className="text-2xl font-black text-slate-950">
-              {form.id ? "Edit Budget Category" : "Create Budget Category"}
+              {form.id ? "Edit Percentage Budget" : "Create Percentage Budget"}
             </h2>
           </div>
 
@@ -933,7 +1095,7 @@ export default function OperationalBudgetPage() {
               </label>
               <select
                 value={form.brandUnitId}
-                onChange={(event) => updateForm("brandUnitId", event.target.value)}
+                onChange={(event) => handleUnitChange(event.target.value)}
                 className="forza-input mt-2"
               >
                 <option value="all">All Units</option>
@@ -952,7 +1114,9 @@ export default function OperationalBudgetPage() {
               <input
                 type="month"
                 value={form.budgetMonth}
-                onChange={(event) => updateForm("budgetMonth", event.target.value)}
+                onChange={(event) =>
+                  updateForm("budgetMonth", event.target.value)
+                }
                 className="forza-input mt-2"
               />
             </div>
@@ -964,7 +1128,10 @@ export default function OperationalBudgetPage() {
               <select
                 value={form.category}
                 onChange={(event) =>
-                  updateForm("category", event.target.value as BudgetCategoryValue)
+                  updateForm(
+                    "category",
+                    event.target.value as BudgetCategoryValue,
+                  )
                 }
                 className="forza-input mt-2"
               >
@@ -992,17 +1159,41 @@ export default function OperationalBudgetPage() {
               </div>
             ) : null}
 
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <label className="text-sm font-bold text-slate-700">
+                  Revenue Sales Base (€)
+                </label>
+                <button
+                  type="button"
+                  onClick={useSalesRevenueAsBase}
+                  className="text-xs font-black uppercase tracking-wide text-slate-950 underline"
+                >
+                  Use sales revenue
+                </button>
+              </div>
+              <input
+                type="number"
+                step="0.01"
+                value={form.revenueBase}
+                onChange={(event) =>
+                  updateForm("revenueBase", event.target.value)
+                }
+                className="forza-input"
+              />
+            </div>
+
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <label className="text-sm font-bold text-slate-700">
-                  Budget Amount (€)
+                  Budget % Weight
                 </label>
                 <input
                   type="number"
                   step="0.01"
-                  value={form.budgetAmount}
+                  value={form.budgetPercent}
                   onChange={(event) =>
-                    updateForm("budgetAmount", event.target.value)
+                    updateForm("budgetPercent", event.target.value)
                   }
                   className="forza-input mt-2"
                 />
@@ -1010,7 +1201,7 @@ export default function OperationalBudgetPage() {
 
               <div>
                 <label className="text-sm font-bold text-slate-700">
-                  Actual Amount (€)
+                  Actual Spend (€)
                 </label>
                 <input
                   type="number"
@@ -1020,6 +1211,30 @@ export default function OperationalBudgetPage() {
                     updateForm("actualAmount", event.target.value)
                   }
                   className="forza-input mt-2"
+                />
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+                Auto Conversion
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <SmallValue
+                  label="Budget Value"
+                  value={formatCurrency(formBudgetAmount)}
+                />
+                <SmallValue
+                  label="Actual %"
+                  value={formatPercent(formActualPercent)}
+                />
+                <SmallValue
+                  label="Value Variance"
+                  value={formatCurrency(formValueVariance)}
+                />
+                <SmallValue
+                  label="% Variance"
+                  value={formatPercent(formPercentVariance)}
                 />
               </div>
             </div>
@@ -1041,7 +1256,11 @@ export default function OperationalBudgetPage() {
                 className="forza-button-hover flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Save size={18} />
-                {isSaving ? "Saving..." : form.id ? "Update Budget" : "Save Budget"}
+                {isSaving
+                  ? "Saving..."
+                  : form.id
+                    ? "Update Budget"
+                    : "Save Budget"}
               </button>
 
               <button
@@ -1063,17 +1282,23 @@ export default function OperationalBudgetPage() {
                 Budget Matrix
               </p>
               <h2 className="text-2xl font-black text-slate-950">
-                Category Performance
+                Weight of Scale Performance
               </h2>
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row">
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="forza-input sm:min-w-[260px]"
-                placeholder="Search category or notes..."
-              />
+              <div className="relative">
+                <Search
+                  size={17}
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  className="forza-input pl-11 sm:min-w-[260px]"
+                  placeholder="Search category or notes..."
+                />
+              </div>
 
               <button
                 type="button"
@@ -1088,8 +1313,9 @@ export default function OperationalBudgetPage() {
 
           <div className="space-y-3">
             {categoryPerformance.map((budget) => {
-              const isOverBudget = budget.variance < 0;
-              const isNearLimit = budget.usagePercent >= 85 && budget.usagePercent <= 100;
+              const isOverBudget = budget.valueVariance < 0;
+              const isNearLimit =
+                budget.usagePercent >= 85 && budget.usagePercent <= 100;
 
               return (
                 <div
@@ -1118,7 +1344,8 @@ export default function OperationalBudgetPage() {
                           ? units.find((unit) => unit.id === budget.brand_unit_id)
                               ?.name || "Selected Unit"
                           : "All Units"}{" "}
-                        · Usage: {formatPercent(budget.usagePercent)}
+                        · Budget: {formatPercent(budget.budgetPercent)} ·
+                        Actual: {formatPercent(budget.actualPercent)}
                       </p>
                       {budget.notes ? (
                         <p className="mt-2 text-sm leading-6 text-slate-600">
@@ -1127,26 +1354,48 @@ export default function OperationalBudgetPage() {
                       ) : null}
                     </div>
 
-                    <div className="grid min-w-[280px] grid-cols-3 gap-3">
-                      <SmallValue label="Budget" value={formatCurrency(Number(budget.budget_amount || 0))} />
-                      <SmallValue label="Actual" value={formatCurrency(Number(budget.actual_amount || 0))} />
-                      <SmallValue label="Variance" value={formatCurrency(budget.variance)} />
+                    <div className="grid min-w-[340px] grid-cols-2 gap-3">
+                      <SmallValue
+                        label="Revenue"
+                        value={formatCurrency(budget.revenueBase)}
+                      />
+                      <SmallValue
+                        label="Budget Value"
+                        value={formatCurrency(budget.budgetAmount)}
+                      />
+                      <SmallValue
+                        label="Actual"
+                        value={formatCurrency(budget.actualAmount)}
+                      />
+                      <SmallValue
+                        label="Variance"
+                        value={formatCurrency(budget.valueVariance)}
+                      />
                     </div>
                   </div>
 
-                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/80">
-                    <div
-                      className={`h-full rounded-full ${
-                        isOverBudget
-                          ? "bg-red-500"
-                          : isNearLimit
-                            ? "bg-amber-500"
-                            : "bg-emerald-600"
-                      }`}
-                      style={{
-                        width: `${Math.min(100, Math.max(0, budget.usagePercent))}%`,
-                      }}
-                    />
+                  <div className="mt-4">
+                    <div className="mb-2 flex items-center justify-between text-xs font-black uppercase tracking-wide text-slate-500">
+                      <span>Actual weight of revenue</span>
+                      <span>{formatPercent(budget.actualPercent)}</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-white/80">
+                      <div
+                        className={`h-full rounded-full ${
+                          isOverBudget
+                            ? "bg-red-500"
+                            : isNearLimit
+                              ? "bg-amber-500"
+                              : "bg-emerald-600"
+                        }`}
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.max(0, budget.actualPercent),
+                          )}%`,
+                        }}
+                      />
+                    </div>
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">
@@ -1179,7 +1428,8 @@ export default function OperationalBudgetPage() {
                   No budget categories found
                 </h3>
                 <p className="mt-2 text-sm font-bold text-slate-500">
-                  Create the first operational budget category for this month.
+                  Create the first percentage-based budget category for this
+                  month.
                 </p>
               </div>
             ) : null}
@@ -1187,6 +1437,26 @@ export default function OperationalBudgetPage() {
         </section>
       </section>
     </DashboardShell>
+  );
+}
+
+function OperationalBudgetLoading() {
+  return (
+    <main className="flex min-h-screen items-center justify-center p-6">
+      <section className="glass-panel relative w-full max-w-lg overflow-hidden rounded-[2rem] p-8 text-center">
+        <div className="absolute -right-16 -top-16 h-40 w-40 animate-pulse rounded-full bg-emerald-200/50 blur-3xl" />
+        <div className="absolute -bottom-16 -left-16 h-40 w-40 animate-pulse rounded-full bg-amber-200/50 blur-3xl" />
+        <div className="relative z-10 mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-xl">
+          <WalletCards className="animate-pulse" size={24} />
+        </div>
+        <h1 className="relative z-10 mt-5 text-2xl font-black text-slate-950">
+          Loading Operational Budget
+        </h1>
+        <p className="relative z-10 mt-2 text-sm font-bold text-slate-500">
+          Preparing percentage-based budget workspace...
+        </p>
+      </section>
+    </main>
   );
 }
 
