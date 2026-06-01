@@ -12,6 +12,8 @@ import {
 import { getAllowedModules, type UserRole } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
+export const dynamic = "force-dynamic";
+
 type KitchenOpsPageProps = {
   searchParams?: Promise<{
     brand?: string;
@@ -113,12 +115,14 @@ export default async function KitchenOpsPage({
   const productIds = products.map((product) => product.id);
 
   const { data: movementsData } =
-    productIds.length > 0
+    selectedBrandId && productIds.length > 0
       ? await supabase
           .from("inventory_movements")
           .select(
             "id, brand_id, brand_unit_id, product_id, ops_area, movement_type, quantity, unit_cost, reference_code, notes, movement_date, system_balance_after, physical_count_qty, discrepancy_qty, created_at",
           )
+          .eq("brand_id", selectedBrandId)
+          .eq("ops_area", "kitchen")
           .in("product_id", productIds)
           .order("movement_date", { ascending: false })
           .order("created_at", { ascending: false })
@@ -135,6 +139,7 @@ export default async function KitchenOpsPage({
       selectedBrand={selectedBrand}
     >
       <KitchenOpsPanel
+        key={`${selectedBrandId}-${requestedBrandCode}`}
         userId={user.id}
         role={role}
         selectedBrand={
