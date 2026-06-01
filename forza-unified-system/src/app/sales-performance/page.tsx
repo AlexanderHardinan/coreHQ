@@ -12,6 +12,8 @@ import {
 import { getAllowedModules, type UserRole } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
+export const dynamic = "force-dynamic";
+
 type SalesPerformancePageProps = {
   searchParams?: Promise<{
     brand?: string;
@@ -115,7 +117,7 @@ export default async function SalesPerformancePage({
     )
     .eq("brand_id", selectedBrandId)
     .order("sold_date", { ascending: false })
-    .limit(150);
+    .limit(500);
 
   return (
     <DashboardShell
@@ -127,6 +129,7 @@ export default async function SalesPerformancePage({
       selectedBrand={selectedBrand}
     >
       <SalesPerformancePanel
+        key={`${selectedBrandId}-${requestedBrandCode}`}
         userId={user.id}
         role={role}
         selectedBrand={
