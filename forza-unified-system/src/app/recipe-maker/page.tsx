@@ -112,7 +112,7 @@ export default async function RecipeMakerPage({
   const { data: recipesData } = await supabase
     .from("recipes")
     .select(
-      "id, brand_id, brand_unit_id, ops_area, recipe_name, recipe_category, batch_yield, portion_yield, selling_price, food_cost_percent, total_recipe_cost, cost_per_portion, is_active",
+      "id, brand_id, brand_unit_id, ops_area, recipe_name, recipe_category, cuisine, calories, allergen, procedure, batch_yield, portion_yield, selling_price, food_cost_percent, total_recipe_cost, cost_per_portion, is_active",
     )
     .eq("brand_id", selectedBrandId)
     .eq("is_active", true)
@@ -127,7 +127,7 @@ export default async function RecipeMakerPage({
       ? await supabase
           .from("recipe_items")
           .select(
-            "id, recipe_id, product_id, quantity, unit, unit_cost_snapshot, total_cost",
+            "id, recipe_id, product_id, quantity, unit, waste_shrinkage_percent, unit_cost_snapshot, total_cost",
           )
           .in("recipe_id", recipeIds)
       : { data: [] };
