@@ -120,7 +120,7 @@ const opsAreaLabels: Record<OpsArea, string> = {
   global: "Global",
 };
 
-const unitOptions = ["kg", "g", "liter", "ml", "bottle", "pcs", "box", "pack"];
+const unitOptions = ["gram", "ml", "pc", "bottle"];
 
 const movementTypes: {
   value: InventoryMovementType;
@@ -342,7 +342,7 @@ export function InventoryPanel({
   const [productName, setProductName] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [sku, setSku] = useState("");
-  const [unit, setUnit] = useState("kg");
+  const [unit, setUnit] = useState("gram");
   const [supplierName, setSupplierName] = useState("");
   const [openingStock, setOpeningStock] = useState("0");
   const [minimumStock, setMinimumStock] = useState("0");
@@ -635,7 +635,7 @@ export function InventoryPanel({
     setProductName("");
     setCategoryId("");
     setSku("");
-    setUnit("kg");
+    setUnit("gram");
     setSupplierName("");
     setOpeningStock("0");
     setMinimumStock("0");
