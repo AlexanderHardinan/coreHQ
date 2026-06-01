@@ -161,10 +161,12 @@ function normalizeText(value: string) {
 }
 
 function formatQty(value: number) {
-  return Number(value || 0).toLocaleString("en-US", {
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
-  });
+  const safeValue = Number(value || 0);
+  if (Number.isInteger(safeValue)) {
+    return String(safeValue);
+  }
+  
+  return String(Number(safeValue.toFixed(3)));
 }
 
 function formatCurrency(value: number) {
