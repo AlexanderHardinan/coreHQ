@@ -4,18 +4,17 @@ import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowDownCircle,
-  ArrowUpCircle,
   Boxes,
   CalendarClock,
   CheckCircle2,
   ClipboardList,
   Download,
-  PackageCheck,
   Save,
   Search,
   ShieldAlert,
   Trash2,
   Utensils,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -48,7 +47,6 @@ export type KitchenUnit = {
 };
 
 export type KitchenMovementType =
-  | "product_in"
   | "production_consumption"
   | "waste"
   | "shrinkage"
@@ -90,17 +88,9 @@ const kitchenMovementTypes: {
   label: string;
   shortLabel: string;
   description: string;
-  direction: "in" | "out" | "count";
-  icon: typeof PackageCheck;
+  direction: "out" | "count";
+  icon: LucideIcon;
 }[] = [
-  {
-    value: "product_in",
-    label: "Product In / Delivery",
-    shortLabel: "Delivery In",
-    description: "Receive supplier deliveries into kitchen stock.",
-    direction: "in",
-    icon: PackageCheck,
-  },
   {
     value: "production_consumption",
     label: "Production Consumption",
@@ -282,7 +272,7 @@ export function KitchenOpsPanel({
 
   const [productId, setProductId] = useState("");
   const [movementType, setMovementType] =
-    useState<KitchenMovementType>("product_in");
+    useState<KitchenMovementType>("production_consumption");
   const [movementQty, setMovementQty] = useState("0");
   const [physicalCountQty, setPhysicalCountQty] = useState("0");
   const [unitCost, setUnitCost] = useState("0");
@@ -382,10 +372,6 @@ export function KitchenOpsPanel({
         Number(movement.discrepancy_qty || 0) !== 0,
     ).length;
 
-    const deliveryIn = todayMovements
-      .filter((movement) => movement.movement_type === "product_in")
-      .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
-
     const productionUse = todayMovements
       .filter((movement) => movement.movement_type === "production_consumption")
       .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
@@ -403,7 +389,6 @@ export function KitchenOpsPanel({
       overStocked,
       expiring,
       discrepancies,
-      deliveryIn,
       productionUse,
       wasteShrinkage,
       todayActivity: todayMovements.length,
@@ -698,9 +683,9 @@ export function KitchenOpsPanel({
                 <div class="card"><div class="label">Products</div><div class="value">${visibleProducts.length}</div></div>
                 <div class="card"><div class="label">Inventory Value</div><div class="value">${formatCurrency(stats.inventoryValue)}</div></div>
                 <div class="card"><div class="label">Today Activity</div><div class="value">${todayMovements.length}</div></div>
-                <div class="card"><div class="label">Delivery In</div><div class="value">${formatQty(stats.deliveryIn)}</div></div>
                 <div class="card"><div class="label">Production Use</div><div class="value">${formatQty(stats.productionUse)}</div></div>
                 <div class="card"><div class="label">Waste/Shrinkage</div><div class="value">${formatQty(stats.wasteShrinkage)}</div></div>
+                <div class="card"><div class="label">Discrepancies</div><div class="value">${stats.discrepancies}</div></div>
               </div>
 
               <h2>📦 Kitchen Product Summary</h2>
@@ -788,9 +773,10 @@ export function KitchenOpsPanel({
               {selectedBrand?.name || "Selected Brand"} Kitchen Ops
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-              Daily BOH workflow for deliveries, production usage, waste,
-              shrinkage, physical stock count, and critical kitchen stock
-              control.
+              Daily BOH workflow for production usage, waste, shrinkage,
+              physical stock count, and critical kitchen stock control.
+              Product In / Delivery is handled only in Inventory to prevent
+              duplicate receiving workflows.
             </p>
           </div>
 
@@ -824,16 +810,11 @@ export function KitchenOpsPanel({
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-3">
         <MetricCard
           label="Today Activity"
           value={String(stats.todayActivity)}
           icon={<ClipboardList size={22} />}
-        />
-        <MetricCard
-          label="Delivery In Today"
-          value={formatQty(stats.deliveryIn)}
-          icon={<ArrowUpCircle size={22} />}
         />
         <MetricCard
           label="Production Use Today"
@@ -901,7 +882,7 @@ export function KitchenOpsPanel({
           </button>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {kitchenMovementTypes.map((workflow) => {
             const Icon = workflow.icon;
             const isActive = movementType === workflow.value;
@@ -955,10 +936,7 @@ export function KitchenOpsPanel({
             </p>
           </div>
 
-          <form
-            onSubmit={saveMovement}
-            className="grid gap-4 md:grid-cols-2"
-          >
+          <form onSubmit={saveMovement} className="grid gap-4 md:grid-cols-2">
             <Field label="Kitchen Product">
               <select
                 value={productId}
@@ -1028,7 +1006,7 @@ export function KitchenOpsPanel({
                 value={referenceCode}
                 onChange={(event) => setReferenceCode(event.target.value)}
                 className="forza-input"
-                placeholder="Invoice, prep, waste, count ref..."
+                placeholder="Prep, waste, shrinkage, count ref..."
               />
             </Field>
 
@@ -1300,7 +1278,9 @@ export function KitchenOpsPanel({
                 );
 
                 const direction = getMovementDirection(movement.movement_type);
-                const discrepancy = getDiscrepancyStatus(movement.discrepancy_qty);
+                const discrepancy = getDiscrepancyStatus(
+                  movement.discrepancy_qty,
+                );
 
                 return (
                   <tr key={movement.id} className="rounded-2xl bg-white shadow-sm">
