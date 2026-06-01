@@ -3,21 +3,20 @@
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
-  ArrowDownCircle,
+  BarChart3,
   Boxes,
   CalendarClock,
   CheckCircle2,
   ClipboardList,
   Download,
-  Save,
+  PieChart,
   Search,
   ShieldAlert,
-  Trash2,
-  Utensils,
-  type LucideIcon,
+  Sparkles,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
-import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 import type { UserRole } from "@/lib/auth/permissions";
 
 export type KitchenProduct = {
@@ -46,19 +45,13 @@ export type KitchenUnit = {
   is_active: boolean;
 };
 
-export type KitchenMovementType =
-  | "production_consumption"
-  | "waste"
-  | "shrinkage"
-  | "stock_count";
-
 export type KitchenMovement = {
   id: string;
   brand_id: string | null;
   brand_unit_id: string;
   product_id: string;
   ops_area: "kitchen" | "bar" | "global";
-  movement_type: KitchenMovementType | string;
+  movement_type: string;
   quantity: number;
   unit_cost: number | null;
   reference_code: string | null;
@@ -82,48 +75,6 @@ type KitchenOpsPanelProps = {
   products: KitchenProduct[];
   movements: KitchenMovement[];
 };
-
-const kitchenMovementTypes: {
-  value: KitchenMovementType;
-  label: string;
-  shortLabel: string;
-  description: string;
-  direction: "out" | "count";
-  icon: LucideIcon;
-}[] = [
-  {
-    value: "production_consumption",
-    label: "Production Consumption",
-    shortLabel: "Production Use",
-    description: "Record raw material usage for prep and production.",
-    direction: "out",
-    icon: Utensils,
-  },
-  {
-    value: "waste",
-    label: "Waste",
-    shortLabel: "Waste",
-    description: "Record spoiled, damaged, or unusable kitchen stock.",
-    direction: "out",
-    icon: Trash2,
-  },
-  {
-    value: "shrinkage",
-    label: "Shrinkage",
-    shortLabel: "Shrinkage",
-    description: "Record trimming, evaporation, loss, or handling shrinkage.",
-    direction: "out",
-    icon: ArrowDownCircle,
-  },
-  {
-    value: "stock_count",
-    label: "Physical Stock Count",
-    shortLabel: "Stock Count",
-    description: "Count actual kitchen stock and detect discrepancy.",
-    direction: "count",
-    icon: ClipboardList,
-  },
-];
 
 function todayDate() {
   return new Date().toISOString().slice(0, 10);
@@ -156,16 +107,45 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
-function getMovementConfig(type: string) {
-  return kitchenMovementTypes.find((item) => item.value === type);
-}
-
 function getMovementLabel(type: string) {
-  return getMovementConfig(type)?.label || type.replaceAll("_", " ");
+  const labels: Record<string, string> = {
+    opening_stock: "Opening Stock",
+    product_in: "Product In / Delivery",
+    transfer_in: "Transfer In",
+    adjustment_in: "Adjustment In",
+    production_consumption: "Production Consumption",
+    sold_consumption: "Sold Consumption",
+    waste: "Waste",
+    shrinkage: "Shrinkage",
+    transfer_out: "Transfer Out",
+    adjustment_out: "Adjustment Out",
+    stock_count: "Physical Stock Count",
+  };
+
+  return labels[type] || type.replaceAll("_", " ");
 }
 
 function getMovementDirection(type: string) {
-  return getMovementConfig(type)?.direction || "count";
+  if (
+    ["opening_stock", "product_in", "transfer_in", "adjustment_in"].includes(type)
+  ) {
+    return "in";
+  }
+
+  if (
+    [
+      "production_consumption",
+      "sold_consumption",
+      "waste",
+      "shrinkage",
+      "transfer_out",
+      "adjustment_out",
+    ].includes(type)
+  ) {
+    return "out";
+  }
+
+  return "count";
 }
 
 function getStockStatus(product: KitchenProduct) {
@@ -176,6 +156,7 @@ function getStockStatus(product: KitchenProduct) {
     return {
       label: "Over Stocked",
       className: "bg-amber-50 text-amber-700",
+      cardClassName: "border-amber-100 bg-amber-50/80",
     };
   }
 
@@ -183,12 +164,14 @@ function getStockStatus(product: KitchenProduct) {
     return {
       label: "Low Stock",
       className: "bg-red-50 text-red-700",
+      cardClassName: "border-red-100 bg-red-50/80",
     };
   }
 
   return {
     label: "On Track",
     className: "bg-emerald-50 text-emerald-700",
+    cardClassName: "border-emerald-100 bg-emerald-50/80",
   };
 }
 
@@ -256,30 +239,14 @@ function getDiscrepancyStatus(value: number | null) {
 }
 
 export function KitchenOpsPanel({
-  userId,
   role,
   selectedBrand,
   units,
   products,
   movements,
 }: KitchenOpsPanelProps) {
-  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-
-  const [productList, setProductList] = useState(products);
-  const [movementList, setMovementList] = useState(movements);
   const [selectedUnitId, setSelectedUnitId] = useState(units[0]?.id || "");
   const [search, setSearch] = useState("");
-
-  const [productId, setProductId] = useState("");
-  const [movementType, setMovementType] =
-    useState<KitchenMovementType>("production_consumption");
-  const [movementQty, setMovementQty] = useState("0");
-  const [physicalCountQty, setPhysicalCountQty] = useState("0");
-  const [unitCost, setUnitCost] = useState("0");
-  const [referenceCode, setReferenceCode] = useState("");
-  const [notes, setNotes] = useState("");
-  const [movementDate, setMovementDate] = useState(todayDate());
-  const [isSaving, setIsSaving] = useState(false);
 
   const selectedUnit = useMemo(
     () => units.find((unit) => unit.id === selectedUnitId) || null,
@@ -289,7 +256,7 @@ export function KitchenOpsPanel({
   const visibleProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return productList.filter((product) => {
+    return products.filter((product) => {
       const matchesUnit = product.brand_unit_id === selectedUnitId;
       const matchesArea = product.ops_area === "kitchen";
       const matchesSearch =
@@ -300,7 +267,7 @@ export function KitchenOpsPanel({
 
       return matchesUnit && matchesArea && product.is_active && matchesSearch;
     });
-  }, [productList, search, selectedUnitId]);
+  }, [products, search, selectedUnitId]);
 
   const visibleProductIds = useMemo(
     () => visibleProducts.map((product) => product.id),
@@ -309,10 +276,10 @@ export function KitchenOpsPanel({
 
   const visibleMovements = useMemo(
     () =>
-      movementList.filter((movement) =>
+      movements.filter((movement) =>
         visibleProductIds.includes(movement.product_id),
       ),
-    [movementList, visibleProductIds],
+    [movements, visibleProductIds],
   );
 
   const todayMovements = useMemo(
@@ -321,11 +288,6 @@ export function KitchenOpsPanel({
         (movement) => movement.movement_date === todayDate(),
       ),
     [visibleMovements],
-  );
-
-  const selectedProduct = useMemo(
-    () => productList.find((product) => product.id === productId) || null,
-    [productId, productList],
   );
 
   const criticalProducts = useMemo(
@@ -372,11 +334,31 @@ export function KitchenOpsPanel({
         Number(movement.discrepancy_qty || 0) !== 0,
     ).length;
 
-    const productionUse = todayMovements
+    const productIn = visibleMovements
+      .filter((movement) => movement.movement_type === "product_in")
+      .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
+
+    const productionConsumption = visibleMovements
       .filter((movement) => movement.movement_type === "production_consumption")
       .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
 
-    const wasteShrinkage = todayMovements
+    const waste = visibleMovements
+      .filter((movement) => movement.movement_type === "waste")
+      .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
+
+    const shrinkage = visibleMovements
+      .filter((movement) => movement.movement_type === "shrinkage")
+      .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
+
+    const stockOut = visibleMovements
+      .filter((movement) => getMovementDirection(movement.movement_type) === "out")
+      .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
+
+    const stockIn = visibleMovements
+      .filter((movement) => getMovementDirection(movement.movement_type) === "in")
+      .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
+
+    const todayWaste = todayMovements
       .filter((movement) =>
         ["waste", "shrinkage"].includes(String(movement.movement_type)),
       )
@@ -389,134 +371,67 @@ export function KitchenOpsPanel({
       overStocked,
       expiring,
       discrepancies,
-      productionUse,
-      wasteShrinkage,
+      productIn,
+      productionConsumption,
+      waste,
+      shrinkage,
+      stockIn,
+      stockOut,
       todayActivity: todayMovements.length,
+      todayWaste,
     };
   }, [todayMovements, visibleMovements, visibleProducts]);
 
-  async function refreshKitchenData() {
-    if (!selectedBrand?.id) {
-      return;
-    }
+  const topLowestStock = useMemo(
+    () =>
+      [...visibleProducts]
+        .sort(
+          (a, b) =>
+            Number(a.current_stock || 0) - Number(b.current_stock || 0),
+        )
+        .slice(0, 8),
+    [visibleProducts],
+  );
 
-    const { data: productsData, error: productsError } = await supabase
-      .from("products")
-      .select(
-        "id, brand_id, brand_unit_id, category_id, ops_area, product_name, sku, unit, supplier_name, current_stock, minimum_stock, maximum_stock, unit_cost, expiry_date, is_active",
-      )
-      .eq("brand_id", selectedBrand.id)
-      .eq("ops_area", "kitchen")
-      .eq("is_active", true)
-      .order("product_name", { ascending: true });
+  const topConsumptionProducts = useMemo(() => {
+    const consumptionMap = new Map<
+      string,
+      {
+        product: KitchenProduct;
+        quantity: number;
+      }
+    >();
 
-    if (productsError) {
-      toast.error(productsError.message);
-      return;
-    }
+    visibleMovements
+      .filter((movement) => getMovementDirection(movement.movement_type) === "out")
+      .forEach((movement) => {
+        const product = visibleProducts.find(
+          (item) => item.id === movement.product_id,
+        );
 
-    const nextProducts = (productsData || []) as KitchenProduct[];
-    const nextProductIds = nextProducts.map((product) => product.id);
+        if (!product) {
+          return;
+        }
 
-    setProductList(nextProducts);
+        const current = consumptionMap.get(product.id) || {
+          product,
+          quantity: 0,
+        };
 
-    if (nextProductIds.length === 0) {
-      setMovementList([]);
-      return;
-    }
+        consumptionMap.set(product.id, {
+          product,
+          quantity: current.quantity + Number(movement.quantity || 0),
+        });
+      });
 
-    const { data: movementsData, error: movementsError } = await supabase
-      .from("inventory_movements")
-      .select(
-        "id, brand_id, brand_unit_id, product_id, ops_area, movement_type, quantity, unit_cost, reference_code, notes, movement_date, system_balance_after, physical_count_qty, discrepancy_qty, created_at",
-      )
-      .in("product_id", nextProductIds)
-      .order("movement_date", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(150);
-
-    if (movementsError) {
-      toast.error(movementsError.message);
-      return;
-    }
-
-    setMovementList((movementsData || []) as KitchenMovement[]);
-  }
-
-  function resetMovementForm() {
-    setMovementQty("0");
-    setPhysicalCountQty("0");
-    setUnitCost(String(selectedProduct?.unit_cost || 0));
-    setReferenceCode("");
-    setNotes("");
-    setMovementDate(todayDate());
-  }
-
-  function handleWorkflowSelect(nextType: KitchenMovementType) {
-    setMovementType(nextType);
-    setMovementQty("0");
-    setPhysicalCountQty("0");
-  }
-
-  async function saveMovement(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!selectedBrand?.id) {
-      toast.error("Selected brand is required.");
-      return;
-    }
-
-    if (!selectedProduct) {
-      toast.error("Select a kitchen product.");
-      return;
-    }
-
-    const direction = getMovementDirection(movementType);
-    const qty = Number(movementQty || 0);
-    const countQty = Number(physicalCountQty || 0);
-
-    if (direction !== "count" && qty <= 0) {
-      toast.error("Movement quantity must be greater than zero.");
-      return;
-    }
-
-    if (direction === "count" && Number.isNaN(countQty)) {
-      toast.error("Physical count is required.");
-      return;
-    }
-
-    setIsSaving(true);
-
-    const { error } = await supabase.from("inventory_movements").insert({
-      brand_id: selectedBrand.id,
-      brand_unit_id: selectedProduct.brand_unit_id,
-      product_id: selectedProduct.id,
-      ops_area: "kitchen",
-      movement_type: movementType,
-      quantity: direction === "count" ? 0 : qty,
-      unit_cost: Number(unitCost || selectedProduct.unit_cost || 0),
-      physical_count_qty: direction === "count" ? countQty : null,
-      reference_code: referenceCode.trim() || null,
-      notes: notes.trim() || null,
-      movement_date: movementDate || todayDate(),
-      created_by: userId,
-    });
-
-    setIsSaving(false);
-
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-
-    toast.success("Kitchen movement saved successfully.");
-    resetMovementForm();
-    await refreshKitchenData();
-  }
+    return Array.from(consumptionMap.values())
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 8);
+  }, [visibleMovements, visibleProducts]);
 
   function downloadKitchenPdf() {
     if (visibleProducts.length === 0 && visibleMovements.length === 0) {
-      toast.error("No kitchen data available for PDF.");
+      toast.error("No kitchen performance data available for PDF.");
       return;
     }
 
@@ -544,7 +459,7 @@ export function KitchenOpsPanel({
     const movementRows = visibleMovements
       .slice(0, 200)
       .map((movement) => {
-        const product = productList.find(
+        const product = visibleProducts.find(
           (item) => item.id === movement.product_id,
         );
         const direction = getMovementDirection(movement.movement_type);
@@ -569,7 +484,7 @@ export function KitchenOpsPanel({
       <html>
         <head>
           <meta charset="utf-8" />
-          <title>Kitchen Daily Report</title>
+          <title>Kitchen Performance Report</title>
           <style>
             * { box-sizing: border-box; }
             body {
@@ -673,7 +588,7 @@ export function KitchenOpsPanel({
           <main class="sheet">
             <section class="header">
               <div class="brand">👨‍🍳 Forza Unified System</div>
-              <h1>Kitchen Daily Operations Report</h1>
+              <h1>Kitchen Performance Report</h1>
             </section>
 
             <section class="content">
@@ -682,13 +597,13 @@ export function KitchenOpsPanel({
                 <div class="card"><div class="label">Branch</div><div class="value">${escapeHtml(selectedUnit?.name || "Selected Branch")}</div></div>
                 <div class="card"><div class="label">Products</div><div class="value">${visibleProducts.length}</div></div>
                 <div class="card"><div class="label">Inventory Value</div><div class="value">${formatCurrency(stats.inventoryValue)}</div></div>
-                <div class="card"><div class="label">Today Activity</div><div class="value">${todayMovements.length}</div></div>
-                <div class="card"><div class="label">Production Use</div><div class="value">${formatQty(stats.productionUse)}</div></div>
-                <div class="card"><div class="label">Waste/Shrinkage</div><div class="value">${formatQty(stats.wasteShrinkage)}</div></div>
-                <div class="card"><div class="label">Discrepancies</div><div class="value">${stats.discrepancies}</div></div>
+                <div class="card"><div class="label">Stock In</div><div class="value">${formatQty(stats.stockIn)}</div></div>
+                <div class="card"><div class="label">Stock Out</div><div class="value">${formatQty(stats.stockOut)}</div></div>
+                <div class="card"><div class="label">Waste</div><div class="value">${formatQty(stats.waste)}</div></div>
+                <div class="card"><div class="label">Shrinkage</div><div class="value">${formatQty(stats.shrinkage)}</div></div>
               </div>
 
-              <h2>📦 Kitchen Product Summary</h2>
+              <h2>📦 Kitchen Product Performance</h2>
               <table>
                 <thead>
                   <tr>
@@ -708,7 +623,7 @@ export function KitchenOpsPanel({
                 </tbody>
               </table>
 
-              <h2>🔁 Kitchen Movement Ledger</h2>
+              <h2>🔁 Synced Inventory Movements</h2>
               <table>
                 <thead>
                   <tr>
@@ -728,7 +643,7 @@ export function KitchenOpsPanel({
               </table>
 
               <div class="footer">
-                <div>Kitchen Daily Report</div>
+                <div>Kitchen Performance Dashboard Report</div>
                 <div>Developer Rights Chef Alex @FORZA 2026</div>
               </div>
             </section>
@@ -755,76 +670,84 @@ export function KitchenOpsPanel({
     printWindow.document.close();
   }
 
-  const selectedWorkflow = kitchenMovementTypes.find(
-    (item) => item.value === movementType,
-  );
-
-  const selectedWorkflowDirection = getMovementDirection(movementType);
-
   return (
     <div className="space-y-6">
-      <section className="glass-panel rounded-[2rem] p-6">
-        <div className="grid gap-5 xl:grid-cols-[1fr_360px] xl:items-center">
-          <div>
-            <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-              Kitchen Daily Workflow
-            </p>
-            <h1 className="mt-2 text-3xl font-black text-slate-950">
-              {selectedBrand?.name || "Selected Brand"} Kitchen Ops
-            </h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-              Daily BOH workflow for production usage, waste, shrinkage,
-              physical stock count, and critical kitchen stock control.
-              Product In / Delivery is handled only in Inventory to prevent
-              duplicate receiving workflows.
-            </p>
-          </div>
+      <section className="glass-panel overflow-hidden rounded-[2rem] p-6">
+        <div className="relative">
+          <div className="absolute -right-16 -top-20 h-52 w-52 animate-pulse rounded-full bg-emerald-100/80 blur-3xl" />
+          <div className="absolute -bottom-24 -left-14 h-56 w-56 animate-pulse rounded-full bg-amber-100/80 blur-3xl" />
 
-          <div className="rounded-[2rem] border border-slate-200 bg-white/80 p-5 shadow-sm">
-            <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-400">
-              Branch Unit
-            </label>
-            <select
-              value={selectedUnitId}
-              onChange={(event) => setSelectedUnitId(event.target.value)}
-              className="forza-input"
-            >
-              {units.map((unit) => (
-                <option key={unit.id} value={unit.id}>
-                  {unit.name}
-                </option>
-              ))}
-            </select>
+          <div className="relative z-10 grid gap-5 xl:grid-cols-[1fr_360px] xl:items-center">
+            <div>
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-sm font-black text-slate-700 shadow-sm">
+                <Sparkles size={16} />
+                Synced from Inventory
+              </div>
 
-            <div className="mt-4 rounded-2xl bg-slate-50 p-4">
-              <p className="text-xs font-black uppercase tracking-wide text-slate-400">
-                Access
+              <p className="text-sm font-black uppercase tracking-wide text-slate-400">
+                Kitchen Performance Dashboard
               </p>
-              <p className="mt-1 text-sm font-black text-slate-950">
-                {role === "boh_staff"
-                  ? "BOH Daily Operations"
-                  : "Kitchen Operations Control"}
+              <h1 className="mt-2 text-3xl font-black text-slate-950 md:text-5xl">
+                {selectedBrand?.name || "Selected Brand"} Kitchen Ops
+              </h1>
+              <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600">
+                Live kitchen performance from Inventory movements. This page is
+                read-only and displays kitchen stock health, usage, waste,
+                shrinkage, discrepancy, expiry, and movement performance.
               </p>
+            </div>
+
+            <div className="rounded-[2rem] border border-slate-200 bg-white/85 p-5 shadow-sm">
+              <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-400">
+                Branch Unit
+              </label>
+              <select
+                value={selectedUnitId}
+                onChange={(event) => setSelectedUnitId(event.target.value)}
+                className="forza-input"
+              >
+                {units.map((unit) => (
+                  <option key={unit.id} value={unit.id}>
+                    {unit.name}
+                  </option>
+                ))}
+              </select>
+
+              <div className="mt-4 rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+                  Mode
+                </p>
+                <p className="mt-1 text-sm font-black text-slate-950">
+                  {role === "boh_staff"
+                    ? "BOH Performance View"
+                    : "Kitchen Performance Control"}
+                </p>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Kitchen Inventory Value"
+          value={formatCurrency(stats.inventoryValue)}
+          icon={<CheckCircle2 size={22} />}
+        />
+        <MetricCard
+          label="Stock In"
+          value={formatQty(stats.stockIn)}
+          icon={<TrendingUp size={22} />}
+        />
+        <MetricCard
+          label="Stock Out"
+          value={formatQty(stats.stockOut)}
+          icon={<TrendingDown size={22} />}
+        />
         <MetricCard
           label="Today Activity"
           value={String(stats.todayActivity)}
           icon={<ClipboardList size={22} />}
-        />
-        <MetricCard
-          label="Production Use Today"
-          value={formatQty(stats.productionUse)}
-          icon={<Utensils size={22} />}
-        />
-        <MetricCard
-          label="Waste / Shrinkage"
-          value={formatQty(stats.wasteShrinkage)}
-          icon={<ArrowDownCircle size={22} />}
         />
       </section>
 
@@ -833,11 +756,6 @@ export function KitchenOpsPanel({
           label="Kitchen Products"
           value={String(stats.productCount)}
           icon={<Boxes size={22} />}
-        />
-        <MetricCard
-          label="Inventory Value"
-          value={formatCurrency(stats.inventoryValue)}
-          icon={<CheckCircle2 size={22} />}
         />
         <MetricCard
           label="Low Stock"
@@ -855,237 +773,146 @@ export function KitchenOpsPanel({
           icon={<CalendarClock size={22} />}
         />
         <MetricCard
-          label="Discrepancy"
-          value={String(stats.discrepancies)}
+          label="Waste"
+          value={formatQty(stats.waste)}
           icon={<ShieldAlert size={22} />}
+        />
+        <MetricCard
+          label="Shrinkage"
+          value={formatQty(stats.shrinkage)}
+          icon={<BarChart3 size={22} />}
         />
       </section>
 
-      <section className="glass-panel rounded-[2rem] p-6">
-        <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-              Daily Kitchen Actions
-            </p>
-            <h2 className="text-2xl font-black text-slate-950">
-              Select Workflow
-            </h2>
-          </div>
-
-          <button
-            type="button"
-            onClick={downloadKitchenPdf}
-            className="forza-button-hover inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl"
-          >
-            <Download size={18} />
-            Download Kitchen Daily Report
-          </button>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {kitchenMovementTypes.map((workflow) => {
-            const Icon = workflow.icon;
-            const isActive = movementType === workflow.value;
-
-            return (
-              <button
-                key={workflow.value}
-                type="button"
-                onClick={() => handleWorkflowSelect(workflow.value)}
-                className={`forza-transition rounded-3xl border p-5 text-left shadow-sm ${
-                  isActive
-                    ? "border-slate-950 bg-slate-950 text-white"
-                    : "border-slate-200 bg-white/80 text-slate-950 hover:-translate-y-1 hover:bg-slate-950 hover:text-white"
-                }`}
-              >
-                <div
-                  className={`mb-4 flex h-12 w-12 items-center justify-center rounded-2xl ${
-                    isActive
-                      ? "bg-white text-slate-950"
-                      : "bg-slate-950 text-white"
-                  }`}
-                >
-                  <Icon size={22} />
-                </div>
-                <h3 className="text-sm font-black">{workflow.shortLabel}</h3>
-                <p
-                  className={`mt-2 text-xs font-semibold leading-5 ${
-                    isActive ? "text-white/75" : "text-slate-500"
-                  }`}
-                >
-                  {workflow.description}
-                </p>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
       <section className="grid gap-6 xl:grid-cols-[1fr_420px]">
-        <section className="glass-panel rounded-[2rem] p-6">
-          <div className="mb-5">
-            <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-              {selectedWorkflow?.shortLabel || "Kitchen Action"}
-            </p>
-            <h2 className="text-2xl font-black text-slate-950">
-              {selectedWorkflow?.label || "Kitchen Movement"}
-            </h2>
-            <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">
-              {selectedWorkflow?.description ||
-                "Record a kitchen stock movement."}
-            </p>
-          </div>
+        <div className="glass-panel rounded-[2rem] p-6">
+          <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <p className="text-sm font-black uppercase tracking-wide text-slate-400">
+                Performance Search
+              </p>
+              <h2 className="text-2xl font-black text-slate-950">
+                Kitchen Product Performance
+              </h2>
+            </div>
 
-          <form onSubmit={saveMovement} className="grid gap-4 md:grid-cols-2">
-            <Field label="Kitchen Product">
-              <select
-                value={productId}
-                onChange={(event) => {
-                  const nextProduct = productList.find(
-                    (product) => product.id === event.target.value,
-                  );
-
-                  setProductId(event.target.value);
-                  setUnitCost(String(nextProduct?.unit_cost || 0));
-                }}
-                className="forza-input"
-              >
-                <option value="">Select product</option>
-                {visibleProducts.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.product_name} — Qty Left:{" "}
-                    {formatQty(product.current_stock)} {product.unit}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Movement Date">
-              <input
-                type="date"
-                value={movementDate}
-                onChange={(event) => setMovementDate(event.target.value)}
-                className="forza-input"
-              />
-            </Field>
-
-            {selectedWorkflowDirection === "count" ? (
-              <Field label="Physical Count Qty">
-                <input
-                  type="number"
-                  step="0.001"
-                  value={physicalCountQty}
-                  onChange={(event) => setPhysicalCountQty(event.target.value)}
-                  className="forza-input"
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="relative">
+                <Search
+                  size={18}
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
                 />
-              </Field>
-            ) : (
-              <Field label="Movement Qty">
                 <input
-                  type="number"
-                  step="0.001"
-                  value={movementQty}
-                  onChange={(event) => setMovementQty(event.target.value)}
-                  className="forza-input"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  className="forza-input pl-11 xl:min-w-[300px]"
+                  placeholder="Search product, SKU, supplier..."
                 />
-              </Field>
-            )}
+              </div>
 
-            <Field label="Unit Cost (€)">
-              <input
-                type="number"
-                step="0.0001"
-                value={unitCost}
-                onChange={(event) => setUnitCost(event.target.value)}
-                className="forza-input"
-              />
-            </Field>
-
-            <Field label="Reference">
-              <input
-                value={referenceCode}
-                onChange={(event) => setReferenceCode(event.target.value)}
-                className="forza-input"
-                placeholder="Prep, waste, shrinkage, count ref..."
-              />
-            </Field>
-
-            <Field label="Notes">
-              <input
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-                className="forza-input"
-                placeholder="Kitchen movement notes"
-              />
-            </Field>
-
-            <div className="md:col-span-2">
               <button
-                type="submit"
-                disabled={isSaving}
-                className="forza-button-hover flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+                type="button"
+                onClick={downloadKitchenPdf}
+                className="forza-button-hover inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl"
               >
-                <Save size={18} />
-                {isSaving
-                  ? "Saving Kitchen Action..."
-                  : `Save ${selectedWorkflow?.shortLabel || "Kitchen Action"}`}
+                <Download size={18} />
+                PDF
               </button>
             </div>
-          </form>
-        </section>
-
-        <section className="glass-panel rounded-[2rem] p-6">
-          <div className="mb-5">
-            <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-              Today’s Kitchen Activity
-            </p>
-            <h2 className="text-2xl font-black text-slate-950">
-              Daily Movement Feed
-            </h2>
           </div>
 
-          <div className="space-y-3">
-            {todayMovements.slice(0, 8).map((movement) => {
-              const product = productList.find(
-                (item) => item.id === movement.product_id,
-              );
-
-              const direction = getMovementDirection(movement.movement_type);
+          <div className="grid gap-4 md:grid-cols-2">
+            {topLowestStock.map((product) => {
+              const stock = getStockStatus(product);
+              const expiry = getExpiryStatus(product.expiry_date);
 
               return (
                 <div
-                  key={movement.id}
-                  className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm"
+                  key={product.id}
+                  className={`forza-transition forza-hover rounded-3xl border p-5 shadow-sm ${stock.cardClassName}`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="font-black text-slate-950">
-                        {product?.product_name || "Unknown Product"}
+                        {product.product_name}
                       </h3>
-                      <p className="mt-1 text-sm font-bold text-slate-500">
-                        {getMovementLabel(movement.movement_type)}
+                      <p className="mt-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+                        {product.sku}
                       </p>
                     </div>
-
-                    <p className="text-sm font-black text-slate-950">
-                      {direction === "count"
-                        ? "Count"
-                        : `${formatQty(movement.quantity)} ${
-                            product?.unit || ""
-                          }`}
-                    </p>
+                    <PieChart size={22} className="text-slate-500" />
                   </div>
+
+                  <p className="mt-4 text-3xl font-black text-slate-950">
+                    {formatQty(product.current_stock)} {product.unit}
+                  </p>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-black ${stock.className}`}
+                    >
+                      {stock.label}
+                    </span>
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-black ${expiry.className}`}
+                    >
+                      {expiry.label}
+                    </span>
+                  </div>
+
+                  <p className="mt-4 text-sm font-bold text-slate-600">
+                    Value: {formatCurrency(product.current_stock * product.unit_cost)}
+                  </p>
                 </div>
               );
             })}
 
-            {todayMovements.length === 0 ? (
-              <div className="rounded-3xl bg-white/80 p-5 text-sm font-bold text-slate-500">
-                No kitchen activity recorded today.
+            {topLowestStock.length === 0 ? (
+              <div className="rounded-3xl bg-white/80 p-6 text-sm font-bold text-slate-500 md:col-span-2">
+                No kitchen products found.
               </div>
             ) : null}
           </div>
-        </section>
+        </div>
+
+        <div className="glass-panel rounded-[2rem] p-6">
+          <p className="text-sm font-black uppercase tracking-wide text-slate-400">
+            Top Usage
+          </p>
+          <h2 className="mt-2 text-2xl font-black text-slate-950">
+            Highest Kitchen Consumption
+          </h2>
+
+          <div className="mt-5 space-y-3">
+            {topConsumptionProducts.map((item) => (
+              <div
+                key={item.product.id}
+                className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-black text-slate-950">
+                      {item.product.product_name}
+                    </h3>
+                    <p className="mt-1 text-sm font-bold text-slate-500">
+                      {item.product.sku}
+                    </p>
+                  </div>
+
+                  <p className="text-sm font-black text-slate-950">
+                    {formatQty(item.quantity)} {item.product.unit}
+                  </p>
+                </div>
+              </div>
+            ))}
+
+            {topConsumptionProducts.length === 0 ? (
+              <div className="rounded-3xl bg-white/80 p-5 text-sm font-bold text-slate-500">
+                No kitchen consumption movements found.
+              </div>
+            ) : null}
+          </div>
+        </div>
       </section>
 
       <section className="glass-panel rounded-[2rem] p-6">
@@ -1106,7 +933,7 @@ export function KitchenOpsPanel({
             return (
               <div
                 key={product.id}
-                className="rounded-3xl border border-slate-200 bg-white/80 p-5 shadow-sm"
+                className="forza-transition forza-hover rounded-3xl border border-slate-200 bg-white/80 p-5 shadow-sm"
               >
                 <h3 className="font-black text-slate-950">
                   {product.product_name}
@@ -1140,119 +967,12 @@ export function KitchenOpsPanel({
       </section>
 
       <section className="glass-panel rounded-[2rem] p-6">
-        <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-              Kitchen Stock View
-            </p>
-            <h2 className="text-2xl font-black text-slate-950">
-              Kitchen Product Health
-            </h2>
-          </div>
-
-          <div className="relative">
-            <Search
-              size={18}
-              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-            />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="forza-input pl-11 xl:min-w-[320px]"
-              placeholder="Search kitchen product..."
-            />
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1000px] border-separate border-spacing-y-3">
-            <thead>
-              <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-400">
-                <th className="px-4">Product</th>
-                <th className="px-4">SKU</th>
-                <th className="px-4">Qty Left</th>
-                <th className="px-4">Min</th>
-                <th className="px-4">Max</th>
-                <th className="px-4">Cost</th>
-                <th className="px-4">Value</th>
-                <th className="px-4">Stock</th>
-                <th className="px-4">Expiry</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {visibleProducts.map((product) => {
-                const stock = getStockStatus(product);
-                const expiry = getExpiryStatus(product.expiry_date);
-
-                return (
-                  <tr key={product.id} className="rounded-2xl bg-white shadow-sm">
-                    <td className="rounded-l-2xl px-4 py-4">
-                      <p className="text-sm font-black text-slate-950">
-                        {product.product_name}
-                      </p>
-                      <p className="mt-1 text-xs font-bold text-slate-400">
-                        {product.supplier_name || "No supplier"}
-                      </p>
-                    </td>
-                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                      {product.sku}
-                    </td>
-                    <td className="px-4 py-4 text-sm font-black text-slate-950">
-                      {formatQty(product.current_stock)} {product.unit}
-                    </td>
-                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                      {formatQty(product.minimum_stock)}
-                    </td>
-                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                      {formatQty(product.maximum_stock)}
-                    </td>
-                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                      {formatCurrency(product.unit_cost)}
-                    </td>
-                    <td className="px-4 py-4 text-sm font-black text-slate-950">
-                      {formatCurrency(product.current_stock * product.unit_cost)}
-                    </td>
-                    <td className="px-4 py-4">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-black ${stock.className}`}
-                      >
-                        {stock.label}
-                      </span>
-                    </td>
-                    <td className="rounded-r-2xl px-4 py-4">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-black ${expiry.className}`}
-                      >
-                        {expiry.label}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {visibleProducts.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={9}
-                    className="rounded-2xl bg-white px-4 py-8 text-center text-sm font-bold text-slate-500"
-                  >
-                    No kitchen products found.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="glass-panel rounded-[2rem] p-6">
         <div className="mb-5">
           <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-            Kitchen Movement History
+            Synced Inventory Movement Feed
           </p>
           <h2 className="text-2xl font-black text-slate-950">
-            Latest Kitchen Ledger Entries
+            Latest Kitchen Movements
           </h2>
         </div>
 
@@ -1273,7 +993,7 @@ export function KitchenOpsPanel({
 
             <tbody>
               {visibleMovements.map((movement) => {
-                const product = productList.find(
+                const product = visibleProducts.find(
                   (item) => item.id === movement.product_id,
                 );
 
@@ -1356,20 +1076,6 @@ function MetricCard({ label, value, icon }: MetricCardProps) {
       </div>
       <p className="text-sm font-bold text-slate-400">{label}</p>
       <p className="mt-2 text-2xl font-black text-slate-950">{value}</p>
-    </div>
-  );
-}
-
-type FieldProps = {
-  label: string;
-  children: React.ReactNode;
-};
-
-function Field({ label, children }: FieldProps) {
-  return (
-    <div>
-      <label className="text-sm font-bold text-slate-700">{label}</label>
-      <div className="mt-2">{children}</div>
     </div>
   );
 }
