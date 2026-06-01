@@ -553,7 +553,7 @@ export default async function DashboardPage({
       title: string;
       value: string;
       description: string;
-      icon: Flame;
+      icon: typeof Flame;
       priority: AlertPriority;
     }[] = [
   
