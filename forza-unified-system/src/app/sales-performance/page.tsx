@@ -5,9 +5,8 @@ import {
 } from "@/components/layout/dashboard-shell";
 import {
   SalesPerformancePanel,
-  type SalesRecipe,
+  type SalesRevenueRecord,
   type SalesUnit,
-  type SoldItemRecord,
 } from "@/components/sales/sales-performance-panel";
 import { getAllowedModules, type UserRole } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
@@ -101,22 +100,15 @@ export default async function SalesPerformancePage({
     .eq("is_active", true)
     .order("name", { ascending: true });
 
-  const { data: recipesData } = await supabase
-    .from("recipes")
+  const { data: salesRevenueData } = await supabase
+    .from("sales_revenue")
     .select(
-      "id, brand_id, brand_unit_id, ops_area, recipe_name, recipe_category, selling_price, cost_per_portion, is_active",
+      "id, brand_id, brand_unit_id, revenue_date, revenue_month, sales_channel, category, product_name, gross_sales, discount_amount, service_charge, tax_amount, net_revenue, notes, source_reference, is_active, created_by, created_at, updated_at",
     )
     .eq("brand_id", selectedBrandId)
     .eq("is_active", true)
-    .order("recipe_name", { ascending: true });
-
-  const { data: soldItemsData } = await supabase
-    .from("sold_items")
-    .select(
-      "id, sale_id, brand_id, brand_unit_id, recipe_id, product_id, ops_area, item_name, quantity, selling_price, total_sales, sold_date, created_by, created_at",
-    )
-    .eq("brand_id", selectedBrandId)
-    .order("sold_date", { ascending: false })
+    .order("revenue_date", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(500);
 
   return (
@@ -142,8 +134,7 @@ export default async function SalesPerformancePage({
             : null
         }
         units={(unitsData || []) as SalesUnit[]}
-        recipes={(recipesData || []) as SalesRecipe[]}
-        soldItems={(soldItemsData || []) as SoldItemRecord[]}
+        salesRevenue={(salesRevenueData || []) as SalesRevenueRecord[]}
       />
     </DashboardShell>
   );

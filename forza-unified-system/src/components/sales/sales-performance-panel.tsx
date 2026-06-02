@@ -6,18 +6,21 @@ import {
   CalendarDays,
   CircleDollarSign,
   Download,
+  Edit3,
+  FileText,
   PackageSearch,
   PieChart,
+  Plus,
   ReceiptText,
+  Save,
   Search,
   Sparkles,
+  Trash2,
   TrendingUp,
-  Utensils,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { UserRole } from "@/lib/auth/permissions";
-
-export type OpsArea = "kitchen" | "bar" | "global";
+import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 export type SalesUnit = {
   id: string;
@@ -27,33 +30,28 @@ export type SalesUnit = {
   is_active: boolean;
 };
 
-export type SalesRecipe = {
-  id: string;
-  brand_id: string | null;
-  brand_unit_id: string;
-  ops_area: OpsArea;
-  recipe_name: string;
-  recipe_category: string | null;
-  selling_price: number;
-  cost_per_portion: number;
-  is_active: boolean;
-};
+export type SalesChannel = "manual" | "pos" | "imported";
 
-export type SoldItemRecord = {
+export type SalesRevenueRecord = {
   id: string;
-  sale_id: string | null;
-  brand_id: string | null;
-  brand_unit_id: string;
-  recipe_id: string | null;
-  product_id: string | null;
-  ops_area: OpsArea;
-  item_name: string;
-  quantity: number;
-  selling_price: number;
-  total_sales: number;
-  sold_date: string;
+  brand_id: string;
+  brand_unit_id: string | null;
+  revenue_date: string;
+  revenue_month: string;
+  sales_channel: SalesChannel;
+  category: string;
+  product_name: string;
+  gross_sales: number;
+  discount_amount: number;
+  service_charge: number;
+  tax_amount: number;
+  net_revenue: number;
+  notes: string | null;
+  source_reference: string | null;
+  is_active: boolean;
   created_by: string | null;
-  created_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 type SalesPerformancePanelProps = {
@@ -65,33 +63,49 @@ type SalesPerformancePanelProps = {
     code: string;
   } | null;
   units: SalesUnit[];
-  recipes: SalesRecipe[];
-  soldItems: SoldItemRecord[];
+  salesRevenue: SalesRevenueRecord[];
+};
+
+type SalesFormState = {
+  id: string;
+  brandUnitId: string;
+  revenueDate: string;
+  salesChannel: SalesChannel;
+  category: string;
+  productName: string;
+  grossSales: string;
+  discountAmount: string;
+  serviceCharge: string;
+  taxAmount: string;
+  notes: string;
+  sourceReference: string;
 };
 
 type CategoryPerformance = {
   category: string;
-  quantity: number;
   grossSales: number;
+  discountAmount: number;
+  serviceCharge: number;
+  taxAmount: number;
   netRevenue: number;
-  itemCount: number;
+  entryCount: number;
 };
 
 type ProductPerformance = {
-  itemName: string;
+  productName: string;
   category: string;
-  opsArea: OpsArea;
-  quantity: number;
   grossSales: number;
+  discountAmount: number;
+  serviceCharge: number;
+  taxAmount: number;
   netRevenue: number;
-  averageSellingPrice: number;
-  itemCount: number;
+  entryCount: number;
 };
 
-const opsAreaLabels: Record<OpsArea, string> = {
-  kitchen: "Kitchen",
-  bar: "Bar",
-  global: "Global",
+const salesChannelLabels: Record<SalesChannel, string> = {
+  manual: "Manual",
+  pos: "POS",
+  imported: "Imported",
 };
 
 function todayDate() {
@@ -100,6 +114,7 @@ function todayDate() {
 
 function firstDayOfMonth() {
   const today = new Date();
+
   return new Date(today.getFullYear(), today.getMonth(), 1)
     .toISOString()
     .slice(0, 10);
@@ -132,221 +147,420 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
-function getAllowedOpsAreas(role: UserRole): OpsArea[] {
-  if (role === "boh_staff") {
-    return ["kitchen"];
-  }
-
-  if (role === "foh_staff") {
-    return ["bar"];
-  }
-
-  return ["kitchen", "bar", "global"];
+function calculateNetRevenue(
+  grossSales: number,
+  discountAmount: number,
+  serviceCharge: number,
+  taxAmount: number,
+) {
+  return Math.max(
+    0,
+    Number(grossSales || 0) -
+      Number(discountAmount || 0) +
+      Number(serviceCharge || 0) -
+      Number(taxAmount || 0),
+  );
 }
 
-function getRecipeCategory(item: SoldItemRecord, recipes: SalesRecipe[]) {
-  if (!item.recipe_id) {
-    return item.ops_area === "bar" ? "Bar Product" : "Direct Product";
-  }
-
-  const recipe = recipes.find((recipeItem) => recipeItem.id === item.recipe_id);
-
-  return recipe?.recipe_category || "Uncategorized";
+function getEmptyForm(unitId: string): SalesFormState {
+  return {
+    id: "",
+    brandUnitId: unitId || "",
+    revenueDate: todayDate(),
+    salesChannel: "manual",
+    category: "General",
+    productName: "General Sales",
+    grossSales: "0",
+    discountAmount: "0",
+    serviceCharge: "0",
+    taxAmount: "0",
+    notes: "",
+    sourceReference: "",
+  };
 }
 
 export function SalesPerformancePanel({
+  userId,
   role,
   selectedBrand,
   units,
-  recipes,
-  soldItems,
+  salesRevenue,
 }: SalesPerformancePanelProps) {
-  const allowedOpsAreas = getAllowedOpsAreas(role);
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const defaultUnitId = units[0]?.id || "";
 
-  const [selectedUnitId, setSelectedUnitId] = useState(units[0]?.id || "");
-  const [selectedOpsArea, setSelectedOpsArea] = useState<OpsArea | "all">("all");
+  const [records, setRecords] = useState<SalesRevenueRecord[]>(salesRevenue);
+  const [selectedUnitId, setSelectedUnitId] = useState(defaultUnitId);
+  const [selectedChannel, setSelectedChannel] = useState<SalesChannel | "all">(
+    "all",
+  );
   const [dateFrom, setDateFrom] = useState(firstDayOfMonth());
   const [dateTo, setDateTo] = useState(todayDate());
   const [search, setSearch] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [form, setForm] = useState<SalesFormState>(() =>
+    getEmptyForm(defaultUnitId),
+  );
 
   const selectedUnit = useMemo(
     () => units.find((unit) => unit.id === selectedUnitId) || null,
     [selectedUnitId, units],
   );
 
-  const filteredSoldItems = useMemo(() => {
+  const formGrossSales = Number(form.grossSales || 0);
+  const formDiscountAmount = Number(form.discountAmount || 0);
+  const formServiceCharge = Number(form.serviceCharge || 0);
+  const formTaxAmount = Number(form.taxAmount || 0);
+  const formNetRevenue = calculateNetRevenue(
+    formGrossSales,
+    formDiscountAmount,
+    formServiceCharge,
+    formTaxAmount,
+  );
+
+  const filteredRecords = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return soldItems.filter((item) => {
-      const matchesUnit = item.brand_unit_id === selectedUnitId;
-      const matchesArea =
-        selectedOpsArea === "all" || item.ops_area === selectedOpsArea;
-      const allowedArea = allowedOpsAreas.includes(item.ops_area);
-      const matchesDateFrom = !dateFrom || item.sold_date >= dateFrom;
-      const matchesDateTo = !dateTo || item.sold_date <= dateTo;
+    return records.filter((record) => {
+      const matchesUnit =
+        !selectedUnitId || record.brand_unit_id === selectedUnitId;
+      const matchesChannel =
+        selectedChannel === "all" || record.sales_channel === selectedChannel;
+      const matchesDateFrom = !dateFrom || record.revenue_date >= dateFrom;
+      const matchesDateTo = !dateTo || record.revenue_date <= dateTo;
       const matchesSearch =
         !query ||
-        item.item_name.toLowerCase().includes(query) ||
-        getRecipeCategory(item, recipes).toLowerCase().includes(query);
+        record.product_name.toLowerCase().includes(query) ||
+        record.category.toLowerCase().includes(query) ||
+        String(record.notes || "").toLowerCase().includes(query) ||
+        String(record.source_reference || "").toLowerCase().includes(query);
 
       return (
         matchesUnit &&
-        matchesArea &&
-        allowedArea &&
+        matchesChannel &&
         matchesDateFrom &&
         matchesDateTo &&
         matchesSearch
       );
     });
-  }, [
-    allowedOpsAreas,
-    dateFrom,
-    dateTo,
-    recipes,
-    search,
-    selectedOpsArea,
-    selectedUnitId,
-    soldItems,
-  ]);
+  }, [dateFrom, dateTo, records, search, selectedChannel, selectedUnitId]);
 
   const stats = useMemo(() => {
-    const totalQuantity = filteredSoldItems.reduce(
-      (total, item) => total + Number(item.quantity || 0),
+    const grossSales = filteredRecords.reduce(
+      (total, record) => total + Number(record.gross_sales || 0),
       0,
     );
 
-    const grossSales = filteredSoldItems.reduce(
-      (total, item) => total + Number(item.total_sales || 0),
+    const discounts = filteredRecords.reduce(
+      (total, record) => total + Number(record.discount_amount || 0),
       0,
     );
 
-    const discounts = 0;
-    const serviceCharge = 0;
-    const tax = 0;
-    const netRevenue = grossSales - discounts + serviceCharge - tax;
+    const serviceCharge = filteredRecords.reduce(
+      (total, record) => total + Number(record.service_charge || 0),
+      0,
+    );
 
-    const averageTransaction =
-      filteredSoldItems.length > 0 ? netRevenue / filteredSoldItems.length : 0;
+    const tax = filteredRecords.reduce(
+      (total, record) => total + Number(record.tax_amount || 0),
+      0,
+    );
 
-    const averageSellingPrice =
-      totalQuantity > 0 ? netRevenue / totalQuantity : 0;
+    const netRevenue = filteredRecords.reduce(
+      (total, record) => total + Number(record.net_revenue || 0),
+      0,
+    );
+
+    const averageEntry =
+      filteredRecords.length > 0 ? netRevenue / filteredRecords.length : 0;
 
     return {
-      soldLineCount: filteredSoldItems.length,
-      totalQuantity,
+      entryCount: filteredRecords.length,
       grossSales,
       discounts,
       serviceCharge,
       tax,
       netRevenue,
-      averageTransaction,
-      averageSellingPrice,
+      averageEntry,
     };
-  }, [filteredSoldItems]);
+  }, [filteredRecords]);
 
   const categoryPerformance = useMemo(() => {
     const categoryMap = new Map<string, CategoryPerformance>();
 
-    filteredSoldItems.forEach((item) => {
-      const category = getRecipeCategory(item, recipes);
+    filteredRecords.forEach((record) => {
+      const category = record.category || "General";
       const current = categoryMap.get(category) || {
         category,
-        quantity: 0,
         grossSales: 0,
+        discountAmount: 0,
+        serviceCharge: 0,
+        taxAmount: 0,
         netRevenue: 0,
-        itemCount: 0,
+        entryCount: 0,
       };
-
-      const itemSales = Number(item.total_sales || 0);
 
       categoryMap.set(category, {
         category,
-        quantity: current.quantity + Number(item.quantity || 0),
-        grossSales: current.grossSales + itemSales,
-        netRevenue: current.netRevenue + itemSales,
-        itemCount: current.itemCount + 1,
+        grossSales: current.grossSales + Number(record.gross_sales || 0),
+        discountAmount:
+          current.discountAmount + Number(record.discount_amount || 0),
+        serviceCharge:
+          current.serviceCharge + Number(record.service_charge || 0),
+        taxAmount: current.taxAmount + Number(record.tax_amount || 0),
+        netRevenue: current.netRevenue + Number(record.net_revenue || 0),
+        entryCount: current.entryCount + 1,
       });
     });
 
     return Array.from(categoryMap.values()).sort(
       (a, b) => b.netRevenue - a.netRevenue,
     );
-  }, [filteredSoldItems, recipes]);
+  }, [filteredRecords]);
 
   const productPerformance = useMemo(() => {
     const productMap = new Map<string, ProductPerformance>();
 
-    filteredSoldItems.forEach((item) => {
-      const key = `${item.item_name}-${item.ops_area}`;
-      const category = getRecipeCategory(item, recipes);
+    filteredRecords.forEach((record) => {
+      const key = `${record.product_name}-${record.category}`;
       const current = productMap.get(key) || {
-        itemName: item.item_name,
-        category,
-        opsArea: item.ops_area,
-        quantity: 0,
+        productName: record.product_name || "General Sales",
+        category: record.category || "General",
         grossSales: 0,
+        discountAmount: 0,
+        serviceCharge: 0,
+        taxAmount: 0,
         netRevenue: 0,
-        averageSellingPrice: 0,
-        itemCount: 0,
+        entryCount: 0,
       };
 
-      const nextQuantity = current.quantity + Number(item.quantity || 0);
-      const nextGrossSales = current.grossSales + Number(item.total_sales || 0);
-      const nextNetRevenue = current.netRevenue + Number(item.total_sales || 0);
-
       productMap.set(key, {
-        itemName: item.item_name,
-        category,
-        opsArea: item.ops_area,
-        quantity: nextQuantity,
-        grossSales: nextGrossSales,
-        netRevenue: nextNetRevenue,
-        averageSellingPrice:
-          nextQuantity > 0 ? nextNetRevenue / nextQuantity : 0,
-        itemCount: current.itemCount + 1,
+        productName: current.productName,
+        category: current.category,
+        grossSales: current.grossSales + Number(record.gross_sales || 0),
+        discountAmount:
+          current.discountAmount + Number(record.discount_amount || 0),
+        serviceCharge:
+          current.serviceCharge + Number(record.service_charge || 0),
+        taxAmount: current.taxAmount + Number(record.tax_amount || 0),
+        netRevenue: current.netRevenue + Number(record.net_revenue || 0),
+        entryCount: current.entryCount + 1,
       });
     });
 
     return Array.from(productMap.values()).sort(
       (a, b) => b.netRevenue - a.netRevenue,
     );
-  }, [filteredSoldItems, recipes]);
+  }, [filteredRecords]);
 
   const dailyPerformance = useMemo(() => {
     const dayMap = new Map<
       string,
       {
         date: string;
-        quantity: number;
+        grossSales: number;
+        discounts: number;
+        serviceCharge: number;
+        tax: number;
         netRevenue: number;
-        itemCount: number;
+        entryCount: number;
       }
     >();
 
-    filteredSoldItems.forEach((item) => {
-      const current = dayMap.get(item.sold_date) || {
-        date: item.sold_date,
-        quantity: 0,
+    filteredRecords.forEach((record) => {
+      const current = dayMap.get(record.revenue_date) || {
+        date: record.revenue_date,
+        grossSales: 0,
+        discounts: 0,
+        serviceCharge: 0,
+        tax: 0,
         netRevenue: 0,
-        itemCount: 0,
+        entryCount: 0,
       };
 
-      dayMap.set(item.sold_date, {
-        date: item.sold_date,
-        quantity: current.quantity + Number(item.quantity || 0),
-        netRevenue: current.netRevenue + Number(item.total_sales || 0),
-        itemCount: current.itemCount + 1,
+      dayMap.set(record.revenue_date, {
+        date: record.revenue_date,
+        grossSales: current.grossSales + Number(record.gross_sales || 0),
+        discounts: current.discounts + Number(record.discount_amount || 0),
+        serviceCharge:
+          current.serviceCharge + Number(record.service_charge || 0),
+        tax: current.tax + Number(record.tax_amount || 0),
+        netRevenue: current.netRevenue + Number(record.net_revenue || 0),
+        entryCount: current.entryCount + 1,
       });
     });
 
     return Array.from(dayMap.values()).sort((a, b) =>
       b.date.localeCompare(a.date),
     );
-  }, [filteredSoldItems]);
+  }, [filteredRecords]);
+
+  function updateForm(key: keyof SalesFormState, value: string) {
+    setForm((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
+  function resetForm() {
+    setForm(getEmptyForm(selectedUnitId || defaultUnitId));
+  }
+
+  async function handleSaveRevenue(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedBrand?.id) {
+      toast.error("Selected brand is required.");
+      return;
+    }
+
+    if (!form.brandUnitId) {
+      toast.error("Branch unit is required.");
+      return;
+    }
+
+    if (!form.revenueDate) {
+      toast.error("Revenue date is required.");
+      return;
+    }
+
+    const grossSales = Number(form.grossSales || 0);
+    const discountAmount = Number(form.discountAmount || 0);
+    const serviceCharge = Number(form.serviceCharge || 0);
+    const taxAmount = Number(form.taxAmount || 0);
+    const netRevenue = calculateNetRevenue(
+      grossSales,
+      discountAmount,
+      serviceCharge,
+      taxAmount,
+    );
+
+    if (
+      grossSales < 0 ||
+      discountAmount < 0 ||
+      serviceCharge < 0 ||
+      taxAmount < 0
+    ) {
+      toast.error("Sales values cannot be negative.");
+      return;
+    }
+
+    setIsSaving(true);
+
+    const payload = {
+      brand_id: selectedBrand.id,
+      brand_unit_id: form.brandUnitId,
+      revenue_date: form.revenueDate,
+      revenue_month: `${form.revenueDate.slice(0, 7)}-01`,
+      sales_channel: form.salesChannel,
+      category: form.category.trim() || "General",
+      product_name: form.productName.trim() || "General Sales",
+      gross_sales: grossSales,
+      discount_amount: discountAmount,
+      service_charge: serviceCharge,
+      tax_amount: taxAmount,
+      net_revenue: netRevenue,
+      notes: form.notes.trim() || null,
+      source_reference: form.sourceReference.trim() || null,
+      is_active: true,
+      created_by: userId,
+    };
+
+    const { data, error } = form.id
+      ? await supabase
+          .from("sales_revenue")
+          .update({
+            brand_unit_id: payload.brand_unit_id,
+            revenue_date: payload.revenue_date,
+            revenue_month: payload.revenue_month,
+            sales_channel: payload.sales_channel,
+            category: payload.category,
+            product_name: payload.product_name,
+            gross_sales: payload.gross_sales,
+            discount_amount: payload.discount_amount,
+            service_charge: payload.service_charge,
+            tax_amount: payload.tax_amount,
+            net_revenue: payload.net_revenue,
+            notes: payload.notes,
+            source_reference: payload.source_reference,
+          })
+          .eq("id", form.id)
+          .select(
+            "id, brand_id, brand_unit_id, revenue_date, revenue_month, sales_channel, category, product_name, gross_sales, discount_amount, service_charge, tax_amount, net_revenue, notes, source_reference, is_active, created_by, created_at, updated_at",
+          )
+          .single()
+      : await supabase
+          .from("sales_revenue")
+          .insert(payload)
+          .select(
+            "id, brand_id, brand_unit_id, revenue_date, revenue_month, sales_channel, category, product_name, gross_sales, discount_amount, service_charge, tax_amount, net_revenue, notes, source_reference, is_active, created_by, created_at, updated_at",
+          )
+          .single();
+
+    setIsSaving(false);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    const savedRecord = data as SalesRevenueRecord;
+
+    setRecords((current) => {
+      if (form.id) {
+        return current.map((record) =>
+          record.id === savedRecord.id ? savedRecord : record,
+        );
+      }
+
+      return [savedRecord, ...current];
+    });
+
+    toast.success(
+      form.id ? "Sales revenue updated." : "Sales revenue saved.",
+    );
+    resetForm();
+  }
+
+  function handleEditRevenue(record: SalesRevenueRecord) {
+    setForm({
+      id: record.id,
+      brandUnitId: record.brand_unit_id || defaultUnitId,
+      revenueDate: record.revenue_date,
+      salesChannel: record.sales_channel,
+      category: record.category || "General",
+      productName: record.product_name || "General Sales",
+      grossSales: String(Number(record.gross_sales || 0)),
+      discountAmount: String(Number(record.discount_amount || 0)),
+      serviceCharge: String(Number(record.service_charge || 0)),
+      taxAmount: String(Number(record.tax_amount || 0)),
+      notes: record.notes || "",
+      sourceReference: record.source_reference || "",
+    });
+
+    toast.success("Sales revenue loaded for editing.");
+  }
+
+  async function handleDeleteRevenue(id: string) {
+    const { error } = await supabase
+      .from("sales_revenue")
+      .update({
+        is_active: false,
+      })
+      .eq("id", id);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    setRecords((current) => current.filter((record) => record.id !== id));
+    toast.success("Sales revenue removed.");
+  }
 
   function downloadSalesPdf() {
-    if (filteredSoldItems.length === 0) {
-      toast.error("No sales performance data available for PDF.");
+    if (filteredRecords.length === 0) {
+      toast.error("No sales revenue data available for PDF.");
       return;
     }
 
@@ -355,9 +569,11 @@ export function SalesPerformancePanel({
         (category) => `
           <tr>
             <td>${escapeHtml(category.category)}</td>
-            <td>${formatQty(category.quantity)}</td>
-            <td>${category.itemCount}</td>
+            <td>${category.entryCount}</td>
             <td>${formatCurrency(category.grossSales)}</td>
+            <td>${formatCurrency(category.discountAmount)}</td>
+            <td>${formatCurrency(category.serviceCharge)}</td>
+            <td>${formatCurrency(category.taxAmount)}</td>
             <td>${formatCurrency(category.netRevenue)}</td>
           </tr>
         `,
@@ -368,11 +584,10 @@ export function SalesPerformancePanel({
       .map(
         (product) => `
           <tr>
-            <td>${escapeHtml(product.itemName)}</td>
+            <td>${escapeHtml(product.productName)}</td>
             <td>${escapeHtml(product.category)}</td>
-            <td>${escapeHtml(opsAreaLabels[product.opsArea])}</td>
-            <td>${formatQty(product.quantity)}</td>
-            <td>${formatCurrency(product.averageSellingPrice)}</td>
+            <td>${product.entryCount}</td>
+            <td>${formatCurrency(product.grossSales)}</td>
             <td>${formatCurrency(product.netRevenue)}</td>
           </tr>
         `,
@@ -384,8 +599,11 @@ export function SalesPerformancePanel({
         (day) => `
           <tr>
             <td>${escapeHtml(day.date)}</td>
-            <td>${formatQty(day.quantity)}</td>
-            <td>${day.itemCount}</td>
+            <td>${day.entryCount}</td>
+            <td>${formatCurrency(day.grossSales)}</td>
+            <td>${formatCurrency(day.discounts)}</td>
+            <td>${formatCurrency(day.serviceCharge)}</td>
+            <td>${formatCurrency(day.tax)}</td>
             <td>${formatCurrency(day.netRevenue)}</td>
           </tr>
         `,
@@ -464,20 +682,20 @@ export function SalesPerformancePanel({
             table {
               width: 100%;
               border-collapse: collapse;
-              font-size: 11px;
+              font-size: 10px;
             }
             th {
               text-align: left;
               background: #0f172a;
               color: #ffffff;
-              padding: 9px;
-              font-size: 9px;
+              padding: 8px;
+              font-size: 8px;
               text-transform: uppercase;
               letter-spacing: .7px;
             }
             td {
               border-bottom: 1px solid #e2e8f0;
-              padding: 9px;
+              padding: 8px;
               vertical-align: top;
             }
             .footer {
@@ -511,9 +729,9 @@ export function SalesPerformancePanel({
                 <div class="card"><div class="label">Date Range</div><div class="value">${escapeHtml(dateFrom || "Start")} to ${escapeHtml(dateTo || "Today")}</div></div>
                 <div class="card"><div class="label">Net Revenue</div><div class="value">${formatCurrency(stats.netRevenue)}</div></div>
                 <div class="card"><div class="label">Gross Sales</div><div class="value">${formatCurrency(stats.grossSales)}</div></div>
-                <div class="card"><div class="label">Sold Qty</div><div class="value">${formatQty(stats.totalQuantity)}</div></div>
-                <div class="card"><div class="label">Sold Lines</div><div class="value">${stats.soldLineCount}</div></div>
-                <div class="card"><div class="label">Avg Price</div><div class="value">${formatCurrency(stats.averageSellingPrice)}</div></div>
+                <div class="card"><div class="label">Discount</div><div class="value">${formatCurrency(stats.discounts)}</div></div>
+                <div class="card"><div class="label">Service Charge</div><div class="value">${formatCurrency(stats.serviceCharge)}</div></div>
+                <div class="card"><div class="label">Tax</div><div class="value">${formatCurrency(stats.tax)}</div></div>
               </div>
 
               <h2>📊 Category Performance</h2>
@@ -521,14 +739,16 @@ export function SalesPerformancePanel({
                 <thead>
                   <tr>
                     <th>Category</th>
-                    <th>Qty</th>
-                    <th>Lines</th>
-                    <th>Gross Sales</th>
+                    <th>Entries</th>
+                    <th>Gross</th>
+                    <th>Discount</th>
+                    <th>Service</th>
+                    <th>Tax</th>
                     <th>Net Revenue</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${categoryRows || `<tr><td colspan="5">No category data found.</td></tr>`}
+                  ${categoryRows || `<tr><td colspan="7">No category data found.</td></tr>`}
                 </tbody>
               </table>
 
@@ -538,14 +758,13 @@ export function SalesPerformancePanel({
                   <tr>
                     <th>Product / Item</th>
                     <th>Category</th>
-                    <th>Area</th>
-                    <th>Qty</th>
-                    <th>Avg Price</th>
+                    <th>Entries</th>
+                    <th>Gross</th>
                     <th>Net Revenue</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${productRows || `<tr><td colspan="6">No product data found.</td></tr>`}
+                  ${productRows || `<tr><td colspan="5">No product data found.</td></tr>`}
                 </tbody>
               </table>
 
@@ -554,18 +773,21 @@ export function SalesPerformancePanel({
                 <thead>
                   <tr>
                     <th>Date</th>
-                    <th>Qty</th>
-                    <th>Lines</th>
+                    <th>Entries</th>
+                    <th>Gross</th>
+                    <th>Discount</th>
+                    <th>Service</th>
+                    <th>Tax</th>
                     <th>Net Revenue</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${dailyRows || `<tr><td colspan="4">No daily data found.</td></tr>`}
+                  ${dailyRows || `<tr><td colspan="7">No daily data found.</td></tr>`}
                 </tbody>
               </table>
 
               <div class="footer">
-                <div>Sales Performance Dashboard Report</div>
+                <div>Sales Performance Report</div>
                 <div>Developer Rights Chef Alex @FORZA 2026</div>
               </div>
             </section>
@@ -599,11 +821,11 @@ export function SalesPerformancePanel({
           <div className="absolute -right-16 -top-20 h-52 w-52 animate-pulse rounded-full bg-emerald-100/80 blur-3xl" />
           <div className="absolute -bottom-24 -left-14 h-56 w-56 animate-pulse rounded-full bg-amber-100/80 blur-3xl" />
 
-          <div className="relative z-10 grid gap-5 xl:grid-cols-[1fr_380px] xl:items-center">
+          <div className="relative z-10 grid gap-5 xl:grid-cols-[1fr_390px] xl:items-center">
             <div>
               <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-sm font-black text-slate-700 shadow-sm">
                 <Sparkles size={16} />
-                Revenue performance only
+                Official Revenue Source
               </div>
 
               <p className="text-sm font-black uppercase tracking-wide text-slate-400">
@@ -613,10 +835,9 @@ export function SalesPerformancePanel({
                 {selectedBrand?.name || "Selected Brand"} Net Revenue
               </h1>
               <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600">
-                Sales Performance is for revenue, net sales, category
-                performance, product performance, and budget comparison
-                preparation. Stock consumption and sold consumption are handled
-                only in Inventory.
+                Sales Performance is the official revenue source for manual
+                entry now and POS integration later. Inventory sold consumption
+                remains separate for stock deduction.
               </p>
             </div>
 
@@ -626,7 +847,13 @@ export function SalesPerformancePanel({
               </label>
               <select
                 value={selectedUnitId}
-                onChange={(event) => setSelectedUnitId(event.target.value)}
+                onChange={(event) => {
+                  setSelectedUnitId(event.target.value);
+                  setForm((current) => ({
+                    ...current,
+                    brandUnitId: event.target.value,
+                  }));
+                }}
                 className="forza-input"
               >
                 {units.map((unit) => (
@@ -678,23 +905,18 @@ export function SalesPerformancePanel({
           icon={<ReceiptText size={22} />}
         />
         <MetricCard
-          label="Sold Qty"
-          value={formatQty(stats.totalQuantity)}
-          icon={<PackageSearch size={22} />}
+          label="Discount"
+          value={formatCurrency(stats.discounts)}
+          icon={<PieChart size={22} />}
         />
         <MetricCard
-          label="Average Selling Price"
-          value={formatCurrency(stats.averageSellingPrice)}
+          label="Average Entry"
+          value={formatCurrency(stats.averageEntry)}
           icon={<TrendingUp size={22} />}
         />
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          label="Discounts"
-          value={formatCurrency(stats.discounts)}
-          icon={<PieChart size={22} />}
-        />
         <MetricCard
           label="Service Charge"
           value={formatCurrency(stats.serviceCharge)}
@@ -706,86 +928,246 @@ export function SalesPerformancePanel({
           icon={<CalendarDays size={22} />}
         />
         <MetricCard
-          label="Sales Lines"
-          value={String(stats.soldLineCount)}
+          label="Revenue Entries"
+          value={String(stats.entryCount)}
           icon={<BarChart3 size={22} />}
+        />
+        <MetricCard
+          label="Current Net Preview"
+          value={formatCurrency(formNetRevenue)}
+          icon={<PackageSearch size={22} />}
         />
       </section>
 
-      <section className="glass-panel rounded-[2rem] p-6">
-        <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-              Filters
-            </p>
-            <h2 className="text-2xl font-black text-slate-950">
-              Revenue Performance View
-            </h2>
-          </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <select
-              value={selectedOpsArea}
-              onChange={(event) =>
-                setSelectedOpsArea(event.target.value as OpsArea | "all")
-              }
-              className="forza-input sm:min-w-[180px]"
-            >
-              <option value="all">All Areas</option>
-              {allowedOpsAreas.map((area) => (
-                <option key={area} value={area}>
-                  {opsAreaLabels[area]}
-                </option>
-              ))}
-            </select>
-
-            <div className="relative">
-              <Search
-                size={18}
-                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-              />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="forza-input pl-11 xl:min-w-[300px]"
-                placeholder="Search item or category..."
-              />
-            </div>
-
-            <button
-              type="button"
-              onClick={downloadSalesPdf}
-              className="forza-button-hover inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl"
-            >
-              <Download size={18} />
-              PDF
-            </button>
-          </div>
-        </div>
-
-        <p className="text-sm font-bold leading-6 text-slate-500">
-          This page does not create sold dishes, recipes, or inventory
-          consumption. It only reads completed sales data and summarizes revenue
-          performance.
-        </p>
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-[420px_1fr]">
+      <section className="grid gap-6 xl:grid-cols-[430px_1fr]">
         <section className="glass-panel rounded-[2rem] p-6">
           <div className="mb-5">
             <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-              Category Performance
+              Revenue Entry
             </p>
             <h2 className="text-2xl font-black text-slate-950">
-              Revenue by Category
+              {form.id ? "Edit Sales Revenue" : "Create Sales Revenue"}
             </h2>
           </div>
 
+          <form onSubmit={handleSaveRevenue} className="space-y-4">
+            <div>
+              <label className="text-sm font-bold text-slate-700">
+                Branch Unit
+              </label>
+              <select
+                value={form.brandUnitId}
+                onChange={(event) => updateForm("brandUnitId", event.target.value)}
+                className="forza-input mt-2"
+              >
+                {units.map((unit) => (
+                  <option key={unit.id} value={unit.id}>
+                    {unit.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="text-sm font-bold text-slate-700">
+                  Revenue Date
+                </label>
+                <input
+                  type="date"
+                  value={form.revenueDate}
+                  onChange={(event) =>
+                    updateForm("revenueDate", event.target.value)
+                  }
+                  className="forza-input mt-2"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-bold text-slate-700">
+                  Sales Channel
+                </label>
+                <select
+                  value={form.salesChannel}
+                  onChange={(event) =>
+                    updateForm("salesChannel", event.target.value as SalesChannel)
+                  }
+                  className="forza-input mt-2"
+                >
+                  <option value="manual">Manual</option>
+                  <option value="pos">POS</option>
+                  <option value="imported">Imported</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="text-sm font-bold text-slate-700">
+                  Category
+                </label>
+                <input
+                  value={form.category}
+                  onChange={(event) => updateForm("category", event.target.value)}
+                  className="forza-input mt-2"
+                  placeholder="Food, Beverage, Delivery..."
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-bold text-slate-700">
+                  Product / Revenue Item
+                </label>
+                <input
+                  value={form.productName}
+                  onChange={(event) =>
+                    updateForm("productName", event.target.value)
+                  }
+                  className="forza-input mt-2"
+                  placeholder="General Sales, Food Sales..."
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <NumberField
+                label="Gross Sales (€)"
+                value={form.grossSales}
+                onChange={(value) => updateForm("grossSales", value)}
+              />
+              <NumberField
+                label="Discount (€)"
+                value={form.discountAmount}
+                onChange={(value) => updateForm("discountAmount", value)}
+              />
+              <NumberField
+                label="Service Charge (€)"
+                value={form.serviceCharge}
+                onChange={(value) => updateForm("serviceCharge", value)}
+              />
+              <NumberField
+                label="Tax / VAT (€)"
+                value={form.taxAmount}
+                onChange={(value) => updateForm("taxAmount", value)}
+              />
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+                Net Revenue Formula
+              </p>
+              <p className="mt-2 text-sm font-bold leading-6 text-slate-600">
+                Gross Sales - Discount + Service Charge - Tax = Net Revenue
+              </p>
+              <p className="mt-3 text-3xl font-black text-slate-950">
+                {formatCurrency(formNetRevenue)}
+              </p>
+            </div>
+
+            <div>
+              <label className="text-sm font-bold text-slate-700">
+                Source Reference
+              </label>
+              <input
+                value={form.sourceReference}
+                onChange={(event) =>
+                  updateForm("sourceReference", event.target.value)
+                }
+                className="forza-input mt-2"
+                placeholder="POS batch ID, receipt range, manual ref..."
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-bold text-slate-700">Notes</label>
+              <textarea
+                value={form.notes}
+                onChange={(event) => updateForm("notes", event.target.value)}
+                className="forza-input mt-2 min-h-[100px] resize-none"
+                placeholder="Revenue notes, discount reason, POS remarks..."
+              />
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="forza-button-hover flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Save size={18} />
+                {isSaving
+                  ? "Saving..."
+                  : form.id
+                    ? "Update Revenue"
+                    : "Save Revenue"}
+              </button>
+
+              <button
+                type="button"
+                onClick={resetForm}
+                className="forza-button-hover flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-black text-slate-950 shadow-sm"
+              >
+                <Plus size={18} />
+                New Entry
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="glass-panel rounded-[2rem] p-6">
+          <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <p className="text-sm font-black uppercase tracking-wide text-slate-400">
+                Revenue Matrix
+              </p>
+              <h2 className="text-2xl font-black text-slate-950">
+                Category & Product Performance
+              </h2>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <select
+                value={selectedChannel}
+                onChange={(event) =>
+                  setSelectedChannel(event.target.value as SalesChannel | "all")
+                }
+                className="forza-input sm:min-w-[160px]"
+              >
+                <option value="all">All Channels</option>
+                <option value="manual">Manual</option>
+                <option value="pos">POS</option>
+                <option value="imported">Imported</option>
+              </select>
+
+              <div className="relative">
+                <Search
+                  size={18}
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  className="forza-input pl-11 xl:min-w-[260px]"
+                  placeholder="Search revenue..."
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={downloadSalesPdf}
+                className="forza-button-hover inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl"
+              >
+                <Download size={18} />
+                PDF
+              </button>
+            </div>
+          </div>
+
           <div className="space-y-3">
-            {categoryPerformance.slice(0, 10).map((category) => (
+            {categoryPerformance.map((category) => (
               <div
                 key={category.category}
-                className="forza-transition forza-hover rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm"
+                className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg"
               >
                 <div className="flex items-center justify-between gap-4">
                   <div>
@@ -793,8 +1175,8 @@ export function SalesPerformancePanel({
                       {category.category}
                     </h3>
                     <p className="mt-1 text-sm font-bold text-slate-500">
-                      Qty: {formatQty(category.quantity)} · Lines:{" "}
-                      {category.itemCount}
+                      Entries: {category.entryCount} · Gross:{" "}
+                      {formatCurrency(category.grossSales)}
                     </p>
                   </div>
                   <p className="text-sm font-black text-slate-950">
@@ -805,75 +1187,16 @@ export function SalesPerformancePanel({
             ))}
 
             {categoryPerformance.length === 0 ? (
-              <div className="rounded-3xl bg-white/80 p-5 text-sm font-bold text-slate-500">
-                No category revenue found.
+              <div className="rounded-3xl border border-slate-200 bg-white/80 p-8 text-center">
+                <FileText className="mx-auto text-slate-300" size={36} />
+                <h3 className="mt-4 text-lg font-black text-slate-950">
+                  No sales revenue found
+                </h3>
+                <p className="mt-2 text-sm font-bold text-slate-500">
+                  Create manual revenue entries or connect POS later.
+                </p>
               </div>
             ) : null}
-          </div>
-        </section>
-
-        <section className="glass-panel rounded-[2rem] p-6">
-          <div className="mb-5">
-            <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-              Product Performance
-            </p>
-            <h2 className="text-2xl font-black text-slate-950">
-              Revenue by Product / Item
-            </h2>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] border-separate border-spacing-y-3">
-              <thead>
-                <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-400">
-                  <th className="px-4">Product / Item</th>
-                  <th className="px-4">Category</th>
-                  <th className="px-4">Area</th>
-                  <th className="px-4">Qty</th>
-                  <th className="px-4">Avg Price</th>
-                  <th className="px-4">Net Revenue</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {productPerformance.map((product) => (
-                  <tr
-                    key={`${product.itemName}-${product.opsArea}`}
-                    className="rounded-2xl bg-white shadow-sm"
-                  >
-                    <td className="rounded-l-2xl px-4 py-4 text-sm font-black text-slate-950">
-                      {product.itemName}
-                    </td>
-                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                      {product.category}
-                    </td>
-                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                      {opsAreaLabels[product.opsArea]}
-                    </td>
-                    <td className="px-4 py-4 text-sm font-black text-slate-950">
-                      {formatQty(product.quantity)}
-                    </td>
-                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                      {formatCurrency(product.averageSellingPrice)}
-                    </td>
-                    <td className="rounded-r-2xl px-4 py-4 text-sm font-black text-slate-950">
-                      {formatCurrency(product.netRevenue)}
-                    </td>
-                  </tr>
-                ))}
-
-                {productPerformance.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      className="rounded-2xl bg-white px-4 py-8 text-center text-sm font-bold text-slate-500"
-                    >
-                      No product revenue found.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
           </div>
         </section>
       </section>
@@ -881,49 +1204,155 @@ export function SalesPerformancePanel({
       <section className="glass-panel rounded-[2rem] p-6">
         <div className="mb-5">
           <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-            Daily Revenue
+            Product Performance
           </p>
           <h2 className="text-2xl font-black text-slate-950">
-            Revenue by Date
+            Revenue by Product / Item
           </h2>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] border-separate border-spacing-y-3">
+          <table className="w-full min-w-[900px] border-separate border-spacing-y-3">
             <thead>
               <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-400">
-                <th className="px-4">Date</th>
-                <th className="px-4">Qty</th>
-                <th className="px-4">Lines</th>
+                <th className="px-4">Product / Item</th>
+                <th className="px-4">Category</th>
+                <th className="px-4">Entries</th>
+                <th className="px-4">Gross</th>
+                <th className="px-4">Discount</th>
                 <th className="px-4">Net Revenue</th>
               </tr>
             </thead>
 
             <tbody>
-              {dailyPerformance.map((day) => (
-                <tr key={day.date} className="rounded-2xl bg-white shadow-sm">
+              {productPerformance.map((product) => (
+                <tr
+                  key={`${product.productName}-${product.category}`}
+                  className="rounded-2xl bg-white shadow-sm"
+                >
                   <td className="rounded-l-2xl px-4 py-4 text-sm font-black text-slate-950">
-                    {day.date}
+                    {product.productName}
                   </td>
                   <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                    {formatQty(day.quantity)}
+                    {product.category}
                   </td>
                   <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                    {day.itemCount}
+                    {formatQty(product.entryCount)}
+                  </td>
+                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
+                    {formatCurrency(product.grossSales)}
+                  </td>
+                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
+                    {formatCurrency(product.discountAmount)}
                   </td>
                   <td className="rounded-r-2xl px-4 py-4 text-sm font-black text-slate-950">
-                    {formatCurrency(day.netRevenue)}
+                    {formatCurrency(product.netRevenue)}
                   </td>
                 </tr>
               ))}
 
-              {dailyPerformance.length === 0 ? (
+              {productPerformance.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={6}
                     className="rounded-2xl bg-white px-4 py-8 text-center text-sm font-bold text-slate-500"
                   >
-                    No daily revenue found.
+                    No product revenue found.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="glass-panel rounded-[2rem] p-6">
+        <div className="mb-5">
+          <p className="text-sm font-black uppercase tracking-wide text-slate-400">
+            Revenue Entries
+          </p>
+          <h2 className="text-2xl font-black text-slate-950">
+            Manual / POS-ready Revenue Records
+          </h2>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1100px] border-separate border-spacing-y-3">
+            <thead>
+              <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-400">
+                <th className="px-4">Date</th>
+                <th className="px-4">Channel</th>
+                <th className="px-4">Category</th>
+                <th className="px-4">Product / Item</th>
+                <th className="px-4">Gross</th>
+                <th className="px-4">Discount</th>
+                <th className="px-4">Service</th>
+                <th className="px-4">Tax</th>
+                <th className="px-4">Net</th>
+                <th className="px-4">Actions</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {filteredRecords.map((record) => (
+                <tr key={record.id} className="rounded-2xl bg-white shadow-sm">
+                  <td className="rounded-l-2xl px-4 py-4 text-sm font-black text-slate-950">
+                    {record.revenue_date}
+                  </td>
+                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
+                    {salesChannelLabels[record.sales_channel]}
+                  </td>
+                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
+                    {record.category}
+                  </td>
+                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
+                    {record.product_name}
+                  </td>
+                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
+                    {formatCurrency(record.gross_sales)}
+                  </td>
+                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
+                    {formatCurrency(record.discount_amount)}
+                  </td>
+                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
+                    {formatCurrency(record.service_charge)}
+                  </td>
+                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
+                    {formatCurrency(record.tax_amount)}
+                  </td>
+                  <td className="px-4 py-4 text-sm font-black text-slate-950">
+                    {formatCurrency(record.net_revenue)}
+                  </td>
+                  <td className="rounded-r-2xl px-4 py-4">
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleEditRevenue(record)}
+                        className="forza-button-hover inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-3 py-2 text-xs font-black text-white"
+                      >
+                        <Edit3 size={14} />
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRevenue(record.id)}
+                        className="forza-button-hover inline-flex items-center gap-2 rounded-2xl bg-red-600 px-3 py-2 text-xs font-black text-white"
+                      >
+                        <Trash2 size={14} />
+                        Remove
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+
+              {filteredRecords.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={10}
+                    className="rounded-2xl bg-white px-4 py-8 text-center text-sm font-bold text-slate-500"
+                  >
+                    No revenue records found.
                   </td>
                 </tr>
               ) : null}
@@ -949,6 +1378,27 @@ function MetricCard({ label, value, icon }: MetricCardProps) {
       </div>
       <p className="text-sm font-bold text-slate-400">{label}</p>
       <p className="mt-2 text-2xl font-black text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+type NumberFieldProps = {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+};
+
+function NumberField({ label, value, onChange }: NumberFieldProps) {
+  return (
+    <div>
+      <label className="text-sm font-bold text-slate-700">{label}</label>
+      <input
+        type="number"
+        step="0.01"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="forza-input mt-2"
+      />
     </div>
   );
 }
