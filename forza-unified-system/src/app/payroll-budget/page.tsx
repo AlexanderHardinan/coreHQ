@@ -89,7 +89,6 @@ type PayrollFormState = {
   budgetMonth: string;
   department: PayrollDepartmentValue;
   customDepartment: string;
-  revenueBase: string;
   payrollPercent: string;
   actualPayrollAmount: string;
   notes: string;
@@ -98,68 +97,22 @@ type PayrollFormState = {
 const payrollDepartments: {
   value: PayrollDepartmentValue;
   label: string;
-  description: string;
 }[] = [
-  {
-    value: "kitchen",
-    label: "Kitchen",
-    description: "BOH chefs, cooks, prep team, and kitchen production labor.",
-  },
-  {
-    value: "bar",
-    label: "Bar",
-    description: "Bartenders, barbacks, beverage service, and bar support.",
-  },
-  {
-    value: "service",
-    label: "Service",
-    description: "FOH service team, waiters, hosts, and guest-facing labor.",
-  },
-  {
-    value: "admin",
-    label: "Admin",
-    description: "Administrative payroll, office support, and clerical labor.",
-  },
-  {
-    value: "management",
-    label: "Management",
-    description: "Managers, supervisors, leadership, and department heads.",
-  },
-  {
-    value: "stewarding",
-    label: "Stewarding",
-    description: "Dishwashing, cleaning support, and kitchen porter payroll.",
-  },
-  {
-    value: "security",
-    label: "Security",
-    description: "Security team, door control, and safety staff payroll.",
-  },
-  {
-    value: "housekeeping",
-    label: "Housekeeping",
-    description: "Cleaning team, housekeeping, and facility support payroll.",
-  },
-  {
-    value: "maintenance",
-    label: "Maintenance",
-    description: "Maintenance labor, repair support, and technical staff.",
-  },
-  {
-    value: "custom",
-    label: "Custom",
-    description: "Any other payroll department or labor group.",
-  },
+  { value: "kitchen", label: "Kitchen" },
+  { value: "bar", label: "Bar" },
+  { value: "service", label: "Service" },
+  { value: "admin", label: "Admin" },
+  { value: "management", label: "Management" },
+  { value: "stewarding", label: "Stewarding" },
+  { value: "security", label: "Security" },
+  { value: "housekeeping", label: "Housekeeping" },
+  { value: "maintenance", label: "Maintenance" },
+  { value: "custom", label: "Custom" },
 ];
 
 function normalizeBrandCode(value: string | null | undefined) {
   const brand = String(value || "FORZA").trim().toUpperCase();
-
-  if (brand === "FUSION") {
-    return "FUSION";
-  }
-
-  return "FORZA";
+  return brand === "FUSION" ? "FUSION" : "FORZA";
 }
 
 function currentMonthValue() {
@@ -167,8 +120,7 @@ function currentMonthValue() {
 }
 
 function monthToDate(value: string) {
-  const month = value || currentMonthValue();
-  return `${month}-01`;
+  return `${value || currentMonthValue()}-01`;
 }
 
 function dateToMonth(value: string) {
@@ -180,11 +132,10 @@ function monthStartEnd(month: string) {
   const startDate = `${safeMonth}-01`;
   const start = new Date(`${startDate}T00:00:00`);
   const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
-  const endDate = end.toISOString().slice(0, 10);
 
   return {
     startDate,
-    endDate,
+    endDate: end.toISOString().slice(0, 10),
   };
 }
 
@@ -200,6 +151,15 @@ function formatPercent(value: number) {
   return `${Number(value || 0).toFixed(2)}%`;
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function getDepartmentLabel(
   value: PayrollDepartmentValue,
   customDepartment?: string | null,
@@ -212,15 +172,6 @@ function getDepartmentLabel(
     payrollDepartments.find((department) => department.value === value)?.label ||
     value
   );
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 function calculatePayrollBudgetValue(
@@ -241,14 +192,13 @@ function calculateActualPayrollPercent(
   return (Number(actualPayrollAmount || 0) / Number(revenueBase || 0)) * 100;
 }
 
-function getEmptyForm(month: string, revenueBase = 0): PayrollFormState {
+function getEmptyForm(month: string): PayrollFormState {
   return {
     id: "",
     brandUnitId: "all",
     budgetMonth: month,
     department: "kitchen",
     customDepartment: "",
-    revenueBase: String(Number(revenueBase || 0)),
     payrollPercent: "0",
     actualPayrollAmount: "0",
     notes: "",
@@ -292,18 +242,34 @@ function PayrollBudgetClient() {
   const role = profile?.role || "manager";
   const modules = getAllowedModules(role);
 
-  const revenueSales = useMemo(() => {
-    return soldRevenue.reduce(
-      (total, sale) => total + Number(sale.total_sales || 0),
-      0,
-    );
-  }, [soldRevenue]);
-
   function getRevenueForUnit(unitId: string) {
     return soldRevenue
       .filter((sale) => unitId === "all" || sale.brand_unit_id === unitId)
       .reduce((total, sale) => total + Number(sale.total_sales || 0), 0);
   }
+
+  const selectedUnitRevenue = useMemo(
+    () => getRevenueForUnit(selectedUnitId),
+    [selectedUnitId, soldRevenue],
+  );
+
+  const formRevenueBase = useMemo(
+    () => getRevenueForUnit(form.brandUnitId),
+    [form.brandUnitId, soldRevenue],
+  );
+
+  const formPayrollPercent = Number(form.payrollPercent || 0);
+  const formActualPayrollAmount = Number(form.actualPayrollAmount || 0);
+  const formPayrollBudgetAmount = calculatePayrollBudgetValue(
+    formRevenueBase,
+    formPayrollPercent,
+  );
+  const formActualPayrollPercent = calculateActualPayrollPercent(
+    formActualPayrollAmount,
+    formRevenueBase,
+  );
+  const formPercentVariance = formPayrollPercent - formActualPayrollPercent;
+  const formValueVariance = formPayrollBudgetAmount - formActualPayrollAmount;
 
   useEffect(() => {
     async function loadData() {
@@ -333,8 +299,7 @@ function PayrollBudgetClient() {
         return;
       }
 
-      const nextProfile = profileData as ProfileRecord;
-      setProfile(nextProfile);
+      setProfile(profileData as ProfileRecord);
 
       const { data: brandsData, error: brandsError } = await supabase
         .from("brands")
@@ -395,8 +360,7 @@ function PayrollBudgetClient() {
         return;
       }
 
-      const nextUnits = (unitsData || []) as PayrollUnit[];
-      setUnits(nextUnits);
+      setUnits((unitsData || []) as PayrollUnit[]);
 
       const { startDate, endDate } = monthStartEnd(selectedMonth);
 
@@ -413,13 +377,7 @@ function PayrollBudgetClient() {
         return;
       }
 
-      const nextSoldRevenue = (revenueData || []) as SoldRevenueRecord[];
-      setSoldRevenue(nextSoldRevenue);
-
-      const nextRevenueBase = nextSoldRevenue.reduce(
-        (total, sale) => total + Number(sale.total_sales || 0),
-        0,
-      );
+      setSoldRevenue((revenueData || []) as SoldRevenueRecord[]);
 
       const { data: payrollData, error: payrollError } = await supabase
         .from("payroll_budgets")
@@ -438,7 +396,7 @@ function PayrollBudgetClient() {
       }
 
       setPayrollBudgets((payrollData || []) as PayrollBudget[]);
-      setForm(getEmptyForm(selectedMonth, nextRevenueBase));
+      setForm(getEmptyForm(selectedMonth));
       setSelectedUnitId("all");
       setIsLoading(false);
     }
@@ -467,80 +425,15 @@ function PayrollBudgetClient() {
     });
   }, [payrollBudgets, search, selectedUnitId]);
 
-  const selectedUnitRevenue = useMemo(
-    () => getRevenueForUnit(selectedUnitId),
-    [selectedUnitId, soldRevenue],
-  );
-
-  const formRevenueBase = Number(form.revenueBase || 0);
-  const formPayrollPercent = Number(form.payrollPercent || 0);
-  const formActualPayrollAmount = Number(form.actualPayrollAmount || 0);
-  const formPayrollBudgetAmount = calculatePayrollBudgetValue(
-    formRevenueBase,
-    formPayrollPercent,
-  );
-  const formActualPayrollPercent = calculateActualPayrollPercent(
-    formActualPayrollAmount,
-    formRevenueBase,
-  );
-  const formPercentVariance = formPayrollPercent - formActualPayrollPercent;
-  const formValueVariance = formPayrollBudgetAmount - formActualPayrollAmount;
-
-  const totals = useMemo(() => {
-    const revenueTotal = filteredPayrollBudgets.reduce(
-      (total, budget) => total + Number(budget.revenue_base || 0),
-      0,
-    );
-
-    const payrollPercentTotal = filteredPayrollBudgets.reduce(
-      (total, budget) => total + Number(budget.payroll_percent || 0),
-      0,
-    );
-
-    const payrollBudgetTotal = filteredPayrollBudgets.reduce(
-      (total, budget) => total + Number(budget.payroll_budget_amount || 0),
-      0,
-    );
-
-    const actualPayrollTotal = filteredPayrollBudgets.reduce(
-      (total, budget) => total + Number(budget.actual_payroll_amount || 0),
-      0,
-    );
-
-    const variance = payrollBudgetTotal - actualPayrollTotal;
-    const actualPayrollPercent =
-      revenueTotal > 0 ? (actualPayrollTotal / revenueTotal) * 100 : 0;
-    const usagePercent =
-      payrollBudgetTotal > 0
-        ? (actualPayrollTotal / payrollBudgetTotal) * 100
-        : 0;
-    const overBudgetCount = filteredPayrollBudgets.filter(
-      (budget) =>
-        Number(budget.actual_payroll_amount || 0) >
-        Number(budget.payroll_budget_amount || 0),
-    ).length;
-
-    return {
-      revenueTotal,
-      payrollPercentTotal,
-      payrollBudgetTotal,
-      actualPayrollTotal,
-      variance,
-      actualPayrollPercent,
-      usagePercent,
-      overBudgetCount,
-      itemCount: filteredPayrollBudgets.length,
-    };
-  }, [filteredPayrollBudgets]);
-
   const departmentPerformance = useMemo(
     () =>
       [...filteredPayrollBudgets]
         .map((budget) => {
-          const revenueBase = Number(budget.revenue_base || 0);
+          const revenueBase = getRevenueForUnit(budget.brand_unit_id || "all");
           const payrollPercent = Number(budget.payroll_percent || 0);
-          const payrollBudgetAmount = Number(
-            budget.payroll_budget_amount || 0,
+          const payrollBudgetAmount = calculatePayrollBudgetValue(
+            revenueBase,
+            payrollPercent,
           );
           const actualPayrollAmount = Number(
             budget.actual_payroll_amount || 0,
@@ -572,13 +465,50 @@ function PayrollBudgetClient() {
             usagePercent,
           };
         })
-        .sort(
-          (a, b) =>
-            Number(b.payroll_budget_amount || 0) -
-            Number(a.payroll_budget_amount || 0),
-        ),
-    [filteredPayrollBudgets],
+        .sort((a, b) => b.payrollBudgetAmount - a.payrollBudgetAmount),
+    [filteredPayrollBudgets, soldRevenue],
   );
+
+  const totals = useMemo(() => {
+    const payrollPercentTotal = departmentPerformance.reduce(
+      (total, budget) => total + Number(budget.payrollPercent || 0),
+      0,
+    );
+
+    const payrollBudgetTotal = departmentPerformance.reduce(
+      (total, budget) => total + Number(budget.payrollBudgetAmount || 0),
+      0,
+    );
+
+    const actualPayrollTotal = departmentPerformance.reduce(
+      (total, budget) => total + Number(budget.actualPayrollAmount || 0),
+      0,
+    );
+
+    const variance = payrollBudgetTotal - actualPayrollTotal;
+    const actualPayrollPercent =
+      selectedUnitRevenue > 0
+        ? (actualPayrollTotal / selectedUnitRevenue) * 100
+        : 0;
+    const usagePercent =
+      payrollBudgetTotal > 0
+        ? (actualPayrollTotal / payrollBudgetTotal) * 100
+        : 0;
+    const overBudgetCount = departmentPerformance.filter(
+      (budget) => budget.valueVariance < 0,
+    ).length;
+
+    return {
+      payrollPercentTotal,
+      payrollBudgetTotal,
+      actualPayrollTotal,
+      variance,
+      actualPayrollPercent,
+      usagePercent,
+      overBudgetCount,
+      itemCount: departmentPerformance.length,
+    };
+  }, [departmentPerformance, selectedUnitRevenue]);
 
   function updateForm(key: keyof PayrollFormState, value: string) {
     setForm((current) => ({
@@ -588,28 +518,14 @@ function PayrollBudgetClient() {
   }
 
   function handleUnitChange(value: string) {
-    const nextRevenueBase = getRevenueForUnit(value);
-
     setForm((current) => ({
       ...current,
       brandUnitId: value,
-      revenueBase: String(Number(nextRevenueBase || 0)),
     }));
-  }
-
-  function useSalesRevenueAsBase() {
-    const nextRevenueBase = getRevenueForUnit(form.brandUnitId);
-
-    setForm((current) => ({
-      ...current,
-      revenueBase: String(Number(nextRevenueBase || 0)),
-    }));
-
-    toast.success("Revenue sales applied as payroll budget base.");
   }
 
   function resetForm() {
-    setForm(getEmptyForm(selectedMonth, getRevenueForUnit("all")));
+    setForm(getEmptyForm(selectedMonth));
   }
 
   async function refreshPayrollBudgets() {
@@ -645,7 +561,7 @@ function PayrollBudgetClient() {
       return;
     }
 
-    const revenueBase = Number(form.revenueBase || 0);
+    const revenueBase = getRevenueForUnit(form.brandUnitId);
     const payrollPercent = Number(form.payrollPercent || 0);
     const actualPayrollAmount = Number(form.actualPayrollAmount || 0);
     const payrollBudgetAmount = calculatePayrollBudgetValue(
@@ -653,10 +569,8 @@ function PayrollBudgetClient() {
       payrollPercent,
     );
 
-    if (revenueBase < 0 || payrollPercent < 0 || actualPayrollAmount < 0) {
-      toast.error(
-        "Revenue, payroll percentage, and actual payroll cannot be negative.",
-      );
+    if (payrollPercent < 0 || actualPayrollAmount < 0) {
+      toast.error("Payroll percentage and actual payroll cannot be negative.");
       return;
     }
 
@@ -723,7 +637,6 @@ function PayrollBudgetClient() {
       budgetMonth: dateToMonth(budget.budget_month),
       department: budget.department,
       customDepartment: budget.custom_department || "",
-      revenueBase: String(Number(budget.revenue_base || 0)),
       payrollPercent: String(Number(budget.payroll_percent || 0)),
       actualPayrollAmount: String(
         Number(budget.actual_payroll_amount || 0),
@@ -752,7 +665,7 @@ function PayrollBudgetClient() {
   }
 
   function downloadPayrollBudgetPdf() {
-    if (filteredPayrollBudgets.length === 0) {
+    if (departmentPerformance.length === 0) {
       toast.error("No payroll budget data available for PDF.");
       return;
     }
@@ -910,7 +823,7 @@ function PayrollBudgetClient() {
                 <div class="card"><div class="label">Brand</div><div class="value">${escapeHtml(selectedBrand?.name || "Selected Brand")}</div></div>
                 <div class="card"><div class="label">Branch</div><div class="value">${escapeHtml(selectedUnit?.name || "All Units")}</div></div>
                 <div class="card"><div class="label">Month</div><div class="value">${escapeHtml(selectedMonth)}</div></div>
-                <div class="card"><div class="label">Revenue Sales</div><div class="value">${formatCurrency(selectedUnitRevenue)}</div></div>
+                <div class="card"><div class="label">Sales Net Revenue</div><div class="value">${formatCurrency(selectedUnitRevenue)}</div></div>
                 <div class="card"><div class="label">Payroll %</div><div class="value">${formatPercent(totals.payrollPercentTotal)}</div></div>
                 <div class="card"><div class="label">Payroll Budget</div><div class="value">${formatCurrency(totals.payrollBudgetTotal)}</div></div>
                 <div class="card"><div class="label">Actual Payroll</div><div class="value">${formatCurrency(totals.actualPayrollTotal)}</div></div>
@@ -923,7 +836,7 @@ function PayrollBudgetClient() {
                   <tr>
                     <th>Department</th>
                     <th>Branch</th>
-                    <th>Revenue Base</th>
+                    <th>Sales Net Revenue</th>
                     <th>Payroll %</th>
                     <th>Budget Value</th>
                     <th>Actual Payroll</th>
@@ -988,7 +901,7 @@ function PayrollBudgetClient() {
           <div>
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-sm font-black text-slate-700 shadow-sm">
               <Sparkles size={16} />
-              Departmental Payroll Control
+              Auto-linked Sales Revenue
             </div>
 
             <p className="text-sm font-black uppercase tracking-[0.24em] text-slate-400">
@@ -999,9 +912,9 @@ function PayrollBudgetClient() {
               Matrix
             </h1>
             <p className="mt-4 max-w-3xl text-sm font-semibold leading-6 text-slate-600">
-              Payroll budget is calculated by department percentage against
-              revenue sales. Formula: Revenue Sales × Department Payroll % =
-              Payroll Budget Value.
+              Payroll Budget is now linked directly to Sales Performance net
+              revenue. No manual revenue input is needed. Formula: Sales Net
+              Revenue × Department Payroll % = Payroll Budget Value.
             </p>
           </div>
 
@@ -1034,7 +947,7 @@ function PayrollBudgetClient() {
 
             <div className="mt-4 rounded-2xl bg-slate-50 p-4">
               <p className="text-xs font-black uppercase tracking-wide text-slate-400">
-                Revenue Sales Base
+                Sales Net Revenue
               </p>
               <p className="mt-1 text-xl font-black text-slate-950">
                 {formatCurrency(selectedUnitRevenue)}
@@ -1046,7 +959,7 @@ function PayrollBudgetClient() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          label="Revenue Sales"
+          label="Sales Net Revenue"
           value={formatCurrency(selectedUnitRevenue)}
           icon={<CircleDollarSign size={22} />}
           tone="dark"
@@ -1202,28 +1115,17 @@ function PayrollBudgetClient() {
               </div>
             ) : null}
 
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <label className="text-sm font-bold text-slate-700">
-                  Revenue Sales Base (€)
-                </label>
-                <button
-                  type="button"
-                  onClick={useSalesRevenueAsBase}
-                  className="text-xs font-black uppercase tracking-wide text-slate-950 underline"
-                >
-                  Use sales revenue
-                </button>
-              </div>
-              <input
-                type="number"
-                step="0.01"
-                value={form.revenueBase}
-                onChange={(event) =>
-                  updateForm("revenueBase", event.target.value)
-                }
-                className="forza-input"
-              />
+            <div className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+                Auto-linked Revenue Base
+              </p>
+              <p className="mt-2 text-2xl font-black text-slate-950">
+                {formatCurrency(formRevenueBase)}
+              </p>
+              <p className="mt-2 text-sm font-bold leading-6 text-slate-500">
+                This value comes from Sales Performance net revenue for the
+                selected brand, branch, and month.
+              </p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
@@ -1399,7 +1301,7 @@ function PayrollBudgetClient() {
 
                     <div className="grid min-w-[340px] grid-cols-2 gap-3">
                       <SmallValue
-                        label="Revenue"
+                        label="Sales Revenue"
                         value={formatCurrency(budget.revenueBase)}
                       />
                       <SmallValue
@@ -1495,7 +1397,7 @@ function PayrollBudgetLoading() {
           Loading Payroll Budget
         </h1>
         <p className="relative z-10 mt-2 text-sm font-bold text-slate-500">
-          Preparing departmental payroll budget workspace...
+          Preparing auto-linked departmental payroll budget workspace...
         </p>
       </section>
     </main>
