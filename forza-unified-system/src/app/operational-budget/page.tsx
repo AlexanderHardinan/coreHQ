@@ -74,12 +74,13 @@ type ProfileRecord = {
   is_active: boolean;
 };
 
-type SoldRevenueRecord = {
+type SalesRevenueRecord = {
   id: string;
   brand_id: string | null;
-  brand_unit_id: string;
-  total_sales: number;
-  sold_date: string;
+  brand_unit_id: string | null;
+  net_revenue: number;
+  revenue_date: string;
+  revenue_month: string;
 };
 
 type BudgetFormState = {
@@ -229,7 +230,7 @@ function OperationalBudgetClient() {
   );
   const [units, setUnits] = useState<BudgetUnit[]>([]);
   const [budgets, setBudgets] = useState<OperationalBudget[]>([]);
-  const [soldRevenue, setSoldRevenue] = useState<SoldRevenueRecord[]>([]);
+  const [salesRevenue, setSalesRevenue] = useState<SalesRevenueRecord[]>([]);
 
   const [selectedUnitId, setSelectedUnitId] = useState("all");
   const [selectedMonth, setSelectedMonth] = useState(currentMonthValue());
@@ -242,19 +243,19 @@ function OperationalBudgetClient() {
   const modules = getAllowedModules(role);
 
   function getRevenueForUnit(unitId: string) {
-    return soldRevenue
+    return salesRevenue
       .filter((sale) => unitId === "all" || sale.brand_unit_id === unitId)
-      .reduce((total, sale) => total + Number(sale.total_sales || 0), 0);
+      .reduce((total, sale) => total + Number(sale.net_revenue || 0), 0);
   }
 
   const selectedUnitRevenue = useMemo(
     () => getRevenueForUnit(selectedUnitId),
-    [selectedUnitId, soldRevenue],
+    [selectedUnitId, salesRevenue],
   );
 
   const formRevenueBase = useMemo(
     () => getRevenueForUnit(form.brandUnitId),
-    [form.brandUnitId, soldRevenue],
+    [form.brandUnitId, salesRevenue],
   );
 
   const formBudgetPercent = Number(form.budgetPercent || 0);
@@ -364,11 +365,14 @@ function OperationalBudgetClient() {
       const { startDate, endDate } = monthStartEnd(selectedMonth);
 
       const { data: revenueData, error: revenueError } = await supabase
-        .from("sold_items")
-        .select("id, brand_id, brand_unit_id, total_sales, sold_date")
+        .from("sales_revenue")
+        .select(
+          "id, brand_id, brand_unit_id, net_revenue, revenue_date, revenue_month",
+        )
         .eq("brand_id", selectedBrandId)
-        .gte("sold_date", startDate)
-        .lte("sold_date", endDate);
+        .eq("is_active", true)
+        .gte("revenue_date", startDate)
+        .lte("revenue_date", endDate);
 
       if (revenueError) {
         toast.error(revenueError.message);
@@ -376,7 +380,7 @@ function OperationalBudgetClient() {
         return;
       }
 
-      setSoldRevenue((revenueData || []) as SoldRevenueRecord[]);
+      setSalesRevenue((revenueData || []) as SalesRevenueRecord[]);
 
       const { data: budgetsData, error: budgetsError } = await supabase
         .from("operational_budgets")
@@ -458,7 +462,7 @@ function OperationalBudgetClient() {
           };
         })
         .sort((a, b) => b.budgetAmount - a.budgetAmount),
-    [filteredBudgets, soldRevenue],
+    [filteredBudgets, salesRevenue],
   );
 
   const totals = useMemo(() => {
@@ -603,7 +607,9 @@ function OperationalBudgetClient() {
       return;
     }
 
-    toast.success(form.id ? "Budget updated successfully." : "Budget saved successfully.");
+    toast.success(
+      form.id ? "Budget updated successfully." : "Budget saved successfully.",
+    );
     resetForm();
     await refreshBudgets();
   }
@@ -665,8 +671,8 @@ function OperationalBudgetClient() {
             <td>${escapeHtml(budget.label)}</td>
             <td>${escapeHtml(
               budget.brand_unit_id
-                ? units.find((unit) => unit.id === budget.brand_unit_id)?.name ||
-                    "Selected Unit"
+                ? units.find((unit) => unit.id === budget.brand_unit_id)
+                    ?.name || "Selected Unit"
                 : "All Units",
             )}</td>
             <td>${formatCurrency(budget.revenueBase)}</td>
@@ -887,7 +893,7 @@ function OperationalBudgetClient() {
               {selectedBrand?.name || "Selected Brand"} Operational Cost Matrix
             </h1>
             <p className="mt-4 max-w-3xl text-sm font-semibold leading-6 text-slate-600">
-              Operational Budget is now linked directly to Sales Performance net
+              Operational Budget is linked directly to Sales Performance net
               revenue. No manual revenue input is needed. Formula: Sales Net
               Revenue × Budget % = Budget Value.
             </p>
