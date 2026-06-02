@@ -11,6 +11,7 @@ import {
   ClipboardList,
   GlassWater,
   LayoutDashboard,
+  LoaderCircle,
   LogOut,
   Menu,
   Settings,
@@ -19,8 +20,9 @@ import {
   Users,
   WalletCards,
   X,
+  Zap,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import type { AppModule, UserRole } from "@/lib/auth/permissions";
 import { roleLabels } from "@/lib/auth/permissions";
@@ -72,8 +74,14 @@ export function DashboardShell({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isOpen, setIsOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
-  const currentBrandCode = selectedBrand?.code || "FORZA";
+  const selectedBrandCode = selectedBrand?.code || "FORZA";
+  const [optimisticBrandCode, setOptimisticBrandCode] =
+    useState(selectedBrandCode);
+  const [isBrandSwitching, setIsBrandSwitching] = useState(false);
+
+  const currentBrandCode = optimisticBrandCode || selectedBrandCode;
 
   const brandOptions = useMemo(() => {
     if (brands.length > 0) {
@@ -98,13 +106,34 @@ export function DashboardShell({
     ];
   }, [brands]);
 
+  const activeBrandName =
+    brandOptions.find((brand) => brand.code === currentBrandCode)?.name ||
+    currentBrandCode;
+
+  useEffect(() => {
+    setOptimisticBrandCode(selectedBrandCode);
+    setIsBrandSwitching(false);
+  }, [selectedBrandCode]);
+
   function handleBrandChange(event: React.ChangeEvent<HTMLSelectElement>) {
     const nextBrand = event.target.value;
-    const params = new URLSearchParams(searchParams.toString());
 
+    if (nextBrand === currentBrandCode) {
+      return;
+    }
+
+    setOptimisticBrandCode(nextBrand);
+    setIsBrandSwitching(true);
+
+    const params = new URLSearchParams(searchParams.toString());
     params.set("brand", nextBrand);
 
-    router.push(`${pathname}?${params.toString()}`);
+    startTransition(() => {
+      router.push(`${pathname}?${params.toString()}`, {
+        scroll: false,
+      });
+      router.refresh();
+    });
   }
 
   async function handleSignOut() {
@@ -114,8 +143,30 @@ export function DashboardShell({
     window.location.href = "/sign-in";
   }
 
+  const showBrandLoader = isPending || isBrandSwitching;
+
   return (
-    <main className="min-h-screen p-4 md:p-6">
+    <main className="relative min-h-screen p-4 md:p-6">
+      {showBrandLoader ? (
+        <div className="fixed left-0 top-0 z-[9999] w-full">
+          <div className="h-1 overflow-hidden bg-slate-200">
+            <div className="h-full w-1/2 animate-[brandLoading_0.75s_ease-in-out_infinite] rounded-r-full bg-slate-950" />
+          </div>
+
+          <div className="pointer-events-none mx-auto mt-4 flex w-fit items-center gap-3 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 text-sm font-black text-slate-950 shadow-2xl backdrop-blur-xl">
+            <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 text-white">
+              <LoaderCircle className="animate-spin" size={18} />
+            </div>
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+                Thunder Switching
+              </p>
+              <p>Loading {activeBrandName}</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <button
         type="button"
         onClick={() => setIsOpen(true)}
@@ -171,7 +222,7 @@ export function DashboardShell({
                     <select
                       value={currentBrandCode}
                       onChange={handleBrandChange}
-                      className="w-full appearance-none rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 pr-10 text-sm font-black text-slate-950 shadow-sm outline-none transition focus:border-slate-950 sm:min-w-[190px]"
+                      className="w-full appearance-none rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 pr-10 text-sm font-black text-slate-950 shadow-sm outline-none transition duration-150 focus:border-slate-950 sm:min-w-[190px]"
                     >
                       {brandOptions.map((brand) => (
                         <option key={brand.id} value={brand.code}>
@@ -184,6 +235,13 @@ export function DashboardShell({
                       className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
                     />
                   </div>
+
+                  {showBrandLoader ? (
+                    <div className="mt-2 flex items-center gap-2 rounded-full bg-slate-950 px-3 py-1 text-xs font-black text-white shadow-sm">
+                      <Zap size={13} />
+                      Switching instantly
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="flex items-center gap-3 rounded-3xl border border-slate-200 bg-white/80 p-3 shadow-sm">
@@ -216,6 +274,20 @@ export function DashboardShell({
           {children}
         </section>
       </div>
+
+      <style jsx>{`
+        @keyframes brandLoading {
+          0% {
+            transform: translateX(-120%);
+          }
+          50% {
+            transform: translateX(80%);
+          }
+          100% {
+            transform: translateX(220%);
+          }
+        }
+      `}</style>
     </main>
   );
 }
