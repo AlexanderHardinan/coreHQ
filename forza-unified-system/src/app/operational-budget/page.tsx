@@ -88,7 +88,6 @@ type BudgetFormState = {
   budgetMonth: string;
   category: BudgetCategoryValue;
   customCategory: string;
-  revenueBase: string;
   budgetPercent: string;
   actualAmount: string;
   notes: string;
@@ -97,58 +96,17 @@ type BudgetFormState = {
 const budgetCategories: {
   value: BudgetCategoryValue;
   label: string;
-  description: string;
 }[] = [
-  {
-    value: "food",
-    label: "Food",
-    description: "Food purchasing, ingredients, and kitchen operation cost.",
-  },
-  {
-    value: "beverage",
-    label: "Beverage",
-    description: "Bar stock, beverages, bottles, mixers, and beverage cost.",
-  },
-  {
-    value: "cleaning",
-    label: "Cleaning",
-    description: "Cleaning materials, chemicals, hygiene, and sanitation.",
-  },
-  {
-    value: "utilities",
-    label: "Utilities",
-    description: "Electricity, water, gas, internet, and utility expenses.",
-  },
-  {
-    value: "maintenance",
-    label: "Maintenance",
-    description: "Equipment repair, facility maintenance, and service cost.",
-  },
-  {
-    value: "packaging",
-    label: "Packaging",
-    description: "Takeaway packaging, labels, bags, and containers.",
-  },
-  {
-    value: "marketing",
-    label: "Marketing",
-    description: "Promotions, content, advertising, and campaign budget.",
-  },
-  {
-    value: "rent",
-    label: "Rent",
-    description: "Rent, lease, and property-related fixed cost.",
-  },
-  {
-    value: "subscriptions",
-    label: "Subscriptions",
-    description: "Software, digital tools, licenses, and recurring systems.",
-  },
-  {
-    value: "custom",
-    label: "Custom",
-    description: "Any other operational budget category.",
-  },
+  { value: "food", label: "Food" },
+  { value: "beverage", label: "Beverage" },
+  { value: "cleaning", label: "Cleaning" },
+  { value: "utilities", label: "Utilities" },
+  { value: "maintenance", label: "Maintenance" },
+  { value: "packaging", label: "Packaging" },
+  { value: "marketing", label: "Marketing" },
+  { value: "rent", label: "Rent" },
+  { value: "subscriptions", label: "Subscriptions" },
+  { value: "custom", label: "Custom" },
 ];
 
 function normalizeBrandCode(value: string | null | undefined) {
@@ -179,11 +137,10 @@ function monthStartEnd(month: string) {
   const startDate = `${safeMonth}-01`;
   const start = new Date(`${startDate}T00:00:00`);
   const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
-  const endDate = end.toISOString().slice(0, 10);
 
   return {
     startDate,
-    endDate,
+    endDate: end.toISOString().slice(0, 10),
   };
 }
 
@@ -197,6 +154,15 @@ function formatCurrency(value: number) {
 
 function formatPercent(value: number) {
   return `${Number(value || 0).toFixed(2)}%`;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function getCategoryLabel(
@@ -213,15 +179,6 @@ function getCategoryLabel(
   );
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 function calculateBudgetValue(revenueBase: number, budgetPercent: number) {
   return (Number(revenueBase || 0) * Number(budgetPercent || 0)) / 100;
 }
@@ -234,14 +191,13 @@ function calculateActualPercent(actualAmount: number, revenueBase: number) {
   return (Number(actualAmount || 0) / Number(revenueBase || 0)) * 100;
 }
 
-function getEmptyForm(month: string, revenueBase = 0): BudgetFormState {
+function getEmptyForm(month: string): BudgetFormState {
   return {
     id: "",
     brandUnitId: "all",
     budgetMonth: month,
     category: "food",
     customCategory: "",
-    revenueBase: String(Number(revenueBase || 0)),
     budgetPercent: "0",
     actualAmount: "0",
     notes: "",
@@ -285,18 +241,34 @@ function OperationalBudgetClient() {
   const role = profile?.role || "manager";
   const modules = getAllowedModules(role);
 
-  const revenueSales = useMemo(() => {
-    return soldRevenue.reduce(
-      (total, sale) => total + Number(sale.total_sales || 0),
-      0,
-    );
-  }, [soldRevenue]);
-
   function getRevenueForUnit(unitId: string) {
     return soldRevenue
       .filter((sale) => unitId === "all" || sale.brand_unit_id === unitId)
       .reduce((total, sale) => total + Number(sale.total_sales || 0), 0);
   }
+
+  const selectedUnitRevenue = useMemo(
+    () => getRevenueForUnit(selectedUnitId),
+    [selectedUnitId, soldRevenue],
+  );
+
+  const formRevenueBase = useMemo(
+    () => getRevenueForUnit(form.brandUnitId),
+    [form.brandUnitId, soldRevenue],
+  );
+
+  const formBudgetPercent = Number(form.budgetPercent || 0);
+  const formActualAmount = Number(form.actualAmount || 0);
+  const formBudgetAmount = calculateBudgetValue(
+    formRevenueBase,
+    formBudgetPercent,
+  );
+  const formActualPercent = calculateActualPercent(
+    formActualAmount,
+    formRevenueBase,
+  );
+  const formPercentVariance = formBudgetPercent - formActualPercent;
+  const formValueVariance = formBudgetAmount - formActualAmount;
 
   useEffect(() => {
     async function loadData() {
@@ -326,8 +298,7 @@ function OperationalBudgetClient() {
         return;
       }
 
-      const nextProfile = profileData as ProfileRecord;
-      setProfile(nextProfile);
+      setProfile(profileData as ProfileRecord);
 
       const { data: brandsData, error: brandsError } = await supabase
         .from("brands")
@@ -388,8 +359,7 @@ function OperationalBudgetClient() {
         return;
       }
 
-      const nextUnits = (unitsData || []) as BudgetUnit[];
-      setUnits(nextUnits);
+      setUnits((unitsData || []) as BudgetUnit[]);
 
       const { startDate, endDate } = monthStartEnd(selectedMonth);
 
@@ -406,13 +376,7 @@ function OperationalBudgetClient() {
         return;
       }
 
-      const nextSoldRevenue = (revenueData || []) as SoldRevenueRecord[];
-      setSoldRevenue(nextSoldRevenue);
-
-      const nextRevenueBase = nextSoldRevenue.reduce(
-        (total, sale) => total + Number(sale.total_sales || 0),
-        0,
-      );
+      setSoldRevenue((revenueData || []) as SoldRevenueRecord[]);
 
       const { data: budgetsData, error: budgetsError } = await supabase
         .from("operational_budgets")
@@ -431,7 +395,7 @@ function OperationalBudgetClient() {
       }
 
       setBudgets((budgetsData || []) as OperationalBudget[]);
-      setForm(getEmptyForm(selectedMonth, nextRevenueBase));
+      setForm(getEmptyForm(selectedMonth));
       setSelectedUnitId("all");
       setIsLoading(false);
     }
@@ -460,77 +424,21 @@ function OperationalBudgetClient() {
     });
   }, [budgets, search, selectedUnitId]);
 
-  const selectedUnitRevenue = useMemo(
-    () => getRevenueForUnit(selectedUnitId),
-    [selectedUnitId, soldRevenue],
-  );
-
-  const formRevenueBase = Number(form.revenueBase || 0);
-  const formBudgetPercent = Number(form.budgetPercent || 0);
-  const formActualAmount = Number(form.actualAmount || 0);
-  const formBudgetAmount = calculateBudgetValue(
-    formRevenueBase,
-    formBudgetPercent,
-  );
-  const formActualPercent = calculateActualPercent(
-    formActualAmount,
-    formRevenueBase,
-  );
-  const formPercentVariance = formBudgetPercent - formActualPercent;
-  const formValueVariance = formBudgetAmount - formActualAmount;
-
-  const totals = useMemo(() => {
-    const revenueTotal = filteredBudgets.reduce(
-      (total, budget) => total + Number(budget.revenue_base || 0),
-      0,
-    );
-
-    const budgetPercentTotal = filteredBudgets.reduce(
-      (total, budget) => total + Number(budget.budget_percent || 0),
-      0,
-    );
-
-    const budgetTotal = filteredBudgets.reduce(
-      (total, budget) => total + Number(budget.budget_amount || 0),
-      0,
-    );
-
-    const actualTotal = filteredBudgets.reduce(
-      (total, budget) => total + Number(budget.actual_amount || 0),
-      0,
-    );
-
-    const variance = budgetTotal - actualTotal;
-    const actualPercent =
-      revenueTotal > 0 ? (actualTotal / revenueTotal) * 100 : 0;
-    const usagePercent = budgetTotal > 0 ? (actualTotal / budgetTotal) * 100 : 0;
-    const overBudgetCount = filteredBudgets.filter(
-      (budget) =>
-        Number(budget.actual_amount || 0) > Number(budget.budget_amount || 0),
-    ).length;
-
-    return {
-      revenueTotal,
-      budgetPercentTotal,
-      budgetTotal,
-      actualTotal,
-      variance,
-      actualPercent,
-      usagePercent,
-      overBudgetCount,
-      itemCount: filteredBudgets.length,
-    };
-  }, [filteredBudgets]);
-
   const categoryPerformance = useMemo(
     () =>
       [...filteredBudgets]
         .map((budget) => {
-          const revenueBase = Number(budget.revenue_base || 0);
+          const revenueBase = getRevenueForUnit(budget.brand_unit_id || "all");
           const budgetPercent = Number(budget.budget_percent || 0);
-          const budgetAmount = Number(budget.budget_amount || 0);
+          const budgetAmount = calculateBudgetValue(
+            revenueBase,
+            budgetPercent,
+          );
           const actualAmount = Number(budget.actual_amount || 0);
-          const actualPercent = calculateActualPercent(actualAmount, revenueBase);
+          const actualPercent = calculateActualPercent(
+            actualAmount,
+            revenueBase,
+          );
           const valueVariance = budgetAmount - actualAmount;
           const percentVariance = budgetPercent - actualPercent;
           const usagePercent =
@@ -549,12 +457,45 @@ function OperationalBudgetClient() {
             usagePercent,
           };
         })
-        .sort(
-          (a, b) =>
-            Number(b.budget_amount || 0) - Number(a.budget_amount || 0),
-        ),
-    [filteredBudgets],
+        .sort((a, b) => b.budgetAmount - a.budgetAmount),
+    [filteredBudgets, soldRevenue],
   );
+
+  const totals = useMemo(() => {
+    const budgetPercentTotal = categoryPerformance.reduce(
+      (total, budget) => total + Number(budget.budgetPercent || 0),
+      0,
+    );
+
+    const budgetTotal = categoryPerformance.reduce(
+      (total, budget) => total + Number(budget.budgetAmount || 0),
+      0,
+    );
+
+    const actualTotal = categoryPerformance.reduce(
+      (total, budget) => total + Number(budget.actualAmount || 0),
+      0,
+    );
+
+    const variance = budgetTotal - actualTotal;
+    const actualPercent =
+      selectedUnitRevenue > 0 ? (actualTotal / selectedUnitRevenue) * 100 : 0;
+    const usagePercent = budgetTotal > 0 ? (actualTotal / budgetTotal) * 100 : 0;
+    const overBudgetCount = categoryPerformance.filter(
+      (budget) => budget.valueVariance < 0,
+    ).length;
+
+    return {
+      budgetPercentTotal,
+      budgetTotal,
+      actualTotal,
+      variance,
+      actualPercent,
+      usagePercent,
+      overBudgetCount,
+      itemCount: categoryPerformance.length,
+    };
+  }, [categoryPerformance, selectedUnitRevenue]);
 
   function updateForm(key: keyof BudgetFormState, value: string) {
     setForm((current) => ({
@@ -564,28 +505,14 @@ function OperationalBudgetClient() {
   }
 
   function handleUnitChange(value: string) {
-    const nextRevenueBase = getRevenueForUnit(value);
-
     setForm((current) => ({
       ...current,
       brandUnitId: value,
-      revenueBase: String(Number(nextRevenueBase || 0)),
     }));
-  }
-
-  function useSalesRevenueAsBase() {
-    const nextRevenueBase = getRevenueForUnit(form.brandUnitId);
-
-    setForm((current) => ({
-      ...current,
-      revenueBase: String(Number(nextRevenueBase || 0)),
-    }));
-
-    toast.success("Revenue sales applied as budget base.");
   }
 
   function resetForm() {
-    setForm(getEmptyForm(selectedMonth, getRevenueForUnit("all")));
+    setForm(getEmptyForm(selectedMonth));
   }
 
   async function refreshBudgets() {
@@ -619,13 +546,13 @@ function OperationalBudgetClient() {
       return;
     }
 
-    const revenueBase = Number(form.revenueBase || 0);
+    const revenueBase = getRevenueForUnit(form.brandUnitId);
     const budgetPercent = Number(form.budgetPercent || 0);
     const actualAmount = Number(form.actualAmount || 0);
     const budgetAmount = calculateBudgetValue(revenueBase, budgetPercent);
 
-    if (revenueBase < 0 || budgetPercent < 0 || actualAmount < 0) {
-      toast.error("Revenue, percentage, and actual amount cannot be negative.");
+    if (budgetPercent < 0 || actualAmount < 0) {
+      toast.error("Budget percentage and actual spend cannot be negative.");
       return;
     }
 
@@ -676,9 +603,7 @@ function OperationalBudgetClient() {
       return;
     }
 
-    toast.success(
-      form.id ? "Budget updated successfully." : "Budget saved successfully.",
-    );
+    toast.success(form.id ? "Budget updated successfully." : "Budget saved successfully.");
     resetForm();
     await refreshBudgets();
   }
@@ -690,7 +615,6 @@ function OperationalBudgetClient() {
       budgetMonth: dateToMonth(budget.budget_month),
       category: budget.category,
       customCategory: budget.custom_category || "",
-      revenueBase: String(Number(budget.revenue_base || 0)),
       budgetPercent: String(Number(budget.budget_percent || 0)),
       actualAmount: String(Number(budget.actual_amount || 0)),
       notes: budget.notes || "",
@@ -717,7 +641,7 @@ function OperationalBudgetClient() {
   }
 
   function downloadOperationalBudgetPdf() {
-    if (filteredBudgets.length === 0) {
+    if (categoryPerformance.length === 0) {
       toast.error("No operational budget data available for PDF.");
       return;
     }
@@ -867,7 +791,7 @@ function OperationalBudgetClient() {
           <main class="sheet">
             <section class="header">
               <div class="brand">💶 Forza Unified System</div>
-              <h1>Operational Budget Percentage Report</h1>
+              <h1>Operational Budget Report</h1>
             </section>
 
             <section class="content">
@@ -875,23 +799,23 @@ function OperationalBudgetClient() {
                 <div class="card"><div class="label">Brand</div><div class="value">${escapeHtml(selectedBrand?.name || "Selected Brand")}</div></div>
                 <div class="card"><div class="label">Branch</div><div class="value">${escapeHtml(selectedUnit?.name || "All Units")}</div></div>
                 <div class="card"><div class="label">Month</div><div class="value">${escapeHtml(selectedMonth)}</div></div>
-                <div class="card"><div class="label">Revenue Sales</div><div class="value">${formatCurrency(selectedUnitRevenue)}</div></div>
+                <div class="card"><div class="label">Sales Net Revenue</div><div class="value">${formatCurrency(selectedUnitRevenue)}</div></div>
                 <div class="card"><div class="label">Budget %</div><div class="value">${formatPercent(totals.budgetPercentTotal)}</div></div>
                 <div class="card"><div class="label">Budget Value</div><div class="value">${formatCurrency(totals.budgetTotal)}</div></div>
                 <div class="card"><div class="label">Actual Spend</div><div class="value">${formatCurrency(totals.actualTotal)}</div></div>
                 <div class="card"><div class="label">Variance</div><div class="value">${formatCurrency(totals.variance)}</div></div>
               </div>
 
-              <h2>📊 Budget Weight of Scale</h2>
+              <h2>📊 Operational Budget Weight of Scale</h2>
               <table>
                 <thead>
                   <tr>
                     <th>Category</th>
                     <th>Branch</th>
-                    <th>Revenue Base</th>
+                    <th>Sales Net Revenue</th>
                     <th>Budget %</th>
                     <th>Budget Value</th>
-                    <th>Actual</th>
+                    <th>Actual Spend</th>
                     <th>Actual %</th>
                     <th>Value Variance</th>
                     <th>% Variance</th>
@@ -899,12 +823,12 @@ function OperationalBudgetClient() {
                   </tr>
                 </thead>
                 <tbody>
-                  ${rows || `<tr><td colspan="10">No budget data found.</td></tr>`}
+                  ${rows || `<tr><td colspan="10">No operational budget data found.</td></tr>`}
                 </tbody>
               </table>
 
               <div class="footer">
-                <div>Operational Budget Percentage Report</div>
+                <div>Operational Budget Report</div>
                 <div>Developer Rights Chef Alex @FORZA 2026</div>
               </div>
             </section>
@@ -953,18 +877,19 @@ function OperationalBudgetClient() {
           <div>
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-sm font-black text-slate-700 shadow-sm">
               <Sparkles size={16} />
-              Percentage Budget Control
+              Auto-linked Sales Revenue
             </div>
 
             <p className="text-sm font-black uppercase tracking-[0.24em] text-slate-400">
               Operational Budget
             </p>
             <h1 className="mt-3 max-w-4xl text-4xl font-black tracking-tight text-slate-950 md:text-6xl">
-              {selectedBrand?.name || "Selected Brand"} Weight of Scale Matrix
+              {selectedBrand?.name || "Selected Brand"} Operational Cost Matrix
             </h1>
             <p className="mt-4 max-w-3xl text-sm font-semibold leading-6 text-slate-600">
-              Budget is calculated by percentage against revenue sales. Formula:
-              Revenue Sales × Budget % = Budget Value.
+              Operational Budget is now linked directly to Sales Performance net
+              revenue. No manual revenue input is needed. Formula: Sales Net
+              Revenue × Budget % = Budget Value.
             </p>
           </div>
 
@@ -997,7 +922,7 @@ function OperationalBudgetClient() {
 
             <div className="mt-4 rounded-2xl bg-slate-50 p-4">
               <p className="text-xs font-black uppercase tracking-wide text-slate-400">
-                Revenue Sales Base
+                Sales Net Revenue
               </p>
               <p className="mt-1 text-xl font-black text-slate-950">
                 {formatCurrency(selectedUnitRevenue)}
@@ -1009,7 +934,7 @@ function OperationalBudgetClient() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          label="Revenue Sales"
+          label="Sales Net Revenue"
           value={formatCurrency(selectedUnitRevenue)}
           icon={<CircleDollarSign size={22} />}
           tone="dark"
@@ -1084,7 +1009,7 @@ function OperationalBudgetClient() {
               Budget Entry
             </p>
             <h2 className="text-2xl font-black text-slate-950">
-              {form.id ? "Edit Percentage Budget" : "Create Percentage Budget"}
+              {form.id ? "Edit Operational Budget" : "Create Operational Budget"}
             </h2>
           </div>
 
@@ -1159,28 +1084,17 @@ function OperationalBudgetClient() {
               </div>
             ) : null}
 
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <label className="text-sm font-bold text-slate-700">
-                  Revenue Sales Base (€)
-                </label>
-                <button
-                  type="button"
-                  onClick={useSalesRevenueAsBase}
-                  className="text-xs font-black uppercase tracking-wide text-slate-950 underline"
-                >
-                  Use sales revenue
-                </button>
-              </div>
-              <input
-                type="number"
-                step="0.01"
-                value={form.revenueBase}
-                onChange={(event) =>
-                  updateForm("revenueBase", event.target.value)
-                }
-                className="forza-input"
-              />
+            <div className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+                Auto-linked Revenue Base
+              </p>
+              <p className="mt-2 text-2xl font-black text-slate-950">
+                {formatCurrency(formRevenueBase)}
+              </p>
+              <p className="mt-2 text-sm font-bold leading-6 text-slate-500">
+                This value comes from Sales Performance net revenue for the
+                selected brand, branch, and month.
+              </p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
@@ -1282,7 +1196,7 @@ function OperationalBudgetClient() {
                 Budget Matrix
               </p>
               <h2 className="text-2xl font-black text-slate-950">
-                Weight of Scale Performance
+                Operational Weight of Scale
               </h2>
             </div>
 
@@ -1356,7 +1270,7 @@ function OperationalBudgetClient() {
 
                     <div className="grid min-w-[340px] grid-cols-2 gap-3">
                       <SmallValue
-                        label="Revenue"
+                        label="Sales Revenue"
                         value={formatCurrency(budget.revenueBase)}
                       />
                       <SmallValue
@@ -1364,7 +1278,7 @@ function OperationalBudgetClient() {
                         value={formatCurrency(budget.budgetAmount)}
                       />
                       <SmallValue
-                        label="Actual"
+                        label="Actual Spend"
                         value={formatCurrency(budget.actualAmount)}
                       />
                       <SmallValue
@@ -1376,7 +1290,7 @@ function OperationalBudgetClient() {
 
                   <div className="mt-4">
                     <div className="mb-2 flex items-center justify-between text-xs font-black uppercase tracking-wide text-slate-500">
-                      <span>Actual weight of revenue</span>
+                      <span>Actual cost weight of revenue</span>
                       <span>{formatPercent(budget.actualPercent)}</span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-white/80">
@@ -1425,11 +1339,10 @@ function OperationalBudgetClient() {
               <div className="rounded-3xl border border-slate-200 bg-white/80 p-8 text-center">
                 <FileText className="mx-auto text-slate-300" size={36} />
                 <h3 className="mt-4 text-lg font-black text-slate-950">
-                  No budget categories found
+                  No operational budget found
                 </h3>
                 <p className="mt-2 text-sm font-bold text-slate-500">
-                  Create the first percentage-based budget category for this
-                  month.
+                  Create the first operational budget category for this month.
                 </p>
               </div>
             ) : null}
@@ -1453,7 +1366,7 @@ function OperationalBudgetLoading() {
           Loading Operational Budget
         </h1>
         <p className="relative z-10 mt-2 text-sm font-bold text-slate-500">
-          Preparing percentage-based budget workspace...
+          Preparing auto-linked operational budget workspace...
         </p>
       </section>
     </main>
