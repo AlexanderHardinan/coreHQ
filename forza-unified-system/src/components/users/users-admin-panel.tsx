@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import {
   Building2,
-  CheckCircle2,
+  LoaderCircle,
   Pencil,
   Save,
   ShieldCheck,
@@ -49,12 +49,35 @@ type UsersAdminPanelProps = {
   selectedBrandCode: string;
 };
 
+type ApiResponse = {
+  message?: string;
+  error?: string;
+};
+
 const roles: UserRole[] = [
   "boh_staff",
   "foh_staff",
   "manager",
   "super_admin",
 ];
+
+const REQUEST_TIMEOUT_MS = 20000;
+
+async function readApiResponse(response: Response): Promise<ApiResponse> {
+  try {
+    return (await response.json()) as ApiResponse;
+  } catch {
+    return {
+      message: response.ok
+        ? "Request completed."
+        : "Request failed. The server did not return a readable response.",
+    };
+  }
+}
+
+function getApiMessage(result: ApiResponse, fallback: string) {
+  return result.message || result.error || fallback;
+}
 
 export function UsersAdminPanel({
   users,
@@ -166,79 +189,175 @@ export function UsersAdminPanel({
   async function handleCreateUser(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    setIsSubmitting(true);
-
-    const response = await fetch("/api/admin/users/create", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        fullName,
-        email,
-        password,
-        role,
-        brandId: createBrandId,
-        unitIds: createUnitIds,
-      }),
-    });
-
-    const result = await response.json();
-
-    setIsSubmitting(false);
-
-    if (!response.ok) {
-      toast.error(result.message || "Failed to create user.");
+    if (isSubmitting) {
       return;
     }
 
-    toast.success("User created successfully.");
+    const safeFullName = fullName.trim();
+    const safeEmail = email.trim().toLowerCase();
+    const safePassword = password.trim();
 
-    setFullName("");
-    setEmail("");
-    setPassword("TempPass123!");
-    setRole("manager");
-    setCreateUnitIds([]);
+    if (!safeFullName) {
+      toast.error("Full name is required.");
+      return;
+    }
 
-    window.location.reload();
+    if (!safeEmail) {
+      toast.error("Email is required.");
+      return;
+    }
+
+    if (!safePassword || safePassword.length < 6) {
+      toast.error("Temporary password must be at least 6 characters.");
+      return;
+    }
+
+    if (!createBrandId) {
+      toast.error("Brand assignment is required.");
+      return;
+    }
+
+    if (createUnitIds.length === 0) {
+      toast.error("Select at least one branch unit access.");
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      controller.abort();
+    }, REQUEST_TIMEOUT_MS);
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch("/api/admin/users/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          fullName: safeFullName,
+          email: safeEmail,
+          password: safePassword,
+          role,
+          brandId: createBrandId,
+          unitIds: createUnitIds,
+        }),
+      });
+
+      const result = await readApiResponse(response);
+
+      if (!response.ok) {
+        toast.error(getApiMessage(result, "Failed to create user."));
+        return;
+      }
+
+      toast.success("User created successfully.");
+
+      setFullName("");
+      setEmail("");
+      setPassword("TempPass123!");
+      setRole("manager");
+      setCreateUnitIds([]);
+
+      window.location.reload();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        toast.error(
+          "User creation timed out. Check the API route or Supabase service role key.",
+        );
+        return;
+      }
+
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to create user. Please try again.",
+      );
+    } finally {
+      window.clearTimeout(timeout);
+      setIsSubmitting(false);
+    }
   }
 
   async function handleUpdateUser(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (isUpdating) {
+      return;
+    }
 
     if (!editingUserId) {
       toast.error("Select a user to edit.");
       return;
     }
 
-    setIsUpdating(true);
-
-    const response = await fetch("/api/admin/users/update", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        userId: editingUserId,
-        fullName: editFullName,
-        role: editRole,
-        isActive: editIsActive,
-        brandId: editBrandId,
-        unitIds: editUnitIds,
-      }),
-    });
-
-    const result = await response.json();
-
-    setIsUpdating(false);
-
-    if (!response.ok) {
-      toast.error(result.message || "Failed to update user.");
+    if (!editFullName.trim()) {
+      toast.error("Full name is required.");
       return;
     }
 
-    toast.success("User updated successfully.");
-    window.location.reload();
+    if (!editBrandId) {
+      toast.error("Brand assignment is required.");
+      return;
+    }
+
+    if (editUnitIds.length === 0) {
+      toast.error("Select at least one branch unit access.");
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      controller.abort();
+    }, REQUEST_TIMEOUT_MS);
+
+    setIsUpdating(true);
+
+    try {
+      const response = await fetch("/api/admin/users/update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          userId: editingUserId,
+          fullName: editFullName.trim(),
+          role: editRole,
+          isActive: editIsActive,
+          brandId: editBrandId,
+          unitIds: editUnitIds,
+        }),
+      });
+
+      const result = await readApiResponse(response);
+
+      if (!response.ok) {
+        toast.error(getApiMessage(result, "Failed to update user."));
+        return;
+      }
+
+      toast.success("User updated successfully.");
+      window.location.reload();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        toast.error(
+          "User update timed out. Check the API route or Supabase service role key.",
+        );
+        return;
+      }
+
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to update user. Please try again.",
+      );
+    } finally {
+      window.clearTimeout(timeout);
+      setIsUpdating(false);
+    }
   }
 
   return (
@@ -355,7 +474,11 @@ export function UsersAdminPanel({
               disabled={isSubmitting}
               className="forza-button-hover flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <ShieldCheck size={18} />
+              {isSubmitting ? (
+                <LoaderCircle className="animate-spin" size={18} />
+              ) : (
+                <ShieldCheck size={18} />
+              )}
               {isSubmitting ? "Creating User..." : "Create User"}
             </button>
           </div>
@@ -465,14 +588,19 @@ export function UsersAdminPanel({
                 disabled={isUpdating}
                 className="forza-button-hover flex flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <Save size={18} />
+                {isUpdating ? (
+                  <LoaderCircle className="animate-spin" size={18} />
+                ) : (
+                  <Save size={18} />
+                )}
                 {isUpdating ? "Saving..." : "Save Changes"}
               </button>
 
               <button
                 type="button"
                 onClick={cancelEdit}
-                className="forza-button-hover flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-black text-slate-700"
+                disabled={isUpdating}
+                className="forza-button-hover flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-black text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <X size={18} />
                 Cancel
