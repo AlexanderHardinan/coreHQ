@@ -19,92 +19,202 @@ type CreateUserBody = {
   unitIds?: string[];
 };
 
+function jsonError(message: string, status = 400) {
+  return NextResponse.json(
+    {
+      message,
+    },
+    {
+      status,
+    },
+  );
+}
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+async function readBody(request: NextRequest): Promise<CreateUserBody | null> {
+  try {
+    return (await request.json()) as CreateUserBody;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: NextRequest) {
-  const supabase = await createSupabaseServerClient();
+  try {
+    const supabase = await createSupabaseServerClient();
 
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
 
-  if (userError || !user) {
-    return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
-  }
+    if (userError || !user) {
+      return jsonError("Unauthorized. Please sign in again.", 401);
+    }
 
-  const { data: currentProfile } = await supabase
-    .from("profiles")
-    .select("role, is_active")
-    .eq("id", user.id)
-    .maybeSingle();
+    const { data: currentProfile, error: profileLookupError } = await supabase
+      .from("profiles")
+      .select("role, is_active")
+      .eq("id", user.id)
+      .maybeSingle();
 
-  if (
-    !currentProfile ||
-    currentProfile.role !== "super_admin" ||
-    currentProfile.is_active === false
-  ) {
-    return NextResponse.json(
-      { message: "Only Super Admin can create users." },
-      { status: 403 },
-    );
-  }
+    if (profileLookupError) {
+      return jsonError(profileLookupError.message, 400);
+    }
 
-  const body = (await request.json()) as CreateUserBody;
+    if (
+      !currentProfile ||
+      currentProfile.role !== "super_admin" ||
+      currentProfile.is_active === false
+    ) {
+      return jsonError("Only Super Admin can create users.", 403);
+    }
 
-  const fullName = String(body.fullName || "").trim();
-  const email = String(body.email || "").trim().toLowerCase();
-  const password = String(body.password || "");
-  const role = String(body.role || "manager") as UserRole;
-  const unitIds = Array.isArray(body.unitIds) ? body.unitIds : [];
+    const body = await readBody(request);
 
-  if (!fullName || !email || !password || !allowedRoles.includes(role)) {
-    return NextResponse.json(
-      { message: "Full name, email, password, and valid role are required." },
-      { status: 400 },
-    );
-  }
+    if (!body) {
+      return jsonError("Invalid request body.", 400);
+    }
 
-  if (password.length < 6) {
-    return NextResponse.json(
-      { message: "Password must be at least 6 characters." },
-      { status: 400 },
-    );
-  }
+    const fullName = String(body.fullName || "").trim();
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "").trim();
+    const role = String(body.role || "manager") as UserRole;
+    const brandId = String(body.brandId || "").trim();
+    const unitIds = Array.isArray(body.unitIds)
+      ? body.unitIds.map((unitId) => String(unitId).trim()).filter(Boolean)
+      : [];
 
-  const admin = createSupabaseAdminClient();
+    if (!fullName) {
+      return jsonError("Full name is required.", 400);
+    }
 
-  const { data: createdUser, error: createError } =
-    await admin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: {
+    if (!email || !isValidEmail(email)) {
+      return jsonError("A valid email is required.", 400);
+    }
+
+    if (!password || password.length < 6) {
+      return jsonError("Password must be at least 6 characters.", 400);
+    }
+
+    if (!allowedRoles.includes(role)) {
+      return jsonError("A valid role is required.", 400);
+    }
+
+    if (!brandId) {
+      return jsonError("Brand assignment is required.", 400);
+    }
+
+    if (unitIds.length === 0) {
+      return jsonError("At least one branch unit access is required.", 400);
+    }
+
+    const admin = createSupabaseAdminClient();
+
+    const { data: selectedBrand, error: brandError } = await admin
+      .from("brands")
+      .select("id, name, is_active")
+      .eq("id", brandId)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (brandError) {
+      return jsonError(brandError.message, 400);
+    }
+
+    if (!selectedBrand) {
+      return jsonError("Selected brand was not found or is inactive.", 400);
+    }
+
+    const { data: selectedUnits, error: unitsError } = await admin
+      .from("brand_units")
+      .select("id, brand_id, name, is_active")
+      .eq("brand_id", brandId)
+      .eq("is_active", true)
+      .in("id", unitIds);
+
+    if (unitsError) {
+      return jsonError(unitsError.message, 400);
+    }
+
+    if (!selectedUnits || selectedUnits.length !== unitIds.length) {
+      return jsonError(
+        "One or more selected branch units are invalid for this brand.",
+        400,
+      );
+    }
+
+    const { data: existingProfile, error: existingProfileError } = await admin
+      .from("profiles")
+      .select("id, email")
+      .ilike("email", email)
+      .maybeSingle();
+
+    if (existingProfileError) {
+      return jsonError(existingProfileError.message, 400);
+    }
+
+    if (existingProfile) {
+      return jsonError("A user profile with this email already exists.", 409);
+    }
+
+    const { data: createdUser, error: createError } =
+      await admin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: {
+          full_name: fullName,
+          role,
+        },
+      });
+
+    if (createError || !createdUser.user) {
+      const message = createError?.message || "Failed to create auth user.";
+
+      if (
+        message.toLowerCase().includes("already") ||
+        message.toLowerCase().includes("registered")
+      ) {
+        return jsonError(
+          "This email already exists in Supabase Auth. Use another email or reset the existing user's password.",
+          409,
+        );
+      }
+
+      return jsonError(message, 400);
+    }
+
+    const createdUserId = createdUser.user.id;
+
+    const { error: profileError } = await admin.from("profiles").upsert(
+      {
+        id: createdUserId,
         full_name: fullName,
+        email,
+        avatar_url: null,
+        role,
+        is_active: true,
       },
-    });
-
-  if (createError || !createdUser.user) {
-    return NextResponse.json(
-      { message: createError?.message || "Failed to create user." },
-      { status: 400 },
+      {
+        onConflict: "id",
+      },
     );
-  }
 
-  const { error: profileError } = await admin.from("profiles").upsert({
-    id: createdUser.user.id,
-    full_name: fullName,
-    email,
-    avatar_url: null,
-    role,
-    is_active: true,
-  });
+    if (profileError) {
+      await admin.auth.admin.deleteUser(createdUserId);
 
-  if (profileError) {
-    return NextResponse.json({ message: profileError.message }, { status: 400 });
-  }
+      return jsonError(
+        `Auth user was created, but profile creation failed: ${profileError.message}`,
+        400,
+      );
+    }
 
-  if (unitIds.length > 0) {
     const accessRows = unitIds.map((unitId) => ({
-      user_id: createdUser.user.id,
+      user_id: createdUserId,
       brand_unit_id: unitId,
     }));
 
@@ -115,15 +225,25 @@ export async function POST(request: NextRequest) {
       });
 
     if (accessError) {
-      return NextResponse.json(
-        { message: accessError.message },
-        { status: 400 },
+      await admin.from("profiles").delete().eq("id", createdUserId);
+      await admin.auth.admin.deleteUser(createdUserId);
+
+      return jsonError(
+        `Auth user and profile were created, but branch access failed: ${accessError.message}`,
+        400,
       );
     }
-  }
 
-  return NextResponse.json({
-    message: "User created successfully.",
-    userId: createdUser.user.id,
-  });
+    return NextResponse.json({
+      message: "User created successfully.",
+      userId: createdUserId,
+    });
+  } catch (error) {
+    return jsonError(
+      error instanceof Error
+        ? error.message
+        : "Unexpected server error while creating user.",
+      500,
+    );
+  }
 }
