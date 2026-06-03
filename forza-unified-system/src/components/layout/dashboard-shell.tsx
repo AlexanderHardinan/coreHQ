@@ -17,6 +17,7 @@ import {
   Settings,
   ShieldCheck,
   TrendingUp,
+  UserCircle2,
   Users,
   WalletCards,
   X,
@@ -41,6 +42,7 @@ const iconMap = {
   Settings,
   ShieldCheck,
   Building2,
+  UserCircle2,
 };
 
 export type DashboardBrand = {
@@ -402,7 +404,8 @@ function SidebarContent({
 
       <nav className="flex-1 space-y-2">
         {modules.map((module) => {
-          const Icon = iconMap[module.icon as keyof typeof iconMap];
+          const Icon =
+            iconMap[module.icon as keyof typeof iconMap] || LayoutDashboard;
           const isActive =
             pathname === module.href || pathname.startsWith(`${module.href}/`);
 
