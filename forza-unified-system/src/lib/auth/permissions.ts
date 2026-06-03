@@ -90,10 +90,27 @@ const allModules: AppModule[] = [
     icon: "ShieldCheck",
     superAdminOnly: true,
   },
+  {
+    title: "Profile",
+    href: "/profile",
+    description: "User profile, account details, and avatar upload.",
+    icon: "UserCircle2",
+  },
 ];
 
-const bohStaffAllowedPaths = ["/kitchen-ops", "/inventory", "/recipe-maker"];
-const fohStaffAllowedPaths = ["/bar-ops", "/inventory", "/sales-performance"];
+const bohStaffAllowedPaths = [
+  "/kitchen-ops",
+  "/inventory",
+  "/recipe-maker",
+  "/profile",
+];
+
+const fohStaffAllowedPaths = [
+  "/bar-ops",
+  "/inventory",
+  "/sales-performance",
+  "/profile",
+];
 
 export function getAllowedModules(role: UserRole): AppModule[] {
   if (role === "super_admin") {
