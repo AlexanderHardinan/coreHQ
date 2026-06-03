@@ -83,6 +83,9 @@ export function DashboardShell({
   const [optimisticBrandCode, setOptimisticBrandCode] =
     useState(selectedBrandCode);
 
+  const [latestAvatarUrl, setLatestAvatarUrl] = useState<string | null>(
+    avatarUrl,
+  );
   const [isBrandSwitching, setIsBrandSwitching] = useState(false);
   const [isRouteSwitching, setIsRouteSwitching] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -90,6 +93,7 @@ export function DashboardShell({
 
   const currentBrandCode = optimisticBrandCode || selectedBrandCode;
   const activePathname = optimisticPathname || pathname;
+  const displayAvatarUrl = latestAvatarUrl || avatarUrl || null;
 
   const brandOptions = useMemo(() => {
     if (brands.length > 0) {
@@ -120,6 +124,45 @@ export function DashboardShell({
 
   const showGlobalLoader =
     isPending || isBrandSwitching || isRouteSwitching || isSigningOut;
+
+  useEffect(() => {
+    setLatestAvatarUrl(avatarUrl);
+  }, [avatarUrl]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadLatestAvatar() {
+      const supabase = createSupabaseBrowserClient();
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("avatar_url")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (!isMounted || error) {
+        return;
+      }
+
+      setLatestAvatarUrl(data?.avatar_url || null);
+    }
+
+    loadLatestAvatar();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [pathname]);
 
   useEffect(() => {
     setOptimisticBrandCode(selectedBrandCode);
@@ -292,10 +335,10 @@ export function DashboardShell({
                 </div>
 
                 <div className="flex items-center gap-3 rounded-3xl border border-slate-200 bg-white/80 p-3 shadow-sm">
-                  {avatarUrl ? (
+                  {displayAvatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={avatarUrl}
+                      src={displayAvatarUrl}
                       alt={fullName}
                       className="h-12 w-12 rounded-2xl object-cover"
                     />
