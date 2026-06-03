@@ -92,6 +92,9 @@ const allModules: AppModule[] = [
   },
 ];
 
+const bohStaffAllowedPaths = ["/kitchen-ops", "/inventory", "/recipe-maker"];
+const fohStaffAllowedPaths = ["/bar-ops", "/inventory", "/sales-performance"];
+
 export function getAllowedModules(role: UserRole): AppModule[] {
   if (role === "super_admin") {
     return allModules;
@@ -108,13 +111,13 @@ export function getAllowedModules(role: UserRole): AppModule[] {
 
   if (role === "boh_staff") {
     return allModules.filter((module) =>
-      ["/dashboard", "/kitchen-ops"].includes(module.href),
+      bohStaffAllowedPaths.includes(module.href),
     );
   }
 
   if (role === "foh_staff") {
     return allModules.filter((module) =>
-      ["/dashboard", "/bar-ops"].includes(module.href),
+      fohStaffAllowedPaths.includes(module.href),
     );
   }
 
