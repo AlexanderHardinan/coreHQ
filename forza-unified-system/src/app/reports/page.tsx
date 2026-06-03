@@ -7,6 +7,7 @@ import {
   BarChart3,
   Boxes,
   CalendarDays,
+  CheckCircle2,
   CircleDollarSign,
   Download,
   FileText,
