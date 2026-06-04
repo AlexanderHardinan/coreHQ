@@ -9,7 +9,6 @@ import {
   CheckCircle2,
   ClipboardList,
   Download,
-  GlassWater,
   PieChart,
   Search,
   ShieldAlert,
@@ -20,7 +19,7 @@ import {
 import { toast } from "sonner";
 import type { UserRole } from "@/lib/auth/permissions";
 
-export type BarProduct = {
+export type KitchenProduct = {
   id: string;
   brand_id: string | null;
   brand_unit_id: string;
@@ -38,7 +37,7 @@ export type BarProduct = {
   is_active: boolean;
 };
 
-export type BarUnit = {
+export type KitchenUnit = {
   id: string;
   brand_id: string | null;
   name: string;
@@ -46,7 +45,7 @@ export type BarUnit = {
   is_active: boolean;
 };
 
-export type BarMovement = {
+export type KitchenMovement = {
   id: string;
   brand_id: string | null;
   brand_unit_id: string;
@@ -64,16 +63,17 @@ export type BarMovement = {
   created_at: string | null;
 };
 
-type BarOpsPanelProps = {
+type KitchenOpsPanelProps = {
+  userId: string;
   role: UserRole;
   selectedBrand: {
     id: string;
     name: string;
     code: string;
   } | null;
-  units: BarUnit[];
-  products: BarProduct[];
-  movements: BarMovement[];
+  units: KitchenUnit[];
+  products: KitchenProduct[];
+  movements: KitchenMovement[];
 };
 
 function todayDate() {
@@ -148,7 +148,37 @@ function getMovementDirection(type: string) {
   return "count";
 }
 
-function getStockStatus(product: BarProduct) {
+function getMovementBalanceEffect(movement: BarMovement) {
+  const direction = getMovementDirection(movement.movement_type);
+  const quantity = Number(movement.quantity || 0);
+
+  if (direction === "in") {
+    return quantity;
+  }
+
+  if (direction === "out") {
+    return quantity * -1;
+  }
+
+  return 0;
+}
+
+function sortMovementsOldestFirst(movements: BarMovement[]) {
+  return [...movements].sort((a, b) => {
+    const dateCompare = a.movement_date.localeCompare(b.movement_date);
+
+    if (dateCompare !== 0) {
+      return dateCompare;
+    }
+
+    const createdA = a.created_at || "";
+    const createdB = b.created_at || "";
+
+    return createdA.localeCompare(createdB);
+  });
+}
+
+function getStockStatus(product: KitchenProduct) {
   if (
     Number(product.maximum_stock || 0) > 0 &&
     Number(product.current_stock || 0) > Number(product.maximum_stock || 0)
@@ -238,13 +268,13 @@ function getDiscrepancyStatus(value: number | null) {
   };
 }
 
-export function BarOpsPanel({
+export function KitchenOpsPanel({
   role,
   selectedBrand,
   units,
   products,
   movements,
-}: BarOpsPanelProps) {
+}: KitchenOpsPanelProps) {
   const [selectedUnitId, setSelectedUnitId] = useState(units[0]?.id || "");
   const [search, setSearch] = useState("");
 
@@ -258,7 +288,7 @@ export function BarOpsPanel({
 
     return products.filter((product) => {
       const matchesUnit = product.brand_unit_id === selectedUnitId;
-      const matchesArea = product.ops_area === "bar";
+      const matchesArea = product.ops_area === "kitchen";
       const matchesSearch =
         !query ||
         product.product_name.toLowerCase().includes(query) ||
@@ -281,6 +311,37 @@ export function BarOpsPanel({
       ),
     [movements, visibleProductIds],
   );
+
+  const calculatedMovementBalanceMap = useMemo(() => {
+    const map = new Map<string, number>();
+    const movementsByProduct = new Map<string, BarMovement[]>();
+
+    movements.forEach((movement) => {
+      const current = movementsByProduct.get(movement.product_id) || [];
+      current.push(movement);
+      movementsByProduct.set(movement.product_id, current);
+    });
+
+    movementsByProduct.forEach((productMovements) => {
+      let runningBalance = 0;
+
+      sortMovementsOldestFirst(productMovements).forEach((movement) => {
+        const direction = getMovementDirection(movement.movement_type);
+
+        if (direction === "count") {
+          if (movement.physical_count_qty !== null) {
+            runningBalance = Number(movement.physical_count_qty || 0);
+          }
+        } else {
+          runningBalance += getMovementBalanceEffect(movement);
+        }
+
+        map.set(movement.id, runningBalance);
+      });
+    });
+
+    return map;
+  }, [movements]);
 
   const todayMovements = useMemo(
     () =>
@@ -338,10 +399,6 @@ export function BarOpsPanel({
       .filter((movement) => movement.movement_type === "product_in")
       .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
 
-    const soldConsumption = visibleMovements
-      .filter((movement) => movement.movement_type === "sold_consumption")
-      .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
-
     const productionConsumption = visibleMovements
       .filter((movement) => movement.movement_type === "production_consumption")
       .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
@@ -376,7 +433,6 @@ export function BarOpsPanel({
       expiring,
       discrepancies,
       productIn,
-      soldConsumption,
       productionConsumption,
       waste,
       shrinkage,
@@ -402,7 +458,7 @@ export function BarOpsPanel({
     const consumptionMap = new Map<
       string,
       {
-        product: BarProduct;
+        product: KitchenProduct;
         quantity: number;
       }
     >();
@@ -434,9 +490,13 @@ export function BarOpsPanel({
       .slice(0, 8);
   }, [visibleMovements, visibleProducts]);
 
-  function downloadBarPdf() {
+  function getCalculatedMovementBalance(movement: BarMovement) {
+    return calculatedMovementBalanceMap.get(movement.id) ?? null;
+  }
+
+  function downloadKitchenPdf() {
     if (visibleProducts.length === 0 && visibleMovements.length === 0) {
-      toast.error("No bar performance data available for PDF.");
+      toast.error("No kitchen performance data available for PDF.");
       return;
     }
 
@@ -468,6 +528,7 @@ export function BarOpsPanel({
           (item) => item.id === movement.product_id,
         );
         const direction = getMovementDirection(movement.movement_type);
+        const calculatedBalance = getCalculatedMovementBalance(movement);
 
         return `
           <tr>
@@ -476,7 +537,7 @@ export function BarOpsPanel({
             <td>${escapeHtml(getMovementLabel(movement.movement_type))}</td>
             <td>${direction === "count" ? "-" : `${formatQty(movement.quantity)} ${escapeHtml(product?.unit || "")}`}</td>
             <td>${movement.physical_count_qty === null ? "-" : formatQty(movement.physical_count_qty)}</td>
-            <td>${movement.system_balance_after === null ? "-" : formatQty(movement.system_balance_after)}</td>
+            <td>${calculatedBalance === null ? "-" : `${formatQty(calculatedBalance)} ${escapeHtml(product?.unit || "")}`}</td>
             <td>${movement.discrepancy_qty === null ? "-" : formatQty(movement.discrepancy_qty)}</td>
             <td>${escapeHtml(movement.reference_code || "-")}</td>
           </tr>
@@ -489,7 +550,7 @@ export function BarOpsPanel({
       <html>
         <head>
           <meta charset="utf-8" />
-          <title>Bar Performance Report</title>
+          <title>Kitchen Performance Report</title>
           <style>
             * { box-sizing: border-box; }
             body {
@@ -592,8 +653,8 @@ export function BarOpsPanel({
         <body>
           <main class="sheet">
             <section class="header">
-              <div class="brand">🍸 Forza Unified System</div>
-              <h1>Bar Performance Report</h1>
+              <div class="brand">👨‍🍳 Forza Unified System</div>
+              <h1>Kitchen Performance Report</h1>
             </section>
 
             <section class="content">
@@ -608,7 +669,7 @@ export function BarOpsPanel({
                 <div class="card"><div class="label">Shrinkage</div><div class="value">${formatQty(stats.shrinkage)}</div></div>
               </div>
 
-              <h2>🍾 Bar Product Performance</h2>
+              <h2>📦 Kitchen Product Performance</h2>
               <table>
                 <thead>
                   <tr>
@@ -648,7 +709,7 @@ export function BarOpsPanel({
               </table>
 
               <div class="footer">
-                <div>Bar Performance Dashboard Report</div>
+                <div>Kitchen Performance Dashboard Report</div>
                 <div>Developer Rights Chef Alex @FORZA 2026</div>
               </div>
             </section>
@@ -666,7 +727,7 @@ export function BarOpsPanel({
     const printWindow = window.open("", "_blank", "width=1200,height=900");
 
     if (!printWindow) {
-      toast.error("Allow popups to download the bar PDF.");
+      toast.error("Allow popups to download the kitchen PDF.");
       return;
     }
 
@@ -679,7 +740,7 @@ export function BarOpsPanel({
     <div className="space-y-6">
       <section className="glass-panel overflow-hidden rounded-[2rem] p-6">
         <div className="relative">
-          <div className="absolute -right-16 -top-20 h-52 w-52 animate-pulse rounded-full bg-sky-100/80 blur-3xl" />
+          <div className="absolute -right-16 -top-20 h-52 w-52 animate-pulse rounded-full bg-emerald-100/80 blur-3xl" />
           <div className="absolute -bottom-24 -left-14 h-56 w-56 animate-pulse rounded-full bg-amber-100/80 blur-3xl" />
 
           <div className="relative z-10 grid gap-5 xl:grid-cols-[1fr_360px] xl:items-center">
@@ -690,14 +751,14 @@ export function BarOpsPanel({
               </div>
 
               <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-                Bar Performance Dashboard
+                Kitchen Performance Dashboard
               </p>
               <h1 className="mt-2 text-3xl font-black text-slate-950 md:text-5xl">
-                {selectedBrand?.name || "Selected Brand"} Bar Ops
+                {selectedBrand?.name || "Selected Brand"} Kitchen Ops
               </h1>
               <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600">
-                Live bar performance from Inventory movements. This page is
-                read-only and displays bar stock health, usage, waste,
+                Live kitchen performance from Inventory movements. This page is
+                read-only and displays kitchen stock health, usage, waste,
                 shrinkage, discrepancy, expiry, and movement performance.
               </p>
             </div>
@@ -723,9 +784,9 @@ export function BarOpsPanel({
                   Mode
                 </p>
                 <p className="mt-1 text-sm font-black text-slate-950">
-                  {role === "foh_staff"
-                    ? "FOH Bar Performance View"
-                    : "Bar Performance Control"}
+                  {role === "boh_staff"
+                    ? "BOH Performance View"
+                    : "Kitchen Performance Control"}
                 </p>
               </div>
             </div>
@@ -735,7 +796,7 @@ export function BarOpsPanel({
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          label="Bar Inventory Value"
+          label="Kitchen Inventory Value"
           value={formatCurrency(stats.inventoryValue)}
           icon={<CheckCircle2 size={22} />}
         />
@@ -758,7 +819,7 @@ export function BarOpsPanel({
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <MetricCard
-          label="Bar Products"
+          label="Kitchen Products"
           value={String(stats.productCount)}
           icon={<Boxes size={22} />}
         />
@@ -797,7 +858,7 @@ export function BarOpsPanel({
                 Performance Search
               </p>
               <h2 className="text-2xl font-black text-slate-950">
-                Bar Product Performance
+                Kitchen Product Performance
               </h2>
             </div>
 
@@ -817,7 +878,7 @@ export function BarOpsPanel({
 
               <button
                 type="button"
-                onClick={downloadBarPdf}
+                onClick={downloadKitchenPdf}
                 className="forza-button-hover inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl"
               >
                 <Download size={18} />
@@ -874,7 +935,7 @@ export function BarOpsPanel({
 
             {topLowestStock.length === 0 ? (
               <div className="rounded-3xl bg-white/80 p-6 text-sm font-bold text-slate-500 md:col-span-2">
-                No bar products found.
+                No kitchen products found.
               </div>
             ) : null}
           </div>
@@ -885,7 +946,7 @@ export function BarOpsPanel({
             Top Usage
           </p>
           <h2 className="mt-2 text-2xl font-black text-slate-950">
-            Highest Bar Consumption
+            Highest Kitchen Consumption
           </h2>
 
           <div className="mt-5 space-y-3">
@@ -913,7 +974,7 @@ export function BarOpsPanel({
 
             {topConsumptionProducts.length === 0 ? (
               <div className="rounded-3xl bg-white/80 p-5 text-sm font-bold text-slate-500">
-                No bar consumption movements found.
+                No kitchen consumption movements found.
               </div>
             ) : null}
           </div>
@@ -923,7 +984,7 @@ export function BarOpsPanel({
       <section className="glass-panel rounded-[2rem] p-6">
         <div className="mb-5">
           <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-            Critical Bar Stock
+            Critical Kitchen Stock
           </p>
           <h2 className="text-2xl font-black text-slate-950">
             Items Requiring Attention
@@ -965,7 +1026,7 @@ export function BarOpsPanel({
 
           {criticalProducts.length === 0 ? (
             <div className="rounded-3xl bg-white/80 p-6 text-sm font-bold text-slate-500 md:col-span-2 xl:col-span-3">
-              No critical bar stock issues found.
+              No critical kitchen stock issues found.
             </div>
           ) : null}
         </div>
@@ -977,7 +1038,7 @@ export function BarOpsPanel({
             Synced Inventory Movement Feed
           </p>
           <h2 className="text-2xl font-black text-slate-950">
-            Latest Bar Movements
+            Latest Kitchen Movements
           </h2>
         </div>
 
@@ -990,7 +1051,7 @@ export function BarOpsPanel({
                 <th className="px-4">Movement</th>
                 <th className="px-4">Qty</th>
                 <th className="px-4">Physical</th>
-                <th className="px-4">System</th>
+                <th className="px-4">Calculated Balance</th>
                 <th className="px-4">Discrepancy</th>
                 <th className="px-4">Reference</th>
               </tr>
@@ -1006,6 +1067,7 @@ export function BarOpsPanel({
                 const discrepancy = getDiscrepancyStatus(
                   movement.discrepancy_qty,
                 );
+                const calculatedBalance = getCalculatedMovementBalance(movement);
 
                 return (
                   <tr key={movement.id} className="rounded-2xl bg-white shadow-sm">
@@ -1028,10 +1090,10 @@ export function BarOpsPanel({
                         ? "-"
                         : formatQty(movement.physical_count_qty)}
                     </td>
-                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                      {movement.system_balance_after === null
+                    <td className="px-4 py-4 text-sm font-black text-slate-950">
+                      {calculatedBalance === null
                         ? "-"
-                        : formatQty(movement.system_balance_after)}
+                        : `${formatQty(calculatedBalance)} ${product?.unit || ""}`}
                     </td>
                     <td className="px-4 py-4">
                       <span
@@ -1055,7 +1117,7 @@ export function BarOpsPanel({
                     colSpan={8}
                     className="rounded-2xl bg-white px-4 py-8 text-center text-sm font-bold text-slate-500"
                   >
-                    No bar movements found.
+                    No kitchen movements found.
                   </td>
                 </tr>
               ) : null}
