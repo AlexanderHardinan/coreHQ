@@ -9,7 +9,6 @@ import {
   CheckCircle2,
   ClipboardList,
   Download,
-  GlassWater,
   PieChart,
   Search,
   ShieldAlert,
@@ -21,12 +20,14 @@ import { toast } from "sonner";
 import type { UserRole } from "@/lib/auth/permissions";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 
+export type OpsArea = "kitchen" | "bar" | "global";
+
 export type BarProduct = {
   id: string;
   brand_id: string | null;
   brand_unit_id: string;
   category_id: string | null;
-  ops_area: "kitchen" | "bar" | "global";
+  ops_area: OpsArea;
   product_name: string;
   sku: string;
   unit: string;
@@ -52,7 +53,7 @@ export type BarMovement = {
   brand_id: string | null;
   brand_unit_id: string;
   product_id: string;
-  ops_area: "kitchen" | "bar" | "global";
+  ops_area: OpsArea;
   movement_type: string;
   quantity: number;
   unit_cost: number | null;
@@ -282,6 +283,7 @@ export function BarOpsPanel({
   const [movementList, setMovementList] = useState<BarMovement[]>(movements);
   const [selectedUnitId, setSelectedUnitId] = useState(units[0]?.id || "");
   const [search, setSearch] = useState("");
+  const [lastSyncedAt, setLastSyncedAt] = useState(todayDate());
 
   const selectedUnit = useMemo(
     () => units.find((unit) => unit.id === selectedUnitId) || null,
@@ -302,7 +304,7 @@ export function BarOpsPanel({
     }
   }, [selectedUnitId, units]);
 
-  async function refreshBarData() {
+  async function refreshBarData(showError = false) {
     if (!selectedBrand?.id) {
       return;
     }
@@ -318,7 +320,10 @@ export function BarOpsPanel({
       .order("product_name", { ascending: true });
 
     if (productsError) {
-      toast.error(productsError.message);
+      if (showError) {
+        toast.error(productsError.message);
+      }
+
       return;
     }
 
@@ -330,6 +335,7 @@ export function BarOpsPanel({
 
     if (productIds.length === 0) {
       setMovementList([]);
+      setLastSyncedAt(new Date().toLocaleTimeString());
       return;
     }
 
@@ -343,14 +349,18 @@ export function BarOpsPanel({
       .in("product_id", productIds)
       .order("movement_date", { ascending: false })
       .order("created_at", { ascending: false })
-      .limit(150);
+      .limit(500);
 
     if (movementsError) {
-      toast.error(movementsError.message);
+      if (showError) {
+        toast.error(movementsError.message);
+      }
+
       return;
     }
 
     setMovementList((refreshedMovements || []) as BarMovement[]);
+    setLastSyncedAt(new Date().toLocaleTimeString());
   }
 
   useEffect(() => {
@@ -358,18 +368,19 @@ export function BarOpsPanel({
       return;
     }
 
+    void refreshBarData();
+
     const channel = supabase
-      .channel(`bar-ops-realtime-${selectedBrand.id}`)
+      .channel(`bar-ops-commercial-realtime-${selectedBrand.id}`)
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
           table: "products",
-          filter: `brand_id=eq.${selectedBrand.id}`,
         },
         () => {
-          refreshBarData();
+          void refreshBarData();
         },
       )
       .on(
@@ -378,15 +389,23 @@ export function BarOpsPanel({
           event: "*",
           schema: "public",
           table: "inventory_movements",
-          filter: `brand_id=eq.${selectedBrand.id}`,
         },
         () => {
-          refreshBarData();
+          void refreshBarData();
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          void refreshBarData();
+        }
+      });
+
+    const fallbackRefresh = window.setInterval(() => {
+      void refreshBarData();
+    }, 5000);
 
     return () => {
+      window.clearInterval(fallbackRefresh);
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -918,6 +937,15 @@ export function BarOpsPanel({
                     : "Bar Realtime Performance Control"}
                 </p>
               </div>
+
+              <div className="mt-4 rounded-2xl bg-emerald-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-emerald-700">
+                  Realtime Status
+                </p>
+                <p className="mt-1 text-sm font-black text-emerald-800">
+                  Last synced: {lastSyncedAt}
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -1196,6 +1224,7 @@ export function BarOpsPanel({
                 const discrepancy = getDiscrepancyStatus(
                   movement.discrepancy_qty,
                 );
+                const calculatedBalance = getCalculatedMovementBalance(movement);
 
                 return (
                   <tr key={movement.id} className="rounded-2xl bg-white shadow-sm">
@@ -1219,9 +1248,9 @@ export function BarOpsPanel({
                         : formatQty(movement.physical_count_qty)}
                     </td>
                     <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                      {getCalculatedMovementBalance(movement) === null
+                      {calculatedBalance === null
                         ? "-"
-                        : `${formatQty(getCalculatedMovementBalance(movement) || 0)} ${product?.unit || ""}`}
+                        : `${formatQty(calculatedBalance)} ${product?.unit || ""}`}
                     </td>
                     <td className="px-4 py-4">
                       <span
