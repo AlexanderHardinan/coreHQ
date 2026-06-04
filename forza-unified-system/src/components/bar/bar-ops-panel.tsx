@@ -1,30 +1,43 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
   AlertTriangle,
-  BarChart3,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  Beer,
   Boxes,
   CalendarClock,
   CheckCircle2,
   ClipboardList,
   Download,
-  PieChart,
+  GlassWater,
+  Package,
+  Save,
   Search,
-  ShieldAlert,
-  Sparkles,
-  TrendingDown,
-  TrendingUp,
+  Wine,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { UserRole } from "@/lib/auth/permissions";
+import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 
-export type KitchenProduct = {
+export type OpsArea = "kitchen" | "bar" | "global";
+
+export type BarUnit = {
+  id: string;
+  brand_id: string | null;
+  name: string;
+  code: string;
+  is_active: boolean;
+};
+
+export type BarProduct = {
   id: string;
   brand_id: string | null;
   brand_unit_id: string;
   category_id: string | null;
-  ops_area: "kitchen" | "bar" | "global";
+  ops_area: OpsArea;
   product_name: string;
   sku: string;
   unit: string;
@@ -37,21 +50,13 @@ export type KitchenProduct = {
   is_active: boolean;
 };
 
-export type KitchenUnit = {
-  id: string;
-  brand_id: string | null;
-  name: string;
-  code: string;
-  is_active: boolean;
-};
-
-export type KitchenMovement = {
+export type BarMovement = {
   id: string;
   brand_id: string | null;
   brand_unit_id: string;
   product_id: string;
-  ops_area: "kitchen" | "bar" | "global";
-  movement_type: string;
+  ops_area: OpsArea;
+  movement_type: InventoryMovementType;
   quantity: number;
   unit_cost: number | null;
   reference_code: string | null;
@@ -63,7 +68,20 @@ export type KitchenMovement = {
   created_at: string | null;
 };
 
-type KitchenOpsPanelProps = {
+export type InventoryMovementType =
+  | "opening_stock"
+  | "product_in"
+  | "transfer_in"
+  | "adjustment_in"
+  | "production_consumption"
+  | "sold_consumption"
+  | "waste"
+  | "shrinkage"
+  | "transfer_out"
+  | "adjustment_out"
+  | "stock_count";
+
+type BarOpsPanelProps = {
   userId: string;
   role: UserRole;
   selectedBrand: {
@@ -71,10 +89,32 @@ type KitchenOpsPanelProps = {
     name: string;
     code: string;
   } | null;
-  units: KitchenUnit[];
-  products: KitchenProduct[];
-  movements: KitchenMovement[];
+  units: BarUnit[];
+  products: BarProduct[];
+  movements: BarMovement[];
 };
+
+const movementTypes: {
+  value: InventoryMovementType;
+  label: string;
+  direction: "in" | "out" | "count";
+}[] = [
+  { value: "opening_stock", label: "Opening Stock", direction: "in" },
+  { value: "product_in", label: "Product In / Delivery", direction: "in" },
+  { value: "transfer_in", label: "Transfer In", direction: "in" },
+  { value: "adjustment_in", label: "Adjustment In", direction: "in" },
+  {
+    value: "production_consumption",
+    label: "Production Consumption",
+    direction: "out",
+  },
+  { value: "sold_consumption", label: "Sold Consumption", direction: "out" },
+  { value: "waste", label: "Waste", direction: "out" },
+  { value: "shrinkage", label: "Shrinkage", direction: "out" },
+  { value: "transfer_out", label: "Transfer Out", direction: "out" },
+  { value: "adjustment_out", label: "Adjustment Out", direction: "out" },
+  { value: "stock_count", label: "Physical Stock Count", direction: "count" },
+];
 
 function todayDate() {
   return new Date().toISOString().slice(0, 10);
@@ -107,45 +147,12 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
-function getMovementLabel(type: string) {
-  const labels: Record<string, string> = {
-    opening_stock: "Opening Stock",
-    product_in: "Product In / Delivery",
-    transfer_in: "Transfer In",
-    adjustment_in: "Adjustment In",
-    production_consumption: "Production Consumption",
-    sold_consumption: "Sold Consumption",
-    waste: "Waste",
-    shrinkage: "Shrinkage",
-    transfer_out: "Transfer Out",
-    adjustment_out: "Adjustment Out",
-    stock_count: "Physical Stock Count",
-  };
-
-  return labels[type] || type.replaceAll("_", " ");
+function getMovementLabel(type: InventoryMovementType) {
+  return movementTypes.find((item) => item.value === type)?.label || type;
 }
 
-function getMovementDirection(type: string) {
-  if (
-    ["opening_stock", "product_in", "transfer_in", "adjustment_in"].includes(type)
-  ) {
-    return "in";
-  }
-
-  if (
-    [
-      "production_consumption",
-      "sold_consumption",
-      "waste",
-      "shrinkage",
-      "transfer_out",
-      "adjustment_out",
-    ].includes(type)
-  ) {
-    return "out";
-  }
-
-  return "count";
+function getMovementDirection(type: InventoryMovementType) {
+  return movementTypes.find((item) => item.value === type)?.direction || "count";
 }
 
 function getMovementBalanceEffect(movement: BarMovement) {
@@ -178,30 +185,27 @@ function sortMovementsOldestFirst(movements: BarMovement[]) {
   });
 }
 
-function getStockStatus(product: KitchenProduct) {
+function getStockStatus(product: BarProduct) {
   if (
-    Number(product.maximum_stock || 0) > 0 &&
-    Number(product.current_stock || 0) > Number(product.maximum_stock || 0)
+    product.maximum_stock > 0 &&
+    product.current_stock > product.maximum_stock
   ) {
     return {
       label: "Over Stocked",
       className: "bg-amber-50 text-amber-700",
-      cardClassName: "border-amber-100 bg-amber-50/80",
     };
   }
 
-  if (Number(product.current_stock || 0) <= Number(product.minimum_stock || 0)) {
+  if (product.current_stock <= product.minimum_stock) {
     return {
       label: "Low Stock",
       className: "bg-red-50 text-red-700",
-      cardClassName: "border-red-100 bg-red-50/80",
     };
   }
 
   return {
     label: "On Track",
     className: "bg-emerald-50 text-emerald-700",
-    cardClassName: "border-emerald-100 bg-emerald-50/80",
   };
 }
 
@@ -240,22 +244,22 @@ function getExpiryStatus(expiryDate: string | null) {
   };
 }
 
-function getDiscrepancyStatus(value: number | null) {
-  if (value === null || Number.isNaN(value)) {
+function getDiscrepancyStatus(discrepancy: number | null) {
+  if (discrepancy === null || Number.isNaN(discrepancy)) {
     return {
       label: "No Count",
       className: "bg-slate-100 text-slate-700",
     };
   }
 
-  if (value < 0) {
+  if (discrepancy < 0) {
     return {
       label: "Missing",
       className: "bg-red-50 text-red-700",
     };
   }
 
-  if (value > 0) {
+  if (discrepancy > 0) {
     return {
       label: "Over",
       className: "bg-amber-50 text-amber-700",
@@ -268,55 +272,82 @@ function getDiscrepancyStatus(value: number | null) {
   };
 }
 
-export function KitchenOpsPanel({
-  role,
+export function BarOpsPanel({
   selectedBrand,
   units,
   products,
   movements,
-}: KitchenOpsPanelProps) {
+}: BarOpsPanelProps) {
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+
+  const [productList, setProductList] = useState<BarProduct[]>(products);
+  const [movementList, setMovementList] = useState<BarMovement[]>(movements);
+
   const [selectedUnitId, setSelectedUnitId] = useState(units[0]?.id || "");
   const [search, setSearch] = useState("");
 
-  const selectedUnit = useMemo(
-    () => units.find((unit) => unit.id === selectedUnitId) || null,
-    [selectedUnitId, units],
-  );
+  const [movementProductId, setMovementProductId] = useState("");
+  const [movementType, setMovementType] =
+    useState<InventoryMovementType>("product_in");
+  const [movementQty, setMovementQty] = useState("0");
+  const [physicalCountQty, setPhysicalCountQty] = useState("0");
+  const [movementUnitCost, setMovementUnitCost] = useState("0");
+  const [movementReference, setMovementReference] = useState("");
+  const [movementNotes, setMovementNotes] = useState("");
+  const [movementDate, setMovementDate] = useState(todayDate());
+  const [isMovementSaving, setIsMovementSaving] = useState(false);
+
+  useEffect(() => {
+    setProductList(products);
+  }, [products]);
+
+  useEffect(() => {
+    setMovementList(movements);
+  }, [movements]);
+
+  useEffect(() => {
+    if (!selectedUnitId && units[0]?.id) {
+      setSelectedUnitId(units[0].id);
+    }
+  }, [selectedUnitId, units]);
 
   const visibleProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return products.filter((product) => {
-      const matchesUnit = product.brand_unit_id === selectedUnitId;
-      const matchesArea = product.ops_area === "kitchen";
+    return productList.filter((product) => {
+      const matchesUnit = !selectedUnitId || product.brand_unit_id === selectedUnitId;
+      const matchesArea = product.ops_area === "bar";
       const matchesSearch =
         !query ||
         product.product_name.toLowerCase().includes(query) ||
         product.sku.toLowerCase().includes(query) ||
         String(product.supplier_name || "").toLowerCase().includes(query);
 
-      return matchesUnit && matchesArea && product.is_active && matchesSearch;
+      return matchesUnit && matchesArea && matchesSearch;
     });
-  }, [products, search, selectedUnitId]);
+  }, [productList, search, selectedUnitId]);
 
   const visibleProductIds = useMemo(
     () => visibleProducts.map((product) => product.id),
     [visibleProducts],
   );
 
-  const visibleMovements = useMemo(
-    () =>
-      movements.filter((movement) =>
-        visibleProductIds.includes(movement.product_id),
-      ),
-    [movements, visibleProductIds],
+  const visibleMovements = useMemo(() => {
+    return movementList.filter((movement) =>
+      visibleProductIds.includes(movement.product_id),
+    );
+  }, [movementList, visibleProductIds]);
+
+  const selectedMovementProduct = useMemo(
+    () => productList.find((product) => product.id === movementProductId) || null,
+    [movementProductId, productList],
   );
 
   const calculatedMovementBalanceMap = useMemo(() => {
     const map = new Map<string, number>();
     const movementsByProduct = new Map<string, BarMovement[]>();
 
-    movements.forEach((movement) => {
+    movementList.forEach((movement) => {
       const current = movementsByProduct.get(movement.product_id) || [];
       current.push(movement);
       movementsByProduct.set(movement.product_id, current);
@@ -341,40 +372,9 @@ export function KitchenOpsPanel({
     });
 
     return map;
-  }, [movements]);
+  }, [movementList]);
 
-  const todayMovements = useMemo(
-    () =>
-      visibleMovements.filter(
-        (movement) => movement.movement_date === todayDate(),
-      ),
-    [visibleMovements],
-  );
-
-  const criticalProducts = useMemo(
-    () =>
-      visibleProducts.filter((product) => {
-        const stock = getStockStatus(product).label;
-        const expiry = getExpiryStatus(product.expiry_date).label;
-
-        return (
-          stock === "Low Stock" ||
-          stock === "Over Stocked" ||
-          expiry === "Expired" ||
-          expiry === "Expiring Soon"
-        );
-      }),
-    [visibleProducts],
-  );
-
-  const stats = useMemo(() => {
-    const inventoryValue = visibleProducts.reduce(
-      (total, product) =>
-        total +
-        Number(product.current_stock || 0) * Number(product.unit_cost || 0),
-      0,
-    );
-
+  const inventoryStats = useMemo(() => {
     const lowStock = visibleProducts.filter(
       (product) => getStockStatus(product).label === "Low Stock",
     ).length;
@@ -389,121 +389,205 @@ export function KitchenOpsPanel({
       ),
     ).length;
 
-    const discrepancies = visibleMovements.filter(
-      (movement) =>
-        movement.movement_type === "stock_count" &&
-        Number(movement.discrepancy_qty || 0) !== 0,
-    ).length;
-
-    const productIn = visibleMovements
-      .filter((movement) => movement.movement_type === "product_in")
-      .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
-
-    const productionConsumption = visibleMovements
-      .filter((movement) => movement.movement_type === "production_consumption")
-      .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
-
-    const waste = visibleMovements
-      .filter((movement) => movement.movement_type === "waste")
-      .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
-
-    const shrinkage = visibleMovements
-      .filter((movement) => movement.movement_type === "shrinkage")
-      .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
-
-    const stockOut = visibleMovements
-      .filter((movement) => getMovementDirection(movement.movement_type) === "out")
-      .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
-
-    const stockIn = visibleMovements
-      .filter((movement) => getMovementDirection(movement.movement_type) === "in")
-      .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
-
-    const todayWaste = todayMovements
-      .filter((movement) =>
-        ["waste", "shrinkage"].includes(String(movement.movement_type)),
-      )
-      .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
+    const value = visibleProducts.reduce(
+      (total, product) => total + product.current_stock * product.unit_cost,
+      0,
+    );
 
     return {
-      productCount: visibleProducts.length,
-      inventoryValue,
+      totalProducts: visibleProducts.length,
       lowStock,
       overStocked,
       expiring,
-      discrepancies,
-      productIn,
-      productionConsumption,
-      waste,
-      shrinkage,
-      stockIn,
-      stockOut,
-      todayActivity: todayMovements.length,
-      todayWaste,
+      value,
     };
-  }, [todayMovements, visibleMovements, visibleProducts]);
+  }, [visibleProducts]);
 
-  const topLowestStock = useMemo(
-    () =>
-      [...visibleProducts]
-        .sort(
-          (a, b) =>
-            Number(a.current_stock || 0) - Number(b.current_stock || 0),
-        )
-        .slice(0, 8),
-    [visibleProducts],
-  );
+  useEffect(() => {
+    if (!movementProductId && visibleProducts[0]?.id) {
+      setMovementProductId(visibleProducts[0].id);
+      setMovementUnitCost(String(visibleProducts[0].unit_cost || 0));
+    }
 
-  const topConsumptionProducts = useMemo(() => {
-    const consumptionMap = new Map<
-      string,
-      {
-        product: KitchenProduct;
-        quantity: number;
-      }
-    >();
+    if (
+      movementProductId &&
+      visibleProducts.length > 0 &&
+      !visibleProducts.some((product) => product.id === movementProductId)
+    ) {
+      setMovementProductId(visibleProducts[0].id);
+      setMovementUnitCost(String(visibleProducts[0].unit_cost || 0));
+    }
+  }, [movementProductId, visibleProducts]);
 
-    visibleMovements
-      .filter((movement) => getMovementDirection(movement.movement_type) === "out")
-      .forEach((movement) => {
-        const product = visibleProducts.find(
-          (item) => item.id === movement.product_id,
-        );
+  async function refreshBarData() {
+    if (!selectedBrand?.id) {
+      return;
+    }
 
-        if (!product) {
-          return;
-        }
+    const { data: refreshedProducts, error: productsError } = await supabase
+      .from("products")
+      .select(
+        "id, brand_id, brand_unit_id, category_id, ops_area, product_name, sku, unit, supplier_name, current_stock, minimum_stock, maximum_stock, unit_cost, expiry_date, is_active",
+      )
+      .eq("brand_id", selectedBrand.id)
+      .eq("ops_area", "bar")
+      .eq("is_active", true)
+      .order("product_name", { ascending: true });
 
-        const current = consumptionMap.get(product.id) || {
-          product,
-          quantity: 0,
-        };
+    if (productsError) {
+      toast.error(productsError.message);
+      return;
+    }
 
-        consumptionMap.set(product.id, {
-          product,
-          quantity: current.quantity + Number(movement.quantity || 0),
-        });
-      });
+    const nextProducts = (refreshedProducts || []) as BarProduct[];
+    setProductList(nextProducts);
 
-    return Array.from(consumptionMap.values())
-      .sort((a, b) => b.quantity - a.quantity)
-      .slice(0, 8);
-  }, [visibleMovements, visibleProducts]);
+    const productIds = nextProducts.map((product) => product.id);
+
+    if (productIds.length === 0) {
+      setMovementList([]);
+      return;
+    }
+
+    const { data: refreshedMovements, error: movementsError } = await supabase
+      .from("inventory_movements")
+      .select(
+        "id, brand_id, brand_unit_id, product_id, ops_area, movement_type, quantity, unit_cost, reference_code, notes, movement_date, system_balance_after, physical_count_qty, discrepancy_qty, created_at",
+      )
+      .eq("brand_id", selectedBrand.id)
+      .eq("ops_area", "bar")
+      .in("product_id", productIds)
+      .order("movement_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(150);
+
+    if (movementsError) {
+      toast.error(movementsError.message);
+      return;
+    }
+
+    setMovementList((refreshedMovements || []) as BarMovement[]);
+  }
+
+  useEffect(() => {
+    if (!selectedBrand?.id) {
+      return;
+    }
+
+    const channel = supabase
+      .channel(`bar-ops-ledger-${selectedBrand.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "products",
+        },
+        () => {
+          refreshBarData();
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "inventory_movements",
+        },
+        () => {
+          refreshBarData();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBrand?.id]);
+
+  function resetMovementForm() {
+    setMovementType("product_in");
+    setMovementQty("0");
+    setPhysicalCountQty("0");
+    setMovementUnitCost(String(selectedMovementProduct?.unit_cost || 0));
+    setMovementReference("");
+    setMovementNotes("");
+    setMovementDate(todayDate());
+  }
 
   function getCalculatedMovementBalance(movement: BarMovement) {
     return calculatedMovementBalanceMap.get(movement.id) ?? null;
   }
 
-  function downloadKitchenPdf() {
+  async function saveMovement(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedBrand?.id) {
+      toast.error("Selected brand is required.");
+      return;
+    }
+
+    if (!selectedMovementProduct) {
+      toast.error("Select a product first.");
+      return;
+    }
+
+    const direction = getMovementDirection(movementType);
+    const movementQuantity = Number(movementQty || 0);
+    const stockCountQuantity = Number(physicalCountQty || 0);
+
+    if (direction !== "count" && movementQuantity <= 0) {
+      toast.error("Movement quantity must be greater than zero.");
+      return;
+    }
+
+    if (direction === "count" && Number.isNaN(stockCountQuantity)) {
+      toast.error("Physical count is required.");
+      return;
+    }
+
+    setIsMovementSaving(true);
+
+    const payload = {
+      brand_id: selectedBrand.id,
+      brand_unit_id: selectedMovementProduct.brand_unit_id,
+      product_id: selectedMovementProduct.id,
+      ops_area: selectedMovementProduct.ops_area,
+      movement_type: movementType,
+      quantity: direction === "count" ? 0 : movementQuantity,
+      unit_cost: Number(movementUnitCost || selectedMovementProduct.unit_cost || 0),
+      physical_count_qty:
+        direction === "count" ? Number(physicalCountQty || 0) : null,
+      reference_code: movementReference.trim() || null,
+      notes: movementNotes.trim() || null,
+      movement_date: movementDate || todayDate(),
+    };
+
+    const { error } = await supabase.from("inventory_movements").insert(payload);
+
+    setIsMovementSaving(false);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    await refreshBarData();
+    toast.success("Bar movement saved successfully.");
+    resetMovementForm();
+  }
+
+  function downloadBarPdf() {
     if (visibleProducts.length === 0 && visibleMovements.length === 0) {
-      toast.error("No kitchen performance data available for PDF.");
+      toast.error("No bar data available for this PDF export.");
       return;
     }
 
     const productRows = visibleProducts
       .map((product) => {
-        const stock = getStockStatus(product);
-        const expiry = getExpiryStatus(product.expiry_date);
+        const stockStatus = getStockStatus(product);
+        const expiryStatus = getExpiryStatus(product.expiry_date);
 
         return `
           <tr>
@@ -514,8 +598,8 @@ export function KitchenOpsPanel({
             <td>${formatQty(product.maximum_stock)}</td>
             <td>${formatCurrency(product.unit_cost)}</td>
             <td>${formatCurrency(product.current_stock * product.unit_cost)}</td>
-            <td>${escapeHtml(stock.label)}</td>
-            <td>${escapeHtml(expiry.label)}</td>
+            <td>${escapeHtml(stockStatus.label)}</td>
+            <td>${escapeHtml(expiryStatus.label)}</td>
           </tr>
         `;
       })
@@ -524,9 +608,7 @@ export function KitchenOpsPanel({
     const movementRows = visibleMovements
       .slice(0, 200)
       .map((movement) => {
-        const product = visibleProducts.find(
-          (item) => item.id === movement.product_id,
-        );
+        const product = productList.find((item) => item.id === movement.product_id);
         const direction = getMovementDirection(movement.movement_type);
         const calculatedBalance = getCalculatedMovementBalance(movement);
 
@@ -535,22 +617,45 @@ export function KitchenOpsPanel({
             <td>${escapeHtml(movement.movement_date)}</td>
             <td>${escapeHtml(product?.product_name || "Unknown Product")}</td>
             <td>${escapeHtml(getMovementLabel(movement.movement_type))}</td>
-            <td>${direction === "count" ? "-" : `${formatQty(movement.quantity)} ${escapeHtml(product?.unit || "")}`}</td>
-            <td>${movement.physical_count_qty === null ? "-" : formatQty(movement.physical_count_qty)}</td>
-            <td>${calculatedBalance === null ? "-" : `${formatQty(calculatedBalance)} ${escapeHtml(product?.unit || "")}`}</td>
-            <td>${movement.discrepancy_qty === null ? "-" : formatQty(movement.discrepancy_qty)}</td>
+            <td>${
+              direction === "count"
+                ? "-"
+                : `${formatQty(movement.quantity)} ${escapeHtml(
+                    product?.unit || "",
+                  )}`
+            }</td>
+            <td>${
+              movement.physical_count_qty === null
+                ? "-"
+                : formatQty(movement.physical_count_qty)
+            }</td>
+            <td>${
+              calculatedBalance === null
+                ? "-"
+                : `${formatQty(calculatedBalance)} ${escapeHtml(product?.unit || "")}`
+            }</td>
+            <td>${
+              movement.discrepancy_qty === null
+                ? "-"
+                : formatQty(movement.discrepancy_qty)
+            }</td>
             <td>${escapeHtml(movement.reference_code || "-")}</td>
           </tr>
         `;
       })
       .join("");
 
+    const totalValue = visibleProducts.reduce(
+      (total, product) => total + product.current_stock * product.unit_cost,
+      0,
+    );
+
     const html = `
       <!doctype html>
       <html>
         <head>
           <meta charset="utf-8" />
-          <title>Kitchen Performance Report</title>
+          <title>Bar Ops Report</title>
           <style>
             * { box-sizing: border-box; }
             body {
@@ -584,7 +689,9 @@ export function KitchenOpsPanel({
               font-size: 30px;
               line-height: 1.1;
             }
-            .content { padding: 28px; }
+            .content {
+              padding: 28px;
+            }
             .grid {
               display: grid;
               grid-template-columns: repeat(4, 1fr);
@@ -617,6 +724,8 @@ export function KitchenOpsPanel({
             table {
               width: 100%;
               border-collapse: collapse;
+              overflow: hidden;
+              border-radius: 16px;
               font-size: 11px;
             }
             th {
@@ -653,23 +762,19 @@ export function KitchenOpsPanel({
         <body>
           <main class="sheet">
             <section class="header">
-              <div class="brand">👨‍🍳 Forza Unified System</div>
-              <h1>Kitchen Performance Report</h1>
+              <div class="brand">🍷 Forza Unified System</div>
+              <h1>Bar Ops Report</h1>
             </section>
 
             <section class="content">
               <div class="grid">
                 <div class="card"><div class="label">Brand</div><div class="value">${escapeHtml(selectedBrand?.name || "Selected Brand")}</div></div>
-                <div class="card"><div class="label">Branch</div><div class="value">${escapeHtml(selectedUnit?.name || "Selected Branch")}</div></div>
                 <div class="card"><div class="label">Products</div><div class="value">${visibleProducts.length}</div></div>
-                <div class="card"><div class="label">Inventory Value</div><div class="value">${formatCurrency(stats.inventoryValue)}</div></div>
-                <div class="card"><div class="label">Stock In</div><div class="value">${formatQty(stats.stockIn)}</div></div>
-                <div class="card"><div class="label">Stock Out</div><div class="value">${formatQty(stats.stockOut)}</div></div>
-                <div class="card"><div class="label">Waste</div><div class="value">${formatQty(stats.waste)}</div></div>
-                <div class="card"><div class="label">Shrinkage</div><div class="value">${formatQty(stats.shrinkage)}</div></div>
+                <div class="card"><div class="label">Movements</div><div class="value">${visibleMovements.length}</div></div>
+                <div class="card"><div class="label">Inventory Value</div><div class="value">${formatCurrency(totalValue)}</div></div>
               </div>
 
-              <h2>📦 Kitchen Product Performance</h2>
+              <h2>Product Summary</h2>
               <table>
                 <thead>
                   <tr>
@@ -689,7 +794,7 @@ export function KitchenOpsPanel({
                 </tbody>
               </table>
 
-              <h2>🔁 Synced Inventory Movements</h2>
+              <h2>Movement Ledger</h2>
               <table>
                 <thead>
                   <tr>
@@ -698,23 +803,22 @@ export function KitchenOpsPanel({
                     <th>Movement</th>
                     <th>Qty</th>
                     <th>Physical</th>
-                    <th>System</th>
+                    <th>Calculated Balance</th>
                     <th>Discrepancy</th>
                     <th>Reference</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${movementRows || `<tr><td colspan="8">No movements found.</td></tr>`}
+                  ${movementRows || `<tr><td colspan="8">No movement entries found.</td></tr>`}
                 </tbody>
               </table>
 
               <div class="footer">
-                <div>Kitchen Performance Dashboard Report</div>
+                <div>Report Type: Bar Ops Report</div>
                 <div>Developer Rights Chef Alex @FORZA 2026</div>
               </div>
             </section>
           </main>
-
           <script>
             window.onload = function () {
               window.print();
@@ -727,7 +831,7 @@ export function KitchenOpsPanel({
     const printWindow = window.open("", "_blank", "width=1200,height=900");
 
     if (!printWindow) {
-      toast.error("Allow popups to download the kitchen PDF.");
+      toast.error("Allow popups to download the bar report PDF.");
       return;
     }
 
@@ -738,312 +842,342 @@ export function KitchenOpsPanel({
 
   return (
     <div className="space-y-6">
-      <section className="glass-panel overflow-hidden rounded-[2rem] p-6">
-        <div className="relative">
-          <div className="absolute -right-16 -top-20 h-52 w-52 animate-pulse rounded-full bg-emerald-100/80 blur-3xl" />
-          <div className="absolute -bottom-24 -left-14 h-56 w-56 animate-pulse rounded-full bg-amber-100/80 blur-3xl" />
+      <section className="glass-panel rounded-[2rem] p-6">
+        <div className="grid gap-5 xl:grid-cols-[1fr_360px] xl:items-center">
+          <div>
+            <p className="text-sm font-black uppercase tracking-wide text-slate-400">
+              Bar Operations
+            </p>
+            <h1 className="mt-2 text-3xl font-black text-slate-950">
+              {selectedBrand?.name || "Selected Brand"} Bar Ops
+            </h1>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+              Bar stock and movement ledger for beverage operations. Product In,
+              transfer, adjustment, sold consumption, waste, shrinkage, and
+              stock count are calculated by product UOM.
+            </p>
+          </div>
 
-          <div className="relative z-10 grid gap-5 xl:grid-cols-[1fr_360px] xl:items-center">
-            <div>
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-sm font-black text-slate-700 shadow-sm">
-                <Sparkles size={16} />
-                Synced from Inventory
-              </div>
-
-              <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-                Kitchen Performance Dashboard
-              </p>
-              <h1 className="mt-2 text-3xl font-black text-slate-950 md:text-5xl">
-                {selectedBrand?.name || "Selected Brand"} Kitchen Ops
-              </h1>
-              <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600">
-                Live kitchen performance from Inventory movements. This page is
-                read-only and displays kitchen stock health, usage, waste,
-                shrinkage, discrepancy, expiry, and movement performance.
-              </p>
-            </div>
-
-            <div className="rounded-[2rem] border border-slate-200 bg-white/85 p-5 shadow-sm">
-              <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-400">
-                Branch Unit
-              </label>
-              <select
-                value={selectedUnitId}
-                onChange={(event) => setSelectedUnitId(event.target.value)}
-                className="forza-input"
-              >
-                {units.map((unit) => (
-                  <option key={unit.id} value={unit.id}>
-                    {unit.name}
-                  </option>
-                ))}
-              </select>
-
-              <div className="mt-4 rounded-2xl bg-slate-50 p-4">
-                <p className="text-xs font-black uppercase tracking-wide text-slate-400">
-                  Mode
-                </p>
-                <p className="mt-1 text-sm font-black text-slate-950">
-                  {role === "boh_staff"
-                    ? "BOH Performance View"
-                    : "Kitchen Performance Control"}
-                </p>
-              </div>
-            </div>
+          <div className="rounded-[2rem] border border-slate-200 bg-white/80 p-5 shadow-sm">
+            <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-400">
+              Branch Unit
+            </label>
+            <select
+              value={selectedUnitId}
+              onChange={(event) => setSelectedUnitId(event.target.value)}
+              className="forza-input"
+            >
+              {units.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <MetricCard
-          label="Kitchen Inventory Value"
-          value={formatCurrency(stats.inventoryValue)}
+          label="Bar Products"
+          value={String(inventoryStats.totalProducts)}
+          icon={<GlassWater size={22} />}
+        />
+        <MetricCard
+          label="Bar Value"
+          value={formatCurrency(inventoryStats.value)}
           icon={<CheckCircle2 size={22} />}
         />
         <MetricCard
-          label="Stock In"
-          value={formatQty(stats.stockIn)}
-          icon={<TrendingUp size={22} />}
-        />
-        <MetricCard
-          label="Stock Out"
-          value={formatQty(stats.stockOut)}
-          icon={<TrendingDown size={22} />}
-        />
-        <MetricCard
-          label="Today Activity"
-          value={String(stats.todayActivity)}
-          icon={<ClipboardList size={22} />}
-        />
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-        <MetricCard
-          label="Kitchen Products"
-          value={String(stats.productCount)}
-          icon={<Boxes size={22} />}
-        />
-        <MetricCard
           label="Low Stock"
-          value={String(stats.lowStock)}
+          value={String(inventoryStats.lowStock)}
           icon={<AlertTriangle size={22} />}
         />
         <MetricCard
-          label="Over Stock"
-          value={String(stats.overStocked)}
+          label="Over Stocked"
+          value={String(inventoryStats.overStocked)}
           icon={<Boxes size={22} />}
         />
         <MetricCard
           label="Expiry Watch"
-          value={String(stats.expiring)}
+          value={String(inventoryStats.expiring)}
           icon={<CalendarClock size={22} />}
         />
-        <MetricCard
-          label="Waste"
-          value={formatQty(stats.waste)}
-          icon={<ShieldAlert size={22} />}
-        />
-        <MetricCard
-          label="Shrinkage"
-          value={formatQty(stats.shrinkage)}
-          icon={<BarChart3 size={22} />}
-        />
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1fr_420px]">
-        <div className="glass-panel rounded-[2rem] p-6">
-          <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-                Performance Search
-              </p>
-              <h2 className="text-2xl font-black text-slate-950">
-                Kitchen Product Performance
-              </h2>
-            </div>
-
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <div className="relative">
-                <Search
-                  size={18}
-                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  className="forza-input pl-11 xl:min-w-[300px]"
-                  placeholder="Search product, SKU, supplier..."
-                />
-              </div>
-
-              <button
-                type="button"
-                onClick={downloadKitchenPdf}
-                className="forza-button-hover inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl"
-              >
-                <Download size={18} />
-                PDF
-              </button>
-            </div>
+      <section className="glass-panel rounded-[2rem] p-6">
+        <div className="mb-5 grid gap-4 xl:grid-cols-[1fr_auto] xl:items-center">
+          <div>
+            <p className="text-sm font-black uppercase tracking-wide text-slate-400">
+              Bar Movement Entry
+            </p>
+            <h2 className="text-2xl font-black text-slate-950">
+              Product In / Sold / Waste / Count
+            </h2>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            {topLowestStock.map((product) => {
-              const stock = getStockStatus(product);
-              const expiry = getExpiryStatus(product.expiry_date);
+          <button
+            type="button"
+            onClick={downloadBarPdf}
+            className="forza-button-hover inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl"
+          >
+            <Download size={18} />
+            Download PDF
+          </button>
+        </div>
 
-              return (
-                <div
-                  key={product.id}
-                  className={`forza-transition forza-hover rounded-3xl border p-5 shadow-sm ${stock.cardClassName}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="font-black text-slate-950">
+        <form
+          onSubmit={saveMovement}
+          className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
+        >
+          <Field label="Product">
+            <select
+              value={movementProductId}
+              onChange={(event) => {
+                const nextProduct = productList.find(
+                  (product) => product.id === event.target.value,
+                );
+
+                setMovementProductId(event.target.value);
+                setMovementUnitCost(String(nextProduct?.unit_cost || 0));
+              }}
+              className="forza-input"
+            >
+              <option value="">Select product</option>
+              {visibleProducts.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.product_name} — {product.sku}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Movement Type">
+            <select
+              value={movementType}
+              onChange={(event) =>
+                setMovementType(event.target.value as InventoryMovementType)
+              }
+              className="forza-input"
+            >
+              {movementTypes.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          {getMovementDirection(movementType) === "count" ? (
+            <Field label="Physical Count Qty">
+              <input
+                type="number"
+                step="0.001"
+                value={physicalCountQty}
+                onChange={(event) => setPhysicalCountQty(event.target.value)}
+                className="forza-input"
+              />
+            </Field>
+          ) : (
+            <Field
+              label={`Movement Qty${
+                selectedMovementProduct?.unit
+                  ? ` (${selectedMovementProduct.unit})`
+                  : ""
+              }`}
+            >
+              <input
+                type="number"
+                step="0.001"
+                value={movementQty}
+                onChange={(event) => setMovementQty(event.target.value)}
+                className="forza-input"
+              />
+            </Field>
+          )}
+
+          <Field label="Unit Cost (€)">
+            <input
+              type="number"
+              step="0.0001"
+              value={movementUnitCost}
+              onChange={(event) => setMovementUnitCost(event.target.value)}
+              className="forza-input"
+            />
+          </Field>
+
+          <Field label="Movement Date">
+            <input
+              type="date"
+              value={movementDate}
+              onChange={(event) => setMovementDate(event.target.value)}
+              className="forza-input"
+            />
+          </Field>
+
+          <Field label="Reference">
+            <input
+              value={movementReference}
+              onChange={(event) => setMovementReference(event.target.value)}
+              className="forza-input"
+              placeholder="Invoice, transfer, POS, waste ref..."
+            />
+          </Field>
+
+          <div className="md:col-span-2">
+            <Field label="Notes">
+              <input
+                value={movementNotes}
+                onChange={(event) => setMovementNotes(event.target.value)}
+                className="forza-input"
+                placeholder="Movement note"
+              />
+            </Field>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white/80 p-4 md:col-span-2 xl:col-span-4">
+            <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+              Current Movement UOM
+            </p>
+            <p className="mt-2 text-sm font-bold text-slate-700">
+              {selectedMovementProduct
+                ? `${selectedMovementProduct.product_name} uses ${selectedMovementProduct.unit}. Movement quantity will be calculated in ${selectedMovementProduct.unit}.`
+                : "Select a product to see the movement UOM."}
+            </p>
+          </div>
+
+          <div className="md:col-span-2 xl:col-span-4">
+            <button
+              type="submit"
+              disabled={isMovementSaving}
+              className="forza-button-hover flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Save size={18} />
+              {isMovementSaving ? "Saving Movement..." : "Save Movement"}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="glass-panel rounded-[2rem] p-6">
+        <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-sm font-black uppercase tracking-wide text-slate-400">
+              Bar Product List
+            </p>
+            <h2 className="text-2xl font-black text-slate-950">
+              Bottle / Beverage Balance
+            </h2>
+          </div>
+
+          <div className="relative">
+            <Search
+              size={18}
+              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="forza-input pl-11 xl:min-w-[320px]"
+              placeholder="Search product, SKU, supplier..."
+            />
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1050px] border-separate border-spacing-y-3">
+            <thead>
+              <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-400">
+                <th className="px-4">Product</th>
+                <th className="px-4">SKU</th>
+                <th className="px-4">Actual Qty Left</th>
+                <th className="px-4">Min</th>
+                <th className="px-4">Max</th>
+                <th className="px-4">Cost</th>
+                <th className="px-4">Value</th>
+                <th className="px-4">Stock Status</th>
+                <th className="px-4">Expiry</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {visibleProducts.map((product) => {
+                const stockStatus = getStockStatus(product);
+                const expiryStatus = getExpiryStatus(product.expiry_date);
+
+                return (
+                  <tr key={product.id} className="rounded-2xl bg-white shadow-sm">
+                    <td className="rounded-l-2xl px-4 py-4">
+                      <p className="text-sm font-black text-slate-950">
                         {product.product_name}
-                      </h3>
-                      <p className="mt-1 text-xs font-bold uppercase tracking-wide text-slate-500">
-                        {product.sku}
                       </p>
-                    </div>
-                    <PieChart size={22} className="text-slate-500" />
-                  </div>
+                      <p className="mt-1 text-xs font-bold text-slate-400">
+                        {product.supplier_name || "No supplier"}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
+                      {product.sku}
+                    </td>
+                    <td className="px-4 py-4 text-sm font-black text-slate-950">
+                      {formatQty(product.current_stock)} {product.unit}
+                    </td>
+                    <td className="px-4 py-4 text-sm font-bold text-slate-600">
+                      {formatQty(product.minimum_stock)}
+                    </td>
+                    <td className="px-4 py-4 text-sm font-bold text-slate-600">
+                      {formatQty(product.maximum_stock)}
+                    </td>
+                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
+                      {formatCurrency(product.unit_cost)}
+                    </td>
+                    <td className="px-4 py-4 text-sm font-black text-slate-950">
+                      {formatCurrency(product.current_stock * product.unit_cost)}
+                    </td>
+                    <td className="px-4 py-4">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-black ${stockStatus.className}`}
+                      >
+                        {stockStatus.label}
+                      </span>
+                    </td>
+                    <td className="rounded-r-2xl px-4 py-4">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-black ${expiryStatus.className}`}
+                      >
+                        {expiryStatus.label}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
 
-                  <p className="mt-4 text-3xl font-black text-slate-950">
-                    {formatQty(product.current_stock)} {product.unit}
-                  </p>
-
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-black ${stock.className}`}
-                    >
-                      {stock.label}
-                    </span>
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-black ${expiry.className}`}
-                    >
-                      {expiry.label}
-                    </span>
-                  </div>
-
-                  <p className="mt-4 text-sm font-bold text-slate-600">
-                    Value: {formatCurrency(product.current_stock * product.unit_cost)}
-                  </p>
-                </div>
-              );
-            })}
-
-            {topLowestStock.length === 0 ? (
-              <div className="rounded-3xl bg-white/80 p-6 text-sm font-bold text-slate-500 md:col-span-2">
-                No kitchen products found.
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="glass-panel rounded-[2rem] p-6">
-          <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-            Top Usage
-          </p>
-          <h2 className="mt-2 text-2xl font-black text-slate-950">
-            Highest Kitchen Consumption
-          </h2>
-
-          <div className="mt-5 space-y-3">
-            {topConsumptionProducts.map((item) => (
-              <div
-                key={item.product.id}
-                className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm"
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <h3 className="font-black text-slate-950">
-                      {item.product.product_name}
-                    </h3>
-                    <p className="mt-1 text-sm font-bold text-slate-500">
-                      {item.product.sku}
-                    </p>
-                  </div>
-
-                  <p className="text-sm font-black text-slate-950">
-                    {formatQty(item.quantity)} {item.product.unit}
-                  </p>
-                </div>
-              </div>
-            ))}
-
-            {topConsumptionProducts.length === 0 ? (
-              <div className="rounded-3xl bg-white/80 p-5 text-sm font-bold text-slate-500">
-                No kitchen consumption movements found.
-              </div>
-            ) : null}
-          </div>
+              {visibleProducts.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="rounded-2xl bg-white px-4 py-8 text-center text-sm font-bold text-slate-500"
+                  >
+                    No bar products found for this branch.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
       </section>
 
       <section className="glass-panel rounded-[2rem] p-6">
         <div className="mb-5">
           <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-            Critical Kitchen Stock
+            Latest Bar Movements
           </p>
           <h2 className="text-2xl font-black text-slate-950">
-            Items Requiring Attention
-          </h2>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {criticalProducts.slice(0, 9).map((product) => {
-            const stock = getStockStatus(product);
-            const expiry = getExpiryStatus(product.expiry_date);
-
-            return (
-              <div
-                key={product.id}
-                className="forza-transition forza-hover rounded-3xl border border-slate-200 bg-white/80 p-5 shadow-sm"
-              >
-                <h3 className="font-black text-slate-950">
-                  {product.product_name}
-                </h3>
-                <p className="mt-1 text-sm font-bold text-slate-500">
-                  Qty Left: {formatQty(product.current_stock)} {product.unit}
-                </p>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-black ${stock.className}`}
-                  >
-                    {stock.label}
-                  </span>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-black ${expiry.className}`}
-                  >
-                    {expiry.label}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-
-          {criticalProducts.length === 0 ? (
-            <div className="rounded-3xl bg-white/80 p-6 text-sm font-bold text-slate-500 md:col-span-2 xl:col-span-3">
-              No critical kitchen stock issues found.
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="glass-panel rounded-[2rem] p-6">
-        <div className="mb-5">
-          <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-            Synced Inventory Movement Feed
-          </p>
-          <h2 className="text-2xl font-black text-slate-950">
-            Latest Kitchen Movements
+            Calculated Movement Ledger
           </h2>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1000px] border-separate border-spacing-y-3">
+          <table className="w-full min-w-[1100px] border-separate border-spacing-y-3">
             <thead>
               <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-400">
                 <th className="px-4">Date</th>
@@ -1054,31 +1188,50 @@ export function KitchenOpsPanel({
                 <th className="px-4">Calculated Balance</th>
                 <th className="px-4">Discrepancy</th>
                 <th className="px-4">Reference</th>
+                <th className="px-4">Notes</th>
               </tr>
             </thead>
 
             <tbody>
               {visibleMovements.map((movement) => {
-                const product = visibleProducts.find(
+                const product = productList.find(
                   (item) => item.id === movement.product_id,
                 );
 
                 const direction = getMovementDirection(movement.movement_type);
-                const discrepancy = getDiscrepancyStatus(
+                const discrepancyStatus = getDiscrepancyStatus(
                   movement.discrepancy_qty,
                 );
                 const calculatedBalance = getCalculatedMovementBalance(movement);
 
                 return (
-                  <tr key={movement.id} className="rounded-2xl bg-white shadow-sm">
+                  <tr
+                    key={movement.id}
+                    className="rounded-2xl bg-white shadow-sm"
+                  >
                     <td className="rounded-l-2xl px-4 py-4 text-sm font-bold text-slate-700">
                       {movement.movement_date}
                     </td>
-                    <td className="px-4 py-4 text-sm font-black text-slate-950">
-                      {product?.product_name || "Unknown Product"}
+                    <td className="px-4 py-4">
+                      <p className="text-sm font-black text-slate-950">
+                        {product?.product_name || "Unknown Product"}
+                      </p>
+                      <p className="mt-1 text-xs font-bold text-slate-400">
+                        {product?.sku || "No SKU"}
+                      </p>
                     </td>
-                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                      {getMovementLabel(movement.movement_type)}
+                    <td className="px-4 py-4">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-black ${
+                          direction === "in"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : direction === "out"
+                              ? "bg-red-50 text-red-700"
+                              : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {getMovementLabel(movement.movement_type)}
+                      </span>
                     </td>
                     <td className="px-4 py-4 text-sm font-black text-slate-950">
                       {direction === "count"
@@ -1097,15 +1250,21 @@ export function KitchenOpsPanel({
                     </td>
                     <td className="px-4 py-4">
                       <span
-                        className={`rounded-full px-3 py-1 text-xs font-black ${discrepancy.className}`}
+                        className={`rounded-full px-3 py-1 text-xs font-black ${discrepancyStatus.className}`}
                       >
                         {movement.discrepancy_qty === null
                           ? "-"
-                          : `${formatQty(movement.discrepancy_qty)} ${discrepancy.label}`}
+                          : formatQty(movement.discrepancy_qty)}{" "}
+                        {movement.discrepancy_qty === null
+                          ? ""
+                          : discrepancyStatus.label}
                       </span>
                     </td>
-                    <td className="rounded-r-2xl px-4 py-4 text-sm font-bold text-slate-600">
+                    <td className="px-4 py-4 text-sm font-bold text-slate-600">
                       {movement.reference_code || "-"}
+                    </td>
+                    <td className="rounded-r-2xl px-4 py-4 text-sm font-bold text-slate-600">
+                      {movement.notes || "-"}
                     </td>
                   </tr>
                 );
@@ -1114,10 +1273,10 @@ export function KitchenOpsPanel({
               {visibleMovements.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="rounded-2xl bg-white px-4 py-8 text-center text-sm font-bold text-slate-500"
                   >
-                    No kitchen movements found.
+                    No bar movements found for this branch.
                   </td>
                 </tr>
               ) : null}
@@ -1132,7 +1291,7 @@ export function KitchenOpsPanel({
 type MetricCardProps = {
   label: string;
   value: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
 };
 
 function MetricCard({ label, value, icon }: MetricCardProps) {
@@ -1143,6 +1302,20 @@ function MetricCard({ label, value, icon }: MetricCardProps) {
       </div>
       <p className="text-sm font-bold text-slate-400">{label}</p>
       <p className="mt-2 text-2xl font-black text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+type FieldProps = {
+  label: string;
+  children: ReactNode;
+};
+
+function Field({ label, children }: FieldProps) {
+  return (
+    <div>
+      <label className="text-sm font-bold text-slate-700">{label}</label>
+      <div className="mt-2">{children}</div>
     </div>
   );
 }
