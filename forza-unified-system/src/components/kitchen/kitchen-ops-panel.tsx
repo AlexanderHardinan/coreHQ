@@ -148,6 +148,36 @@ function getMovementDirection(type: string) {
   return "count";
 }
 
+function getMovementBalanceEffect(movement: KitchenMovement) {
+  const direction = getMovementDirection(movement.movement_type);
+  const quantity = Number(movement.quantity || 0);
+
+  if (direction === "in") {
+    return quantity;
+  }
+
+  if (direction === "out") {
+    return quantity * -1;
+  }
+
+  return 0;
+}
+
+function sortMovementsOldestFirst(movements: KitchenMovement[]) {
+  return [...movements].sort((a, b) => {
+    const dateCompare = a.movement_date.localeCompare(b.movement_date);
+
+    if (dateCompare !== 0) {
+      return dateCompare;
+    }
+
+    const createdA = a.created_at || "";
+    const createdB = b.created_at || "";
+
+    return createdA.localeCompare(createdB);
+  });
+}
+
 function getStockStatus(product: KitchenProduct) {
   if (
     Number(product.maximum_stock || 0) > 0 &&
@@ -281,6 +311,41 @@ export function KitchenOpsPanel({
       ),
     [movements, visibleProductIds],
   );
+
+  const calculatedMovementBalanceMap = useMemo(() => {
+    const map = new Map<string, number>();
+    const movementsByProduct = new Map<string, KitchenMovement[]>();
+
+    movements.forEach((movement) => {
+      const current = movementsByProduct.get(movement.product_id) || [];
+      current.push(movement);
+      movementsByProduct.set(movement.product_id, current);
+    });
+
+    movementsByProduct.forEach((productMovements) => {
+      let runningBalance = 0;
+
+      sortMovementsOldestFirst(productMovements).forEach((movement) => {
+        const direction = getMovementDirection(movement.movement_type);
+
+        if (direction === "count") {
+          if (movement.physical_count_qty !== null) {
+            runningBalance = Number(movement.physical_count_qty || 0);
+          }
+        } else {
+          runningBalance += getMovementBalanceEffect(movement);
+        }
+
+        map.set(movement.id, runningBalance);
+      });
+    });
+
+    return map;
+  }, [movements]);
+
+  function getCalculatedMovementBalance(movement: KitchenMovement) {
+    return calculatedMovementBalanceMap.get(movement.id) ?? null;
+  }
 
   const todayMovements = useMemo(
     () =>
@@ -463,6 +528,7 @@ export function KitchenOpsPanel({
           (item) => item.id === movement.product_id,
         );
         const direction = getMovementDirection(movement.movement_type);
+        const calculatedBalance = getCalculatedMovementBalance(movement);
 
         return `
           <tr>
@@ -471,7 +537,7 @@ export function KitchenOpsPanel({
             <td>${escapeHtml(getMovementLabel(movement.movement_type))}</td>
             <td>${direction === "count" ? "-" : `${formatQty(movement.quantity)} ${escapeHtml(product?.unit || "")}`}</td>
             <td>${movement.physical_count_qty === null ? "-" : formatQty(movement.physical_count_qty)}</td>
-            <td>${movement.system_balance_after === null ? "-" : formatQty(movement.system_balance_after)}</td>
+            <td>${calculatedBalance === null ? "-" : `${formatQty(calculatedBalance)} ${escapeHtml(product?.unit || "")}`}</td>
             <td>${movement.discrepancy_qty === null ? "-" : formatQty(movement.discrepancy_qty)}</td>
             <td>${escapeHtml(movement.reference_code || "-")}</td>
           </tr>
@@ -632,7 +698,7 @@ export function KitchenOpsPanel({
                     <th>Movement</th>
                     <th>Qty</th>
                     <th>Physical</th>
-                    <th>System</th>
+                    <th>Calculated Balance</th>
                     <th>Discrepancy</th>
                     <th>Reference</th>
                   </tr>
@@ -985,7 +1051,7 @@ export function KitchenOpsPanel({
                 <th className="px-4">Movement</th>
                 <th className="px-4">Qty</th>
                 <th className="px-4">Physical</th>
-                <th className="px-4">System</th>
+                <th className="px-4">Calculated Balance</th>
                 <th className="px-4">Discrepancy</th>
                 <th className="px-4">Reference</th>
               </tr>
@@ -1001,6 +1067,7 @@ export function KitchenOpsPanel({
                 const discrepancy = getDiscrepancyStatus(
                   movement.discrepancy_qty,
                 );
+                const calculatedBalance = getCalculatedMovementBalance(movement);
 
                 return (
                   <tr key={movement.id} className="rounded-2xl bg-white shadow-sm">
@@ -1023,10 +1090,10 @@ export function KitchenOpsPanel({
                         ? "-"
                         : formatQty(movement.physical_count_qty)}
                     </td>
-                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                      {movement.system_balance_after === null
+                    <td className="px-4 py-4 text-sm font-black text-slate-950">
+                      {calculatedBalance === null
                         ? "-"
-                        : formatQty(movement.system_balance_after)}
+                        : `${formatQty(calculatedBalance)} ${product?.unit || ""}`}
                     </td>
                     <td className="px-4 py-4">
                       <span
