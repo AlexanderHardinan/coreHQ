@@ -386,6 +386,36 @@ function getMovementDirection(type: InventoryMovementType) {
   return movementTypes.find((item) => item.value === type)?.direction || "count";
 }
 
+function getMovementBalanceEffect(movement: InventoryMovement) {
+  const direction = getMovementDirection(movement.movement_type);
+  const quantity = Number(movement.quantity || 0);
+
+  if (direction === "in") {
+    return quantity;
+  }
+
+  if (direction === "out") {
+    return quantity * -1;
+  }
+
+  return 0;
+}
+
+function sortMovementsOldestFirst(movements: InventoryMovement[]) {
+  return [...movements].sort((a, b) => {
+    const dateCompare = a.movement_date.localeCompare(b.movement_date);
+
+    if (dateCompare !== 0) {
+      return dateCompare;
+    }
+
+    const createdA = a.created_at || "";
+    const createdB = b.created_at || "";
+
+    return createdA.localeCompare(createdB);
+  });
+}
+
 function isDuplicateInventoryError(message: string) {
   const normalizedMessage = message.toLowerCase();
 
@@ -572,6 +602,37 @@ export function InventoryPanel({
       visibleProductIds.includes(movement.product_id),
     );
   }, [movementList, visibleProducts]);
+
+  const calculatedMovementBalanceMap = useMemo(() => {
+    const map = new Map<string, number>();
+    const movementsByProduct = new Map<string, InventoryMovement[]>();
+
+    movementList.forEach((movement) => {
+      const current = movementsByProduct.get(movement.product_id) || [];
+      current.push(movement);
+      movementsByProduct.set(movement.product_id, current);
+    });
+
+    movementsByProduct.forEach((productMovements) => {
+      let runningBalance = 0;
+
+      sortMovementsOldestFirst(productMovements).forEach((movement) => {
+        const direction = getMovementDirection(movement.movement_type);
+
+        if (direction === "count") {
+          if (movement.physical_count_qty !== null) {
+            runningBalance = Number(movement.physical_count_qty || 0);
+          }
+        } else {
+          runningBalance += getMovementBalanceEffect(movement);
+        }
+
+        map.set(movement.id, runningBalance);
+      });
+    });
+
+    return map;
+  }, [movementList]);
 
   const reportProducts = useMemo(() => {
     if (reportScope === "product") {
@@ -906,6 +967,10 @@ export function InventoryPanel({
     };
   }
 
+  function getCalculatedMovementBalance(movement: InventoryMovement) {
+    return calculatedMovementBalanceMap.get(movement.id) ?? null;
+  }
+
   function downloadInventoryPdf() {
     if (reportProducts.length === 0 && reportMovements.length === 0) {
       toast.error("No inventory data available for this PDF filter.");
@@ -965,6 +1030,7 @@ export function InventoryPanel({
       .map((movement) => {
         const product = productList.find((item) => item.id === movement.product_id);
         const direction = getMovementDirection(movement.movement_type);
+        const calculatedBalance = getCalculatedMovementBalance(movement);
 
         return `
           <tr>
@@ -984,9 +1050,9 @@ export function InventoryPanel({
                 : formatQty(movement.physical_count_qty)
             }</td>
             <td>${
-              movement.system_balance_after === null
+              calculatedBalance === null
                 ? "-"
-                : formatQty(movement.system_balance_after)
+                : `${formatQty(calculatedBalance)} ${escapeHtml(product?.unit || "")}`
             }</td>
             <td>${
               movement.discrepancy_qty === null
@@ -1183,7 +1249,7 @@ export function InventoryPanel({
                     <th>Movement</th>
                     <th>Qty</th>
                     <th>Physical</th>
-                    <th>System Balance</th>
+                    <th>Calculated Balance</th>
                     <th>Discrepancy</th>
                     <th>Reference</th>
                   </tr>
@@ -2233,7 +2299,7 @@ export function InventoryPanel({
                 <th className="px-4">Movement</th>
                 <th className="px-4">Qty</th>
                 <th className="px-4">Physical</th>
-                <th className="px-4">System Balance</th>
+                <th className="px-4">Calculated Balance</th>
                 <th className="px-4">Discrepancy</th>
                 <th className="px-4">Reference</th>
                 <th className="px-4">Notes</th>
@@ -2250,6 +2316,7 @@ export function InventoryPanel({
                 const discrepancyStatus = getDiscrepancyStatus(
                   movement.discrepancy_qty,
                 );
+                const calculatedBalance = getCalculatedMovementBalance(movement);
 
                 return (
                   <tr
@@ -2290,10 +2357,10 @@ export function InventoryPanel({
                         ? "-"
                         : formatQty(movement.physical_count_qty)}
                     </td>
-                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                      {movement.system_balance_after === null
+                    <td className="px-4 py-4 text-sm font-black text-slate-950">
+                      {calculatedBalance === null
                         ? "-"
-                        : formatQty(movement.system_balance_after)}
+                        : `${formatQty(calculatedBalance)} ${product?.unit || ""}`}
                     </td>
                     <td className="px-4 py-4">
                       <span
