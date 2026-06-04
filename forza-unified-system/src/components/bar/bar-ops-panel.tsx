@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Download,
+  GlassWater,
   PieChart,
   Search,
   ShieldAlert,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { UserRole } from "@/lib/auth/permissions";
+import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 export type BarProduct = {
   id: string;
@@ -274,6 +276,10 @@ export function BarOpsPanel({
   products,
   movements,
 }: BarOpsPanelProps) {
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+
+  const [productList, setProductList] = useState<BarProduct[]>(products);
+  const [movementList, setMovementList] = useState<BarMovement[]>(movements);
   const [selectedUnitId, setSelectedUnitId] = useState(units[0]?.id || "");
   const [search, setSearch] = useState("");
 
@@ -282,10 +288,114 @@ export function BarOpsPanel({
     [selectedUnitId, units],
   );
 
+  useEffect(() => {
+    setProductList(products);
+  }, [products]);
+
+  useEffect(() => {
+    setMovementList(movements);
+  }, [movements]);
+
+  useEffect(() => {
+    if (!selectedUnitId && units[0]?.id) {
+      setSelectedUnitId(units[0].id);
+    }
+  }, [selectedUnitId, units]);
+
+  async function refreshBarData() {
+    if (!selectedBrand?.id) {
+      return;
+    }
+
+    const { data: refreshedProducts, error: productsError } = await supabase
+      .from("products")
+      .select(
+        "id, brand_id, brand_unit_id, category_id, ops_area, product_name, sku, unit, supplier_name, current_stock, minimum_stock, maximum_stock, unit_cost, expiry_date, is_active",
+      )
+      .eq("brand_id", selectedBrand.id)
+      .eq("ops_area", "bar")
+      .eq("is_active", true)
+      .order("product_name", { ascending: true });
+
+    if (productsError) {
+      toast.error(productsError.message);
+      return;
+    }
+
+    const nextProducts = (refreshedProducts || []) as BarProduct[];
+
+    setProductList(nextProducts);
+
+    const productIds = nextProducts.map((product) => product.id);
+
+    if (productIds.length === 0) {
+      setMovementList([]);
+      return;
+    }
+
+    const { data: refreshedMovements, error: movementsError } = await supabase
+      .from("inventory_movements")
+      .select(
+        "id, brand_id, brand_unit_id, product_id, ops_area, movement_type, quantity, unit_cost, reference_code, notes, movement_date, system_balance_after, physical_count_qty, discrepancy_qty, created_at",
+      )
+      .eq("brand_id", selectedBrand.id)
+      .eq("ops_area", "bar")
+      .in("product_id", productIds)
+      .order("movement_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(150);
+
+    if (movementsError) {
+      toast.error(movementsError.message);
+      return;
+    }
+
+    setMovementList((refreshedMovements || []) as BarMovement[]);
+  }
+
+  useEffect(() => {
+    if (!selectedBrand?.id) {
+      return;
+    }
+
+    const channel = supabase
+      .channel(`bar-ops-realtime-${selectedBrand.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "products",
+          filter: `brand_id=eq.${selectedBrand.id}`,
+        },
+        () => {
+          refreshBarData();
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "inventory_movements",
+          filter: `brand_id=eq.${selectedBrand.id}`,
+        },
+        () => {
+          refreshBarData();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBrand?.id]);
+
   const visibleProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return products.filter((product) => {
+    return productList.filter((product) => {
       const matchesUnit = product.brand_unit_id === selectedUnitId;
       const matchesArea = product.ops_area === "bar";
       const matchesSearch =
@@ -296,7 +406,7 @@ export function BarOpsPanel({
 
       return matchesUnit && matchesArea && product.is_active && matchesSearch;
     });
-  }, [products, search, selectedUnitId]);
+  }, [productList, search, selectedUnitId]);
 
   const visibleProductIds = useMemo(
     () => visibleProducts.map((product) => product.id),
@@ -305,17 +415,17 @@ export function BarOpsPanel({
 
   const visibleMovements = useMemo(
     () =>
-      movements.filter((movement) =>
+      movementList.filter((movement) =>
         visibleProductIds.includes(movement.product_id),
       ),
-    [movements, visibleProductIds],
+    [movementList, visibleProductIds],
   );
 
   const calculatedMovementBalanceMap = useMemo(() => {
     const map = new Map<string, number>();
     const movementsByProduct = new Map<string, BarMovement[]>();
 
-    movements.forEach((movement) => {
+    movementList.forEach((movement) => {
       const current = movementsByProduct.get(movement.product_id) || [];
       current.push(movement);
       movementsByProduct.set(movement.product_id, current);
@@ -340,7 +450,7 @@ export function BarOpsPanel({
     });
 
     return map;
-  }, [movements]);
+  }, [movementList]);
 
   function getCalculatedMovementBalance(movement: BarMovement) {
     return calculatedMovementBalanceMap.get(movement.id) ?? null;
@@ -766,7 +876,7 @@ export function BarOpsPanel({
             <div>
               <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-sm font-black text-slate-700 shadow-sm">
                 <Sparkles size={16} />
-                Synced from Inventory
+                Realtime Synced from Inventory
               </div>
 
               <p className="text-sm font-black uppercase tracking-wide text-slate-400">
@@ -776,8 +886,8 @@ export function BarOpsPanel({
                 {selectedBrand?.name || "Selected Brand"} Bar Ops
               </h1>
               <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600">
-                Live bar performance from Inventory movements. This page is
-                read-only and displays bar stock health, usage, waste,
+                Live bar performance from Inventory movements. This page updates
+                in realtime and displays bar stock health, usage, waste,
                 shrinkage, discrepancy, expiry, and movement performance.
               </p>
             </div>
@@ -804,8 +914,8 @@ export function BarOpsPanel({
                 </p>
                 <p className="mt-1 text-sm font-black text-slate-950">
                   {role === "foh_staff"
-                    ? "FOH Performance View"
-                    : "Bar Performance Control"}
+                    ? "FOH Realtime Performance View"
+                    : "Bar Realtime Performance Control"}
                 </p>
               </div>
             </div>
