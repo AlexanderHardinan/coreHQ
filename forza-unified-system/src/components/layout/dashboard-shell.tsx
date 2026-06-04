@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { ChefAlexWidget } from "@/components/ai-chef/chef-alex-widget";
 import type { AppModule, UserRole } from "@/lib/auth/permissions";
 import { roleLabels } from "@/lib/auth/permissions";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
@@ -364,6 +365,8 @@ export function DashboardShell({
           {children}
         </section>
       </div>
+
+      <ChefAlexWidget />
 
       <style jsx>{`
         @keyframes globalLoading {
