@@ -82,7 +82,6 @@ export type InventoryMovementType =
   | "stock_count";
 
 type BarOpsPanelProps = {
-  userId: string;
   role: UserRole;
   selectedBrand: {
     id: string;
