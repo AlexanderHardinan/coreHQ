@@ -146,6 +146,11 @@ type ProductGroupValue =
   | "Dry Good"
   | "Fruit"
   | "Vegetable"
+  | "Cleaning"
+  | "Utilities"
+  | "Maintenance"
+  | "Packaging"
+  | "Office Supplies"
   | "Others";
 
 const opsAreaLabels: Record<OpsArea, string> = {
@@ -203,7 +208,28 @@ const productGroupOptions: Record<
     { value: "Fruit", label: "Fruit", icon: <Apple size={17} /> },
     { value: "Vegetable", label: "Vegetable", icon: <Carrot size={17} /> },
   ],
-  Others: [{ value: "Others", label: "Others", icon: <Package size={17} /> }],
+  Others: [
+    { value: "Cleaning", label: "Cleaning", icon: <Package size={17} /> },
+    { value: "Utilities", label: "Utilities", icon: <Droplets size={17} /> },
+    {
+      value: "Maintenance",
+      label: "Maintenance",
+      icon: <ClipboardList size={17} />,
+    },
+    { value: "Packaging", label: "Packaging", icon: <Package size={17} /> },
+    {
+      value: "Office Supplies",
+      label: "Office Supplies",
+      icon: <Tags size={17} />,
+    },
+    { value: "Others", label: "Others", icon: <Package size={17} /> },
+  ],
+};
+
+const productCategoryOptionsByArea: Record<OpsArea, ProductCategoryValue[]> = {
+  kitchen: ["Food"],
+  bar: ["Beverage"],
+  global: ["Others"],
 };
 
 const movementTypes: {
@@ -436,6 +462,22 @@ function isDuplicateSkuError(message: string) {
   );
 }
 
+function getCategoryOptionsForOpsArea(area: OpsArea) {
+  const allowedCategories = productCategoryOptionsByArea[area] || ["Food"];
+
+  return productCategoryOptions.filter((category) =>
+    allowedCategories.includes(category.value),
+  );
+}
+
+function getDefaultCategoryForOpsArea(area: OpsArea): ProductCategoryValue {
+  return productCategoryOptionsByArea[area]?.[0] || "Food";
+}
+
+function getDefaultGroupForCategory(category: ProductCategoryValue) {
+  return productGroupOptions[category]?.[0]?.value || "Others";
+}
+
 function getCategoryIcon(category: ProductCategoryValue) {
   return (
     productCategoryOptions.find((item) => item.value === category)?.icon || (
@@ -452,18 +494,23 @@ function getGroupIcon(group: ProductGroupValue) {
   );
 }
 
-function normalizeProductCategory(
+function normalizeProductCategoryForArea(
+  area: OpsArea,
   value: string | null | undefined,
 ): ProductCategoryValue {
-  if (value === "Beverage") {
-    return "Beverage";
+  const allowedCategories = productCategoryOptionsByArea[area] || ["Food"];
+
+  if (
+    value === "Food" ||
+    value === "Beverage" ||
+    value === "Others"
+  ) {
+    if (allowedCategories.includes(value)) {
+      return value;
+    }
   }
 
-  if (value === "Others") {
-    return "Others";
-  }
-
-  return "Food";
+  return getDefaultCategoryForOpsArea(area);
 }
 
 function normalizeProductGroup(
@@ -489,10 +536,12 @@ export function InventoryPanel({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const allowedOpsAreas = getAllowedOpsAreas(role);
+  const allowedOpsAreas = useMemo(() => getAllowedOpsAreas(role), [role]);
   const safeInitialOpsArea = normalizeOpsArea(initialOpsArea, allowedOpsAreas);
   const safeInitialUnitId =
     units.find((unit) => unit.id === initialUnitId)?.id || units[0]?.id || "";
+  const safeInitialCategory = getDefaultCategoryForOpsArea(safeInitialOpsArea);
+  const safeInitialGroup = getDefaultGroupForCategory(safeInitialCategory);
 
   const [productList, setProductList] = useState(products);
   const [movementList, setMovementList] = useState<InventoryMovement[]>([]);
@@ -506,9 +555,9 @@ export function InventoryPanel({
 
   const [productName, setProductName] = useState("");
   const [productCategory, setProductCategory] =
-    useState<ProductCategoryValue>("Food");
+    useState<ProductCategoryValue>(safeInitialCategory);
   const [productGroup, setProductGroup] =
-    useState<ProductGroupValue>("Seafood");
+    useState<ProductGroupValue>(safeInitialGroup);
   const [sku, setSku] = useState("");
   const [unit, setUnit] = useState("gram");
   const [supplierName, setSupplierName] = useState("");
@@ -534,8 +583,9 @@ export function InventoryPanel({
   const [reportScope, setReportScope] = useState<ReportScope>("all");
   const [reportProductId, setReportProductId] = useState("");
   const [reportCategory, setReportCategory] =
-    useState<ProductCategoryValue>("Food");
-  const [reportGroup, setReportGroup] = useState<ProductGroupValue>("Seafood");
+    useState<ProductCategoryValue>(safeInitialCategory);
+  const [reportGroup, setReportGroup] =
+    useState<ProductGroupValue>(safeInitialGroup);
   const [reportDateFrom, setReportDateFrom] = useState("");
   const [reportDateTo, setReportDateTo] = useState("");
 
@@ -553,7 +603,15 @@ export function InventoryPanel({
   }, [initialUnitId, units]);
 
   useEffect(() => {
-    setSelectedOpsArea(normalizeOpsArea(initialOpsArea, allowedOpsAreas));
+    const nextOpsArea = normalizeOpsArea(initialOpsArea, allowedOpsAreas);
+    const nextCategory = getDefaultCategoryForOpsArea(nextOpsArea);
+    const nextGroup = getDefaultGroupForCategory(nextCategory);
+
+    setSelectedOpsArea(nextOpsArea);
+    setProductCategory(nextCategory);
+    setProductGroup(nextGroup);
+    setReportCategory(nextCategory);
+    setReportGroup(nextGroup);
   }, [initialOpsArea, allowedOpsAreas]);
 
   const selectedUnit = useMemo(
@@ -561,9 +619,19 @@ export function InventoryPanel({
     [selectedUnitId, units],
   );
 
+  const currentCategoryOptions = useMemo(
+    () => getCategoryOptionsForOpsArea(selectedOpsArea),
+    [selectedOpsArea],
+  );
+
   const currentGroupOptions = useMemo(
     () => productGroupOptions[productCategory],
     [productCategory],
+  );
+
+  const reportCategoryOptions = useMemo(
+    () => getCategoryOptionsForOpsArea(selectedOpsArea),
+    [selectedOpsArea],
   );
 
   const reportGroupOptions = useMemo(
@@ -640,12 +708,18 @@ export function InventoryPanel({
     }
 
     if (reportScope === "category") {
-      return visibleProducts.filter(
-        (product) =>
-          normalizeProductCategory(product.product_category) === reportCategory &&
-          normalizeProductGroup(reportCategory, product.product_group) ===
-            reportGroup,
-      );
+      return visibleProducts.filter((product) => {
+        const normalizedCategory = normalizeProductCategoryForArea(
+          product.ops_area,
+          product.product_category,
+        );
+
+        return (
+          normalizedCategory === reportCategory &&
+          normalizeProductGroup(normalizedCategory, product.product_group) ===
+            reportGroup
+        );
+      });
     }
 
     if (reportScope === "date") {
@@ -859,38 +933,47 @@ export function InventoryPanel({
 
   function handleUnitChange(nextUnitId: string) {
     setSelectedUnitId(nextUnitId);
-    resetForm();
+    resetForm(selectedOpsArea);
     updateInventoryUrl(nextUnitId, selectedOpsArea);
   }
 
   function handleOpsAreaChange(nextOpsArea: OpsArea) {
     const safeArea = normalizeOpsArea(nextOpsArea, allowedOpsAreas);
+    const nextCategory = getDefaultCategoryForOpsArea(safeArea);
+    const nextGroup = getDefaultGroupForCategory(nextCategory);
 
     setSelectedOpsArea(safeArea);
-    resetForm();
+    setProductCategory(nextCategory);
+    setProductGroup(nextGroup);
+    setReportCategory(nextCategory);
+    setReportGroup(nextGroup);
+    resetForm(safeArea);
     updateInventoryUrl(selectedUnitId, safeArea);
   }
 
   function handleProductCategoryChange(nextCategory: ProductCategoryValue) {
-    const firstGroup = productGroupOptions[nextCategory][0]?.value || "Others";
+    const firstGroup = getDefaultGroupForCategory(nextCategory);
 
     setProductCategory(nextCategory);
     setProductGroup(firstGroup);
   }
 
   function handleReportCategoryChange(nextCategory: ProductCategoryValue) {
-    const firstGroup = productGroupOptions[nextCategory][0]?.value || "Others";
+    const firstGroup = getDefaultGroupForCategory(nextCategory);
 
     setReportCategory(nextCategory);
     setReportGroup(firstGroup);
   }
 
-  function resetForm() {
+  function resetForm(area: OpsArea = selectedOpsArea) {
+    const nextCategory = getDefaultCategoryForOpsArea(area);
+    const nextGroup = getDefaultGroupForCategory(nextCategory);
+
     setMode("create");
     setEditId("");
     setProductName("");
-    setProductCategory("Food");
-    setProductGroup("Seafood");
+    setProductCategory(nextCategory);
+    setProductGroup(nextGroup);
     setSku("");
     setUnit("gram");
     setSupplierName("");
@@ -920,11 +1003,16 @@ export function InventoryPanel({
 
     const existingCount =
       productList.filter((product) => {
+        const normalizedCategory = normalizeProductCategoryForArea(
+          product.ops_area,
+          product.product_category,
+        );
+
         return (
           product.brand_unit_id === selectedUnitId &&
           product.ops_area === selectedOpsArea &&
-          normalizeProductCategory(product.product_category) === productCategory &&
-          normalizeProductGroup(productCategory, product.product_group) ===
+          normalizedCategory === productCategory &&
+          normalizeProductGroup(normalizedCategory, product.product_group) ===
             productGroup
         );
       }).length + 1;
@@ -935,13 +1023,17 @@ export function InventoryPanel({
   }
 
   function editProduct(product: InventoryProduct) {
-    const nextCategory = normalizeProductCategory(product.product_category);
+    const nextOpsArea = normalizeOpsArea(product.ops_area, allowedOpsAreas);
+    const nextCategory = normalizeProductCategoryForArea(
+      nextOpsArea,
+      product.product_category,
+    );
     const nextGroup = normalizeProductGroup(nextCategory, product.product_group);
 
     setMode("edit");
     setEditId(product.id);
     setSelectedUnitId(product.brand_unit_id);
-    setSelectedOpsArea(product.ops_area);
+    setSelectedOpsArea(nextOpsArea);
     setProductName(product.product_name);
     setProductCategory(nextCategory);
     setProductGroup(nextGroup);
@@ -954,11 +1046,14 @@ export function InventoryPanel({
     setUnitCost(String(product.unit_cost || 0));
     setExpiryDate(product.expiry_date || "");
     setStorageArea(product.storage_area || "");
-    updateInventoryUrl(product.brand_unit_id, product.ops_area);
+    updateInventoryUrl(product.brand_unit_id, nextOpsArea);
   }
 
   function getCategoryDisplay(product: InventoryProduct) {
-    const category = normalizeProductCategory(product.product_category);
+    const category = normalizeProductCategoryForArea(
+      product.ops_area,
+      product.product_category,
+    );
     const group = normalizeProductGroup(category, product.product_group);
 
     return {
@@ -1644,8 +1739,8 @@ export function InventoryPanel({
               Create / Edit Product
             </h2>
             <p className="mt-2 text-sm font-bold text-slate-500">
-              Product setup creates master data only. Stock remains 0 until a
-              movement is entered.
+              Select Kitchen, Bar, or Global. The category and group options
+              will automatically match the selected area.
             </p>
           </div>
 
@@ -1692,7 +1787,7 @@ export function InventoryPanel({
           <div className="md:col-span-2 xl:col-span-4">
             <label className="text-sm font-bold text-slate-700">Category</label>
             <div className="mt-2 grid gap-3 md:grid-cols-3">
-              {productCategoryOptions.map((item) => (
+              {currentCategoryOptions.map((item) => (
                 <button
                   key={item.value}
                   type="button"
@@ -1744,6 +1839,11 @@ export function InventoryPanel({
               <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700">
                 {getGroupIcon(productGroup)}
                 {productGroup}
+              </span>
+
+              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700">
+                <Boxes size={17} />
+                {opsAreaLabels[selectedOpsArea]}
               </span>
             </div>
           </div>
@@ -1841,12 +1941,11 @@ export function InventoryPanel({
 
           <div className="rounded-3xl border border-blue-100 bg-blue-50 p-4 md:col-span-2 xl:col-span-4">
             <p className="text-xs font-black uppercase tracking-wide text-blue-700">
-              UOM Calculation Rule
+              Area-Based Category Rule
             </p>
             <p className="mt-2 text-sm font-bold leading-6 text-blue-800">
-              Stock quantity and value follow the selected UOM. Example: if UOM
-              is gram, Product In 500 means 500 gram. Inventory Value =
-              Current Stock × Unit Cost.
+              Kitchen uses Food groups. Bar uses Beverage groups. Global uses
+              Others groups. Stock quantity and value follow the selected UOM.
             </p>
           </div>
 
@@ -1867,7 +1966,7 @@ export function InventoryPanel({
             {mode === "edit" ? (
               <button
                 type="button"
-                onClick={resetForm}
+                onClick={() => resetForm()}
                 className="forza-button-hover flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-black text-slate-700"
               >
                 <X size={18} />
@@ -2083,7 +2182,7 @@ export function InventoryPanel({
               disabled={reportScope !== "category"}
               className="forza-input disabled:cursor-not-allowed disabled:bg-slate-100"
             >
-              {productCategoryOptions.map((category) => (
+              {reportCategoryOptions.map((category) => (
                 <option key={category.value} value={category.value}>
                   {category.label}
                 </option>
