@@ -1220,31 +1220,6 @@ export function InventoryPanel({
     printWindow.document.close();
   }
 
-  async function createOpeningStockMovement(product: InventoryProduct) {
-    const openingQty = Number(openingStock || 0);
-
-    if (openingQty <= 0) {
-      return;
-    }
-
-    const { error } = await supabase.from("inventory_movements").insert({
-      brand_id: product.brand_id,
-      brand_unit_id: product.brand_unit_id,
-      product_id: product.id,
-      ops_area: product.ops_area,
-      movement_type: "opening_stock",
-      quantity: openingQty,
-      unit_cost: product.unit_cost,
-      reference_code: `OPENING-STOCK:${product.id}`,
-      notes: "Opening stock created from product setup.",
-      movement_date: todayDate(),
-    });
-
-    if (error) {
-      toast.error(error.message);
-    }
-  }
-
   async function saveProduct(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -1387,12 +1362,13 @@ export function InventoryPanel({
 
     const createdProduct = data as InventoryProduct;
 
-    await createOpeningStockMovement(createdProduct);
     await refreshInventoryData();
 
     setMovementProductId(createdProduct.id);
     updateInventoryUrl(selectedUnitId, selectedOpsArea);
-    toast.success("Product created successfully.");
+    toast.success(
+      "Product created successfully. Stock will calculate after Product In or movement entry.",
+    );
     resetForm();
   }
 
@@ -1486,11 +1462,10 @@ export function InventoryPanel({
               {selectedBrand?.name || "Selected Brand"} Inventory
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-              Opening stock plus product in and transfer in, less production,
-              sold consumption, waste, shrinkage, and transfer out equals the
-              system remaining quantity. Duplicate product names are blocked per
-              brand, branch, and area to protect recipe costing and ingredient
-              deduction.
+              Product setup does not create stock value. Stock and inventory
+              value calculate only after Product In, Transfer In, Adjustment In,
+              consumption, waste, shrinkage, transfer, or physical count
+              movements. Every movement follows the product UOM.
             </p>
           </div>
 
@@ -1563,7 +1538,8 @@ export function InventoryPanel({
               Stock In
             </div>
             <p className="text-sm leading-6 text-emerald-800">
-              Opening Stock + Product In + Transfer In + Adjustment In
+              Product In + Transfer In + Adjustment In, calculated in the
+              selected product UOM.
             </p>
           </div>
 
@@ -1574,7 +1550,8 @@ export function InventoryPanel({
             </div>
             <p className="text-sm leading-6 text-red-800">
               Production Consumption + Sold Consumption + Waste + Shrinkage +
-              Transfer Out + Adjustment Out
+              Transfer Out + Adjustment Out, deducted in the selected product
+              UOM.
             </p>
           </div>
 
@@ -1600,6 +1577,10 @@ export function InventoryPanel({
             <h2 className="text-2xl font-black text-slate-950">
               Create / Edit Product
             </h2>
+            <p className="mt-2 text-sm font-bold text-slate-500">
+              Product setup creates master data only. Stock remains 0 until a
+              movement is entered.
+            </p>
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -1711,7 +1692,7 @@ export function InventoryPanel({
             />
           </Field>
 
-          <Field label="Unit">
+          <Field label="Unit / UOM">
             <select
               value={unit}
               onChange={(event) => setUnit(event.target.value)}
@@ -1734,7 +1715,7 @@ export function InventoryPanel({
             />
           </Field>
 
-          <Field label="Opening Stock">
+          <Field label="Opening Stock Reference">
             <input
               type="number"
               step="0.001"
@@ -1791,6 +1772,17 @@ export function InventoryPanel({
               placeholder="Example: Dry Store"
             />
           </Field>
+
+          <div className="rounded-3xl border border-blue-100 bg-blue-50 p-4 md:col-span-2 xl:col-span-4">
+            <p className="text-xs font-black uppercase tracking-wide text-blue-700">
+              UOM Calculation Rule
+            </p>
+            <p className="mt-2 text-sm font-bold leading-6 text-blue-800">
+              Stock quantity and value follow the selected UOM. Example: if UOM
+              is gram, Product In 500 means 500 gram. Inventory Value =
+              Current Stock × Unit Cost.
+            </p>
+          </div>
 
           <div className="flex flex-col gap-2 md:col-span-2 xl:col-span-4 sm:flex-row">
             <button
@@ -1883,7 +1875,13 @@ export function InventoryPanel({
               />
             </Field>
           ) : (
-            <Field label="Movement Qty">
+            <Field
+              label={`Movement Qty${
+                selectedMovementProduct?.unit
+                  ? ` (${selectedMovementProduct.unit})`
+                  : ""
+              }`}
+            >
               <input
                 type="number"
                 step="0.001"
@@ -1931,6 +1929,17 @@ export function InventoryPanel({
                 placeholder="Movement note"
               />
             </Field>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white/80 p-4 md:col-span-2 xl:col-span-4">
+            <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+              Current Movement UOM
+            </p>
+            <p className="mt-2 text-sm font-bold text-slate-700">
+              {selectedMovementProduct
+                ? `${selectedMovementProduct.product_name} uses ${selectedMovementProduct.unit}. Movement quantity will be calculated in ${selectedMovementProduct.unit}.`
+                : "Select a product to see the movement UOM."}
+            </p>
           </div>
 
           <div className="md:col-span-2 xl:col-span-4">
