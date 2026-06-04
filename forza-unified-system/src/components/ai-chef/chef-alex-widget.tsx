@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import {
   Bot,
   ChefHat,
   HelpCircle,
   Maximize2,
-  MessageCircle,
   Mic,
   MicOff,
   Minimize2,
@@ -14,6 +14,12 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import type { UserRole } from "@/lib/auth/permissions";
+import {
+  buildChefAlexAnswer,
+  getChefAlexPageContext,
+  getChefAlexQuickQuestions,
+} from "@/components/ai-chef/chef-alex-knowledge";
 
 type ChefAlexMessage = {
   id: string;
@@ -21,196 +27,12 @@ type ChefAlexMessage = {
   content: string;
 };
 
-type ChefAlexKnowledgeItem = {
-  title: string;
-  module: string;
-  keywords: string[];
-  answer: string;
+type ChefAlexWidgetProps = {
+  role?: UserRole;
 };
-
-const quickQuestions = [
-  "How does Inventory work?",
-  "How does Kitchen Ops calculate stock?",
-  "How does Bar Ops sync with Inventory?",
-  "How do user roles work?",
-  "Why is stock not updating?",
-  "How do reports work?",
-];
-
-const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
-  {
-    title: "Inventory overview",
-    module: "Inventory",
-    keywords: [
-      "inventory",
-      "product",
-      "stock",
-      "uom",
-      "movement",
-      "product in",
-      "stock in",
-      "stock out",
-    ],
-    answer:
-      "Inventory is the product master and stock movement center of Forza. Creating a product only creates the product record. It does not create stock value. Stock starts calculating only when you add Product In, Transfer In, Adjustment In, consumption, waste, shrinkage, transfer out, adjustment out, or physical count. Every calculation follows the product UOM: gram, ml, pc, or bottle.",
-  },
-  {
-    title: "Kitchen Ops",
-    module: "Kitchen Ops",
-    keywords: [
-      "kitchen",
-      "boh",
-      "production",
-      "kitchen ops",
-      "production consumption",
-      "recipe",
-    ],
-    answer:
-      "Kitchen Ops reads kitchen products and kitchen inventory movements. It shows kitchen stock health, production consumption, waste, shrinkage, discrepancy, and calculated movement balance. If you add or update kitchen inventory movements, Kitchen Ops should reflect the result from the same inventory data source.",
-  },
-  {
-    title: "Bar Ops",
-    module: "Bar Ops",
-    keywords: [
-      "bar",
-      "beverage",
-      "bar ops",
-      "bottle",
-      "wine",
-      "beer",
-      "realtime",
-      "sync",
-    ],
-    answer:
-      "Bar Ops is connected to Inventory through products and inventory movements where the area is Bar. It should update from Inventory changes in realtime. Bar stock, waste, shrinkage, product in, stock out, and calculated balance all come from inventory movement records.",
-  },
-  {
-    title: "Realtime sync",
-    module: "System",
-    keywords: [
-      "realtime",
-      "real time",
-      "live",
-      "refresh",
-      "sync",
-      "not updating",
-      "stuck",
-    ],
-    answer:
-      "Forza is designed as a commercial calculation system, so inventory, kitchen ops, bar ops, reports, and budget calculations should update live. If a page requires manual refresh, the page needs a Supabase realtime listener for the affected tables, usually products and inventory_movements, plus a safe fallback refresh for calculation accuracy.",
-  },
-  {
-    title: "User roles",
-    module: "Users",
-    keywords: [
-      "role",
-      "permission",
-      "boh",
-      "foh",
-      "manager",
-      "super admin",
-      "access",
-      "authorized",
-    ],
-    answer:
-      "User access is controlled by role. BOH Staff should only see BOH-authorized modules such as Kitchen Ops, Inventory, and Recipe Maker. FOH Staff should only see FOH-authorized modules such as Bar Ops, Inventory, and Sales Performance. Managers see operational modules but not Super Admin-only pages. Super Admin can access everything, including Users and Brand Management.",
-  },
-  {
-    title: "Sales Performance",
-    module: "Sales Performance",
-    keywords: [
-      "sales",
-      "performance",
-      "pos",
-      "discount",
-      "net",
-      "gross",
-      "revenue",
-    ],
-    answer:
-      "Sales Performance should represent revenue from POS or manual sales entries when POS integration is not available. It should handle gross sales, discounts, net sales, and other sales adjustments. Sold items may affect inventory, but sales revenue should be aligned with POS or controlled manual sales data.",
-  },
-  {
-    title: "Payroll Budget",
-    module: "Payroll Budget",
-    keywords: ["payroll", "labor", "salary", "staff cost", "departmental"],
-    answer:
-      "Payroll Budget should track departmental payroll planning and compare it against sales revenue or net sales. It should not require duplicate manual revenue entry when Sales Performance already has the correct net sales data.",
-  },
-  {
-    title: "Operational Budget",
-    module: "Operational Budget",
-    keywords: [
-      "operational",
-      "budget",
-      "opex",
-      "cost",
-      "utilities",
-      "maintenance",
-    ],
-    answer:
-      "Operational Budget should track operating costs such as food, beverage, utilities, maintenance, support, and other expenses. Revenue should link from Sales Performance net sales when available, so budget variance stays aligned and uniform.",
-  },
-  {
-    title: "Reports",
-    module: "Reports",
-    keywords: ["report", "pdf", "csv", "export", "analytics", "chart"],
-    answer:
-      "Reports should summarize live system data into analytical views, tables, charts, PDF exports, and CSV exports. Commercial reports should read from the same source tables as each module, so the report output matches Inventory, Kitchen Ops, Bar Ops, Sales Performance, and Budgets.",
-  },
-  {
-    title: "Discrepancy",
-    module: "Inventory",
-    keywords: ["discrepancy", "physical count", "missing", "over", "stock count"],
-    answer:
-      "Discrepancy is calculated by comparing the physical count against the system balance. If the physical count is lower than the calculated system balance, the result is missing stock. If it is higher, the result is over stock. If both match, it is on track.",
-  },
-];
 
 function createMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function normalizeText(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9\s]/g, " ");
-}
-
-function findBestAnswer(question: string) {
-  const normalizedQuestion = normalizeText(question);
-
-  const scoredAnswers = chefAlexKnowledge
-    .map((item) => {
-      const score = item.keywords.reduce((total, keyword) => {
-        return normalizedQuestion.includes(normalizeText(keyword))
-          ? total + 1
-          : total;
-      }, 0);
-
-      return {
-        item,
-        score,
-      };
-    })
-    .sort((a, b) => b.score - a.score);
-
-  const best = scoredAnswers[0];
-
-  if (!best || best.score === 0) {
-    return {
-      title: "General Forza Guidance",
-      module: "System",
-      answer:
-        "I can guide you through Forza modules, calculations, permissions, realtime sync, inventory movements, kitchen ops, bar ops, sales performance, budgets, and reports. Please ask me about the specific page or calculation you want to understand.",
-    };
-  }
-
-  return best.item;
-}
-
-function buildChefAlexAnswer(question: string) {
-  const result = findBestAnswer(question);
-
-  return `Chef Alex guidance — ${result.module}: ${result.answer}`;
 }
 
 function useTypewriterText(text: string, speed = 18) {
@@ -242,7 +64,16 @@ function useTypewriterText(text: string, speed = 18) {
   return displayText;
 }
 
-export function ChefAlexWidget() {
+export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
+  const pathname = usePathname();
+
+  const quickQuestions = useMemo(
+    () => getChefAlexQuickQuestions(pathname),
+    [pathname],
+  );
+
+  const pageContext = useMemo(() => getChefAlexPageContext(pathname), [pathname]);
+
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
@@ -255,7 +86,7 @@ export function ChefAlexWidget() {
       id: createMessageId(),
       role: "assistant",
       content:
-        "Hello, I am Chef Alex. Ask me how Forza works, including Inventory, Kitchen Ops, Bar Ops, Sales Performance, Budgets, Reports, and user permissions.",
+        "Hello, I am Chef Alex. I can guide you through Forza modules, calculations, realtime sync, Inventory, Kitchen Ops, Bar Ops, Sales Performance, Budgets, Reports, and user permissions.",
     },
   ]);
 
@@ -337,7 +168,10 @@ export function ChefAlexWidget() {
     setIsThinking(true);
 
     window.setTimeout(() => {
-      const answer = buildChefAlexAnswer(cleanQuestion);
+      const answer = buildChefAlexAnswer(cleanQuestion, {
+        pathname,
+        role,
+      });
 
       const assistantMessage: ChefAlexMessage = {
         id: createMessageId(),
@@ -398,7 +232,7 @@ export function ChefAlexWidget() {
                     </span>
                   </div>
                   <p className="mt-1 text-xs font-bold text-slate-300">
-                    Forza AI System Guide
+                    Commercial Forza AI Guide
                   </p>
                 </div>
               </div>
@@ -435,6 +269,10 @@ export function ChefAlexWidget() {
           </div>
 
           <div className="border-b border-slate-200 bg-slate-50 p-4">
+            <div className="mb-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-bold leading-5 text-slate-600 shadow-sm">
+              {pageContext}
+            </div>
+
             <div className="flex gap-2 overflow-x-auto pb-1">
               {quickQuestions.map((question) => (
                 <button
