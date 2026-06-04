@@ -69,6 +69,8 @@ export type InventoryProduct = {
   brand_id: string | null;
   brand_unit_id: string;
   category_id: string | null;
+  product_category: ProductCategoryValue | null;
+  product_group: ProductGroupValue | null;
   ops_area: OpsArea;
   product_name: string;
   sku: string;
@@ -129,7 +131,22 @@ type InventoryPanelProps = {
 
 type EditMode = "create" | "edit";
 type ReportScope = "all" | "product" | "category" | "date";
-type ProductMainCategory = "food" | "beverage" | "others";
+type ProductCategoryValue = "Food" | "Beverage" | "Others";
+type ProductGroupValue =
+  | "Seafood"
+  | "Meat"
+  | "Dairy"
+  | "Dry Goods"
+  | "Vegetables"
+  | "Fruits"
+  | "Beer"
+  | "Wine"
+  | "Softdrink"
+  | "Water"
+  | "Dry Good"
+  | "Fruit"
+  | "Vegetable"
+  | "Others";
 
 const opsAreaLabels: Record<OpsArea, string> = {
   kitchen: "Kitchen",
@@ -139,124 +156,54 @@ const opsAreaLabels: Record<OpsArea, string> = {
 
 const unitOptions = ["gram", "ml", "pc", "bottle"];
 
-const productMainCategories: {
-  value: ProductMainCategory;
+const productCategoryOptions: {
+  value: ProductCategoryValue;
   label: string;
   icon: React.ReactNode;
 }[] = [
   {
-    value: "food",
+    value: "Food",
     label: "Food",
-    icon: <ClipboardList size={16} />,
+    icon: <ClipboardList size={17} />,
   },
   {
-    value: "beverage",
+    value: "Beverage",
     label: "Beverage",
-    icon: <GlassWater size={16} />,
+    icon: <GlassWater size={17} />,
   },
   {
-    value: "others",
+    value: "Others",
     label: "Others",
-    icon: <Tags size={16} />,
+    icon: <Tags size={17} />,
   },
 ];
 
 const productGroupOptions: Record<
-  ProductMainCategory,
+  ProductCategoryValue,
   {
-    value: string;
+    value: ProductGroupValue;
     label: string;
     icon: React.ReactNode;
-    aliases?: string[];
   }[]
 > = {
-  food: [
-    {
-      value: "seafood",
-      label: "Seafood",
-      icon: <Fish size={16} />,
-      aliases: ["sea food", "fish", "seafoods"],
-    },
-    {
-      value: "meat",
-      label: "Meat",
-      icon: <Beef size={16} />,
-      aliases: ["beef", "pork", "chicken", "meats"],
-    },
-    {
-      value: "dairy",
-      label: "Dairy",
-      icon: <Milk size={16} />,
-      aliases: ["milk", "cheese", "cream"],
-    },
-    {
-      value: "dry-goods",
-      label: "Dry Goods",
-      icon: <Wheat size={16} />,
-      aliases: ["dry good", "drygoods", "dry"],
-    },
-    {
-      value: "vegetables",
-      label: "Vegetables",
-      icon: <Carrot size={16} />,
-      aliases: ["vegetable", "veg"],
-    },
-    {
-      value: "fruits",
-      label: "Fruits",
-      icon: <Apple size={16} />,
-      aliases: ["fruit"],
-    },
+  Food: [
+    { value: "Seafood", label: "Seafood", icon: <Fish size={17} /> },
+    { value: "Meat", label: "Meat", icon: <Beef size={17} /> },
+    { value: "Dairy", label: "Dairy", icon: <Milk size={17} /> },
+    { value: "Dry Goods", label: "Dry Goods", icon: <Wheat size={17} /> },
+    { value: "Vegetables", label: "Vegetables", icon: <Carrot size={17} /> },
+    { value: "Fruits", label: "Fruits", icon: <Apple size={17} /> },
   ],
-  beverage: [
-    {
-      value: "beer",
-      label: "Beer",
-      icon: <Beer size={16} />,
-    },
-    {
-      value: "wine",
-      label: "Wine",
-      icon: <Wine size={16} />,
-    },
-    {
-      value: "softdrink",
-      label: "Softdrink",
-      icon: <CupSoda size={16} />,
-      aliases: ["soft drink", "soft drinks", "soda"],
-    },
-    {
-      value: "water",
-      label: "Water",
-      icon: <Droplets size={16} />,
-    },
-    {
-      value: "dry-good",
-      label: "Dry Good",
-      icon: <Package size={16} />,
-      aliases: ["dry goods", "drygoods", "dry"],
-    },
-    {
-      value: "fruit",
-      label: "Fruit",
-      icon: <Apple size={16} />,
-      aliases: ["fruits"],
-    },
-    {
-      value: "vegetable",
-      label: "Vegetable",
-      icon: <Carrot size={16} />,
-      aliases: ["vegetables", "veg"],
-    },
+  Beverage: [
+    { value: "Beer", label: "Beer", icon: <Beer size={17} /> },
+    { value: "Wine", label: "Wine", icon: <Wine size={17} /> },
+    { value: "Softdrink", label: "Softdrink", icon: <CupSoda size={17} /> },
+    { value: "Water", label: "Water", icon: <Droplets size={17} /> },
+    { value: "Dry Good", label: "Dry Good", icon: <Coffee size={17} /> },
+    { value: "Fruit", label: "Fruit", icon: <Apple size={17} /> },
+    { value: "Vegetable", label: "Vegetable", icon: <Carrot size={17} /> },
   ],
-  others: [
-    {
-      value: "others",
-      label: "Others",
-      icon: <Package size={16} />,
-      aliases: ["other", "miscellaneous", "misc"],
-    },
-  ],
+  Others: [{ value: "Others", label: "Others", icon: <Package size={17} /> }],
 };
 
 const movementTypes: {
@@ -295,13 +242,6 @@ function toCode(value: string) {
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function normalizeCategoryName(value: string) {
-  return normalizeText(value)
-    .replaceAll("&", "and")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 }
 
 function formatQty(value: number) {
@@ -466,76 +406,50 @@ function isDuplicateSkuError(message: string) {
   );
 }
 
-function getGroupOptionByName(name: string) {
-  const normalizedName = normalizeCategoryName(name);
-
-  for (const [mainCategory, groupOptions] of Object.entries(
-    productGroupOptions,
-  ) as [
-    ProductMainCategory,
-    {
-      value: string;
-      label: string;
-      icon: React.ReactNode;
-      aliases?: string[];
-    }[],
-  ][]) {
-    const matchedGroup = groupOptions.find((group) => {
-      const normalizedLabel = normalizeCategoryName(group.label);
-      const normalizedAliases = (group.aliases || []).map((alias) =>
-        normalizeCategoryName(alias),
-      );
-
-      return (
-        normalizedLabel === normalizedName ||
-        group.value === normalizedName ||
-        normalizedAliases.includes(normalizedName)
-      );
-    });
-
-    if (matchedGroup) {
-      return {
-        mainCategory,
-        group: matchedGroup,
-      };
-    }
-  }
-
-  return {
-    mainCategory: "others" as ProductMainCategory,
-    group: productGroupOptions.others[0],
-  };
-}
-
-function getMainCategoryForCategoryId(
-  categoryId: string,
-  categories: InventoryCategory[],
-): ProductMainCategory {
-  const category = categories.find((item) => item.id === categoryId);
-
-  if (!category) {
-    return "food";
-  }
-
-  return getGroupOptionByName(category.name).mainCategory;
-}
-
-function getGroupIconByCategoryName(name: string) {
-  return getGroupOptionByName(name).group.icon;
-}
-
-function getMainCategoryLabel(category: ProductMainCategory) {
+function getCategoryIcon(category: ProductCategoryValue) {
   return (
-    productMainCategories.find((item) => item.value === category)?.label ||
-    "Food"
+    productCategoryOptions.find((item) => item.value === category)?.icon || (
+      <Tags size={17} />
+    )
   );
+}
+
+function getGroupIcon(group: ProductGroupValue) {
+  const allGroups = Object.values(productGroupOptions).flat();
+
+  return allGroups.find((item) => item.value === group)?.icon || (
+    <Package size={17} />
+  );
+}
+
+function normalizeProductCategory(
+  value: string | null | undefined,
+): ProductCategoryValue {
+  if (value === "Beverage") {
+    return "Beverage";
+  }
+
+  if (value === "Others") {
+    return "Others";
+  }
+
+  return "Food";
+}
+
+function normalizeProductGroup(
+  category: ProductCategoryValue,
+  value: string | null | undefined,
+): ProductGroupValue {
+  const options = productGroupOptions[category];
+  const match = options.find((item) => item.value === value);
+
+  return match?.value || options[0].value;
 }
 
 export function InventoryPanel({
   role,
   selectedBrand,
   units,
-  categories,
   products,
   initialUnitId,
   initialOpsArea,
@@ -561,9 +475,10 @@ export function InventoryPanel({
   const [search, setSearch] = useState("");
 
   const [productName, setProductName] = useState("");
-  const [mainCategory, setMainCategory] =
-    useState<ProductMainCategory>("food");
-  const [categoryId, setCategoryId] = useState("");
+  const [productCategory, setProductCategory] =
+    useState<ProductCategoryValue>("Food");
+  const [productGroup, setProductGroup] =
+    useState<ProductGroupValue>("Seafood");
   const [sku, setSku] = useState("");
   const [unit, setUnit] = useState("gram");
   const [supplierName, setSupplierName] = useState("");
@@ -588,7 +503,9 @@ export function InventoryPanel({
 
   const [reportScope, setReportScope] = useState<ReportScope>("all");
   const [reportProductId, setReportProductId] = useState("");
-  const [reportCategoryId, setReportCategoryId] = useState("");
+  const [reportCategory, setReportCategory] =
+    useState<ProductCategoryValue>("Food");
+  const [reportGroup, setReportGroup] = useState<ProductGroupValue>("Seafood");
   const [reportDateFrom, setReportDateFrom] = useState("");
   const [reportDateTo, setReportDateTo] = useState("");
 
@@ -614,48 +531,14 @@ export function InventoryPanel({
     [selectedUnitId, units],
   );
 
-  const visibleCategories = useMemo(
-    () =>
-      categories.filter((category) => {
-        const matchesUnit =
-          !category.brand_unit_id || category.brand_unit_id === selectedUnitId;
-        const matchesArea = category.ops_area === selectedOpsArea;
-        const isAllowedArea = allowedOpsAreas.includes(category.ops_area);
-
-        return matchesUnit && matchesArea && isAllowedArea && category.is_active;
-      }),
-    [allowedOpsAreas, categories, selectedOpsArea, selectedUnitId],
+  const currentGroupOptions = useMemo(
+    () => productGroupOptions[productCategory],
+    [productCategory],
   );
 
-  const categoryGroupOptions = useMemo(() => {
-    const selectedGroups = productGroupOptions[mainCategory];
-
-    return selectedGroups.map((group) => {
-      const matchingCategory = visibleCategories.find((category) => {
-        const normalizedCategory = normalizeCategoryName(category.name);
-        const normalizedLabel = normalizeCategoryName(group.label);
-        const normalizedAliases = (group.aliases || []).map((alias) =>
-          normalizeCategoryName(alias),
-        );
-
-        return (
-          normalizedCategory === normalizedLabel ||
-          normalizedCategory === group.value ||
-          normalizedAliases.includes(normalizedCategory)
-        );
-      });
-
-      return {
-        ...group,
-        categoryId: matchingCategory?.id || "",
-        isAvailable: Boolean(matchingCategory?.id),
-      };
-    });
-  }, [mainCategory, visibleCategories]);
-
-  const selectedCategoryOption = useMemo(
-    () => categoryGroupOptions.find((group) => group.categoryId === categoryId),
-    [categoryGroupOptions, categoryId],
+  const reportGroupOptions = useMemo(
+    () => productGroupOptions[reportCategory],
+    [reportCategory],
   );
 
   const visibleProducts = useMemo(() => {
@@ -669,7 +552,9 @@ export function InventoryPanel({
         !query ||
         product.product_name.toLowerCase().includes(query) ||
         product.sku.toLowerCase().includes(query) ||
-        String(product.supplier_name || "").toLowerCase().includes(query);
+        String(product.supplier_name || "").toLowerCase().includes(query) ||
+        String(product.product_category || "").toLowerCase().includes(query) ||
+        String(product.product_group || "").toLowerCase().includes(query);
 
       return matchesUnit && matchesArea && allowedArea && matchesSearch;
     });
@@ -695,7 +580,10 @@ export function InventoryPanel({
 
     if (reportScope === "category") {
       return visibleProducts.filter(
-        (product) => product.category_id === reportCategoryId,
+        (product) =>
+          normalizeProductCategory(product.product_category) === reportCategory &&
+          normalizeProductGroup(reportCategory, product.product_group) ===
+            reportGroup,
       );
     }
 
@@ -717,9 +605,10 @@ export function InventoryPanel({
 
     return visibleProducts;
   }, [
-    reportCategoryId,
+    reportCategory,
     reportDateFrom,
     reportDateTo,
+    reportGroup,
     reportProductId,
     reportScope,
     visibleMovements,
@@ -780,28 +669,6 @@ export function InventoryPanel({
     };
   }, [visibleProducts]);
 
-  async function refreshProducts() {
-    if (!selectedBrand?.id) {
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("products")
-      .select(
-        "id, brand_id, brand_unit_id, category_id, ops_area, product_name, sku, unit, supplier_name, opening_stock, current_stock, minimum_stock, maximum_stock, unit_cost, expiry_date, storage_area, is_active",
-      )
-      .eq("brand_id", selectedBrand.id)
-      .eq("is_active", true)
-      .order("product_name", { ascending: true });
-
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-
-    setProductList((data || []) as InventoryProduct[]);
-  }
-
   async function refreshMovements(sourceProducts = productList) {
     const productIds = sourceProducts.map((product) => product.id);
 
@@ -836,7 +703,7 @@ export function InventoryPanel({
     const { data, error } = await supabase
       .from("products")
       .select(
-        "id, brand_id, brand_unit_id, category_id, ops_area, product_name, sku, unit, supplier_name, opening_stock, current_stock, minimum_stock, maximum_stock, unit_cost, expiry_date, storage_area, is_active",
+        "id, brand_id, brand_unit_id, category_id, product_category, product_group, ops_area, product_name, sku, unit, supplier_name, opening_stock, current_stock, minimum_stock, maximum_stock, unit_cost, expiry_date, storage_area, is_active",
       )
       .eq("brand_id", selectedBrand.id)
       .eq("is_active", true)
@@ -911,20 +778,6 @@ export function InventoryPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBrand?.id]);
 
-  useEffect(() => {
-    if (!categoryId) {
-      return;
-    }
-
-    const categoryStillVisible = categoryGroupOptions.some(
-      (group) => group.categoryId === categoryId,
-    );
-
-    if (!categoryStillVisible) {
-      setCategoryId("");
-    }
-  }, [categoryGroupOptions, categoryId]);
-
   function updateInventoryUrl(nextUnitId: string, nextOpsArea: OpsArea) {
     const params = new URLSearchParams(searchParams.toString());
 
@@ -953,22 +806,30 @@ export function InventoryPanel({
     const safeArea = normalizeOpsArea(nextOpsArea, allowedOpsAreas);
 
     setSelectedOpsArea(safeArea);
-    setCategoryId("");
     resetForm();
     updateInventoryUrl(selectedUnitId, safeArea);
   }
 
-  function handleMainCategoryChange(nextCategory: ProductMainCategory) {
-    setMainCategory(nextCategory);
-    setCategoryId("");
+  function handleProductCategoryChange(nextCategory: ProductCategoryValue) {
+    const firstGroup = productGroupOptions[nextCategory][0]?.value || "Others";
+
+    setProductCategory(nextCategory);
+    setProductGroup(firstGroup);
+  }
+
+  function handleReportCategoryChange(nextCategory: ProductCategoryValue) {
+    const firstGroup = productGroupOptions[nextCategory][0]?.value || "Others";
+
+    setReportCategory(nextCategory);
+    setReportGroup(firstGroup);
   }
 
   function resetForm() {
     setMode("create");
     setEditId("");
     setProductName("");
-    setMainCategory("food");
-    setCategoryId("");
+    setProductCategory("Food");
+    setProductGroup("Seafood");
     setSku("");
     setUnit("gram");
     setSupplierName("");
@@ -994,18 +855,16 @@ export function InventoryPanel({
     const brandCode = selectedBrand?.code || "BRAND";
     const unitCode = selectedUnit?.code || "UNIT";
     const areaCode = selectedOpsArea.toUpperCase();
-    const category = visibleCategories.find((item) => item.id === categoryId);
-    const categoryCode = category ? toCode(category.name) : toCode(mainCategory);
+    const categoryCode = `${toCode(productCategory)}-${toCode(productGroup)}`;
 
     const existingCount =
       productList.filter((product) => {
-        const productCategoryId = product.category_id || "";
-        const activeCategoryId = categoryId || "";
-
         return (
           product.brand_unit_id === selectedUnitId &&
           product.ops_area === selectedOpsArea &&
-          productCategoryId === activeCategoryId
+          normalizeProductCategory(product.product_category) === productCategory &&
+          normalizeProductGroup(productCategory, product.product_group) ===
+            productGroup
         );
       }).length + 1;
 
@@ -1015,18 +874,16 @@ export function InventoryPanel({
   }
 
   function editProduct(product: InventoryProduct) {
-    const detectedMainCategory = getMainCategoryForCategoryId(
-      product.category_id || "",
-      categories,
-    );
+    const nextCategory = normalizeProductCategory(product.product_category);
+    const nextGroup = normalizeProductGroup(nextCategory, product.product_group);
 
     setMode("edit");
     setEditId(product.id);
     setSelectedUnitId(product.brand_unit_id);
     setSelectedOpsArea(product.ops_area);
     setProductName(product.product_name);
-    setMainCategory(detectedMainCategory);
-    setCategoryId(product.category_id || "");
+    setProductCategory(nextCategory);
+    setProductGroup(nextGroup);
     setSku(product.sku);
     setUnit(product.unit);
     setSupplierName(product.supplier_name || "");
@@ -1039,15 +896,14 @@ export function InventoryPanel({
     updateInventoryUrl(product.brand_unit_id, product.ops_area);
   }
 
-  function getCategoryName(categoryIdValue: string | null) {
-    if (!categoryIdValue) {
-      return "No category";
-    }
+  function getCategoryDisplay(product: InventoryProduct) {
+    const category = normalizeProductCategory(product.product_category);
+    const group = normalizeProductGroup(category, product.product_group);
 
-    return (
-      categories.find((category) => category.id === categoryIdValue)?.name ||
-      "No category"
-    );
+    return {
+      category,
+      group,
+    };
   }
 
   function downloadInventoryPdf() {
@@ -1059,9 +915,6 @@ export function InventoryPanel({
     const selectedReportProduct = productList.find(
       (product) => product.id === reportProductId,
     );
-    const selectedReportCategory = categories.find(
-      (category) => category.id === reportCategoryId,
-    );
 
     const reportTitle =
       reportScope === "product"
@@ -1069,9 +922,7 @@ export function InventoryPanel({
             selectedReportProduct?.product_name || "Selected Product"
           }`
         : reportScope === "category"
-          ? `Category Report — ${
-              selectedReportCategory?.name || "Selected Category"
-            }`
+          ? `Category Report — ${reportCategory} / ${reportGroup}`
           : reportScope === "date"
             ? "Movement Date Report"
             : "All Inventory Report";
@@ -1082,19 +933,20 @@ export function InventoryPanel({
         : reportScope === "product"
           ? selectedReportProduct?.product_name || "Selected product"
           : reportScope === "category"
-            ? selectedReportCategory?.name || "Selected category"
+            ? `${reportCategory} / ${reportGroup}`
             : "All products";
 
     const productRows = reportProducts
       .map((product) => {
         const stockStatus = getStockStatus(product);
         const expiryStatus = getExpiryStatus(product.expiry_date);
+        const display = getCategoryDisplay(product);
 
         return `
           <tr>
             <td>${escapeHtml(product.product_name)}</td>
             <td>${escapeHtml(product.sku)}</td>
-            <td>${escapeHtml(getCategoryName(product.category_id))}</td>
+            <td>${escapeHtml(display.category)} / ${escapeHtml(display.group)}</td>
             <td>${escapeHtml(opsAreaLabels[product.ops_area])}</td>
             <td>${formatQty(product.current_stock)} ${escapeHtml(product.unit)}</td>
             <td>${formatQty(product.minimum_stock)}</td>
@@ -1411,11 +1263,6 @@ export function InventoryPanel({
       return;
     }
 
-    if (!categoryId) {
-      toast.error("Select a product group.");
-      return;
-    }
-
     if (!sku.trim()) {
       toast.error("SKU is required. Generate or enter a SKU.");
       return;
@@ -1459,7 +1306,9 @@ export function InventoryPanel({
     const payload = {
       brand_id: selectedBrand.id,
       brand_unit_id: selectedUnitId,
-      category_id: categoryId || null,
+      category_id: null,
+      product_category: productCategory,
+      product_group: productGroup,
       ops_area: selectedOpsArea,
       product_name: productName.trim(),
       sku: sku.trim().toUpperCase(),
@@ -1515,7 +1364,7 @@ export function InventoryPanel({
         current_stock: 0,
       })
       .select(
-        "id, brand_id, brand_unit_id, category_id, ops_area, product_name, sku, unit, supplier_name, opening_stock, current_stock, minimum_stock, maximum_stock, unit_cost, expiry_date, storage_area, is_active",
+        "id, brand_id, brand_unit_id, category_id, product_category, product_group, ops_area, product_name, sku, unit, supplier_name, opening_stock, current_stock, minimum_stock, maximum_stock, unit_cost, expiry_date, storage_area, is_active",
       )
       .single();
 
@@ -1793,71 +1642,63 @@ export function InventoryPanel({
             />
           </Field>
 
-          <Field label="Category">
-            <select
-              value={mainCategory}
-              onChange={(event) =>
-                handleMainCategoryChange(
-                  event.target.value as ProductMainCategory,
-                )
-              }
-              className="forza-input"
-            >
-              {productMainCategories.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Group">
-            <select
-              required
-              value={categoryId}
-              onChange={(event) => setCategoryId(event.target.value)}
-              className="forza-input"
-            >
-              <option value="">Select group</option>
-              {categoryGroupOptions.map((group) => (
-                <option
-                  key={group.value}
-                  value={group.categoryId}
-                  disabled={!group.isAvailable}
+          <div className="md:col-span-2 xl:col-span-4">
+            <label className="text-sm font-bold text-slate-700">Category</label>
+            <div className="mt-2 grid gap-3 md:grid-cols-3">
+              {productCategoryOptions.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => handleProductCategoryChange(item.value)}
+                  className={`forza-button-hover flex items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-black transition ${
+                    productCategory === item.value
+                      ? "border-slate-950 bg-slate-950 text-white shadow-xl"
+                      : "border-slate-200 bg-white text-slate-700"
+                  }`}
                 >
-                  {group.label}
-                  {!group.isAvailable ? " — create category first" : ""}
-                </option>
+                  {item.icon}
+                  {item.label}
+                </button>
               ))}
-            </select>
-          </Field>
+            </div>
+          </div>
 
-          <div className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm">
+          <div className="md:col-span-2 xl:col-span-4">
+            <label className="text-sm font-bold text-slate-700">Group</label>
+            <div className="mt-2 grid gap-3 md:grid-cols-3 xl:grid-cols-4">
+              {currentGroupOptions.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setProductGroup(item.value)}
+                  className={`forza-button-hover flex items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-black transition ${
+                    productGroup === item.value
+                      ? "border-emerald-700 bg-emerald-50 text-emerald-800 shadow-lg"
+                      : "border-slate-200 bg-white text-slate-700"
+                  }`}
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm md:col-span-2 xl:col-span-4">
             <p className="text-xs font-black uppercase tracking-wide text-slate-400">
-              Category Preview
+              Selected Product Classification
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <span className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-3 py-2 text-xs font-black text-white">
-                {
-                  productMainCategories.find(
-                    (item) => item.value === mainCategory,
-                  )?.icon
-                }
-                {getMainCategoryLabel(mainCategory)}
+                {getCategoryIcon(productCategory)}
+                {productCategory}
               </span>
 
               <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700">
-                {selectedCategoryOption?.icon || <Tags size={16} />}
-                {selectedCategoryOption?.label || "No group selected"}
+                {getGroupIcon(productGroup)}
+                {productGroup}
               </span>
             </div>
-
-            {categoryGroupOptions.some((group) => !group.isAvailable) ? (
-              <p className="mt-3 text-xs font-bold leading-5 text-amber-700">
-                Some groups are disabled because the matching Inventory Category
-                does not exist yet for this branch and area.
-              </p>
-            ) : null}
           </div>
 
           <Field label="SKU">
@@ -2135,7 +1976,7 @@ export function InventoryPanel({
             >
               <option value="all">All Products</option>
               <option value="product">By Product</option>
-              <option value="category">By Category</option>
+              <option value="category">By Category / Group</option>
               <option value="date">By Movement Date</option>
             </select>
           </Field>
@@ -2156,17 +1997,37 @@ export function InventoryPanel({
             </select>
           </Field>
 
-          <Field label="Category / Group">
+          <Field label="Category">
             <select
-              value={reportCategoryId}
-              onChange={(event) => setReportCategoryId(event.target.value)}
+              value={reportCategory}
+              onChange={(event) =>
+                handleReportCategoryChange(
+                  event.target.value as ProductCategoryValue,
+                )
+              }
               disabled={reportScope !== "category"}
               className="forza-input disabled:cursor-not-allowed disabled:bg-slate-100"
             >
-              <option value="">Select group</option>
-              {visibleCategories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
+              {productCategoryOptions.map((category) => (
+                <option key={category.value} value={category.value}>
+                  {category.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Group">
+            <select
+              value={reportGroup}
+              onChange={(event) =>
+                setReportGroup(event.target.value as ProductGroupValue)
+              }
+              disabled={reportScope !== "category"}
+              className="forza-input disabled:cursor-not-allowed disabled:bg-slate-100"
+            >
+              {reportGroupOptions.map((group) => (
+                <option key={group.value} value={group.value}>
+                  {group.label}
                 </option>
               ))}
             </select>
@@ -2219,7 +2080,7 @@ export function InventoryPanel({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               className="forza-input pl-11 xl:min-w-[320px]"
-              placeholder="Search product, SKU, supplier..."
+              placeholder="Search product, SKU, supplier, category, group..."
             />
           </div>
         </div>
@@ -2247,10 +2108,7 @@ export function InventoryPanel({
               {visibleProducts.map((product) => {
                 const stockStatus = getStockStatus(product);
                 const expiryStatus = getExpiryStatus(product.expiry_date);
-                const productCategoryName = getCategoryName(product.category_id);
-                const productMainCategory = product.category_id
-                  ? getMainCategoryForCategoryId(product.category_id, categories)
-                  : "others";
+                const display = getCategoryDisplay(product);
 
                 return (
                   <tr key={product.id} className="rounded-2xl bg-white shadow-sm">
@@ -2265,16 +2123,12 @@ export function InventoryPanel({
                     <td className="px-4 py-4">
                       <div className="flex flex-col gap-2">
                         <span className="inline-flex w-fit items-center gap-2 rounded-full bg-slate-950 px-3 py-1 text-xs font-black text-white">
-                          {
-                            productMainCategories.find(
-                              (item) => item.value === productMainCategory,
-                            )?.icon
-                          }
-                          {getMainCategoryLabel(productMainCategory)}
+                          {getCategoryIcon(display.category)}
+                          {display.category}
                         </span>
                         <span className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-black text-slate-700">
-                          {getGroupIconByCategoryName(productCategoryName)}
-                          {productCategoryName}
+                          {getGroupIcon(display.group)}
+                          {display.group}
                         </span>
                       </div>
                     </td>
