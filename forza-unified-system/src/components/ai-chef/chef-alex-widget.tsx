@@ -7,12 +7,12 @@ import {
   ChefHat,
   HelpCircle,
   Maximize2,
+  MessageCircle,
   Mic,
   MicOff,
   Minimize2,
   Send,
   Sparkles,
-  Volume2,
   X,
 } from "lucide-react";
 import type { UserRole } from "@/lib/auth/permissions";
@@ -87,7 +87,7 @@ export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
       id: createMessageId(),
       role: "assistant",
       content:
-        "Hello, I am Chef Alex. I can guide you through Forza modules, calculations, realtime sync, Inventory, Kitchen Ops, Bar Ops, Sales Performance, Budgets, Reports, and user permissions.",
+        "Hello, I am Chef Alex. Ask me how Forza works, including Inventory, Kitchen Ops, Bar Ops, Sales Performance, Budgets, Reports, realtime sync, and user permissions.",
     },
   ]);
 
@@ -139,32 +139,41 @@ export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
     }
 
     const utterance = new SpeechSynthesisUtterance(latestAssistantMessage.content);
-    utterance.rate = 0.92;
-    utterance.pitch = 0.88;
-    utterance.volume = 0.9;
-
-    utterance.onstart = () => {
-      setIsSpeaking(true);
-    };
-
-    utterance.onend = () => {
-      setIsSpeaking(false);
-    };
-
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-    };
+    utterance.rate = 0.95;
+    utterance.pitch = 1;
+    utterance.volume = 0.85;
 
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
 
     return () => {
       window.speechSynthesis.cancel();
-      setIsSpeaking(false);
     };
   }, [activeTypedMessageId, isVoiceEnabled, latestAssistantMessage]);
 
-  function sendQuestion(question: string) {
+  async function getChefAlexAiAnswer(question: string) {
+    const response = await fetch("/api/chef-alex", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        question,
+        pathname,
+        role,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.message || "Chef Alex AI failed.");
+    }
+
+    return String(result.answer || "").trim();
+  }
+
+  async function sendQuestion(question: string) {
     const cleanQuestion = question.trim();
 
     if (!cleanQuestion || isThinking) {
@@ -181,8 +190,24 @@ export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
     setInput("");
     setIsThinking(true);
 
-    window.setTimeout(() => {
-      const answer = buildChefAlexAnswer(cleanQuestion, {
+    try {
+      const aiAnswer = await getChefAlexAiAnswer(cleanQuestion);
+
+      const assistantMessage: ChefAlexMessage = {
+        id: createMessageId(),
+        role: "assistant",
+        content:
+          aiAnswer ||
+          buildChefAlexAnswer(cleanQuestion, {
+            pathname,
+            role,
+          }),
+      };
+
+      setMessages((current) => [...current, assistantMessage]);
+      setActiveTypedMessageId(assistantMessage.id);
+    } catch {
+      const fallbackAnswer = buildChefAlexAnswer(cleanQuestion, {
         pathname,
         role,
       });
@@ -190,13 +215,14 @@ export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
       const assistantMessage: ChefAlexMessage = {
         id: createMessageId(),
         role: "assistant",
-        content: answer,
+        content: `${fallbackAnswer}\n\nLocal fallback used because the AI service is not available right now.`,
       };
 
       setMessages((current) => [...current, assistantMessage]);
       setActiveTypedMessageId(assistantMessage.id);
+    } finally {
       setIsThinking(false);
-    }, 650);
+    }
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -213,17 +239,11 @@ export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
           className="fixed bottom-6 right-6 z-[80] flex items-center gap-3 rounded-full border border-slate-200 bg-slate-950 px-5 py-4 text-sm font-black text-white shadow-2xl transition hover:-translate-y-1 hover:shadow-slate-400/40"
           aria-label="Open Chef Alex assistant"
         >
-          <span className="relative h-12 w-12 overflow-hidden rounded-full border-2 border-white bg-slate-900 shadow-lg">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/chef-alex/chef-alex-avatar.png"
-              alt="Chef Alex"
-              className="h-full w-full scale-125 object-cover object-top"
-            />
+          <span className="relative flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-950">
+            <ChefHat size={23} />
             <span className="absolute -right-1 -top-1 h-4 w-4 animate-ping rounded-full bg-emerald-400" />
             <span className="absolute -right-1 -top-1 h-4 w-4 rounded-full border-2 border-slate-950 bg-emerald-400" />
           </span>
-
           <span className="hidden sm:block">Ask Chef Alex</span>
         </button>
       ) : null}
@@ -251,25 +271,9 @@ export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
                       Online
                     </span>
                   </div>
-
                   <p className="mt-1 text-xs font-bold text-slate-300">
-                    Commercial Forza AI Guide
+                    AI-Powered Forza System Guide
                   </p>
-
-                  <div className="mt-2 flex items-center gap-2 text-[11px] font-bold text-slate-300">
-                    <span
-                      className={`h-2 w-2 rounded-full ${
-                        isThinking || isSpeaking
-                          ? "animate-ping bg-amber-300"
-                          : "bg-emerald-400"
-                      }`}
-                    />
-                    {isThinking
-                      ? "Thinking..."
-                      : isSpeaking
-                        ? "Speaking..."
-                        : "Ready to guide"}
-                  </div>
                 </div>
               </div>
 
@@ -366,7 +370,7 @@ export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
                 <div className="rounded-[1.35rem] border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-500 shadow-sm">
                   <div className="flex items-center gap-2">
                     <Sparkles size={16} className="animate-spin" />
-                    Chef Alex is thinking...
+                    Chef Alex is thinking with AI...
                   </div>
                 </div>
               </div>
@@ -415,74 +419,47 @@ type ChefAlexAvatarProps = {
 
 function ChefAlexAvatar({ isSpeaking }: ChefAlexAvatarProps) {
   return (
-    <div className="relative h-[92px] w-[92px] shrink-0">
-      <div
-        className={`absolute inset-0 rounded-full blur-xl ${
-          isSpeaking
-            ? "animate-pulse bg-amber-300/50"
-            : "animate-pulse bg-emerald-300/30"
-        }`}
-      />
+    <div className="relative h-16 w-16">
+      <div className="absolute inset-0 animate-pulse rounded-full bg-amber-300/30 blur-lg" />
 
-      <div className="relative h-[92px] w-[92px] animate-[chefFloat_3.4s_ease-in-out_infinite] overflow-hidden rounded-full border-2 border-white/30 bg-slate-900 shadow-2xl">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/chef-alex/chef-alex-avatar.png"
-          alt="Chef Alex"
-          className={`h-full w-full scale-[1.45] object-cover object-top transition duration-500 ${
-            isSpeaking ? "brightness-110 saturate-110" : "brightness-100"
-          }`}
-        />
+      <div className="relative flex h-16 w-16 animate-[chefFloat_3s_ease-in-out_infinite] items-center justify-center rounded-full border-2 border-white/20 bg-gradient-to-br from-amber-100 to-white shadow-xl">
+        <div className="absolute -top-2 flex h-7 w-12 items-center justify-center rounded-full bg-white shadow-sm">
+          <ChefHat size={22} className="text-slate-950" />
+        </div>
 
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/45 via-transparent to-white/5" />
+        <div className="mt-4 flex flex-col items-center">
+          <div className="flex gap-2">
+            <span className="h-1.5 w-1.5 animate-[chefBlink_4s_infinite] rounded-full bg-slate-950" />
+            <span className="h-1.5 w-1.5 animate-[chefBlink_4s_infinite] rounded-full bg-slate-950" />
+          </div>
 
-        <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-end gap-1">
           <span
-            className={`w-1 rounded-full bg-emerald-300 ${
-              isSpeaking ? "h-4 animate-[voiceWave_0.45s_ease-in-out_infinite]" : "h-1"
-            }`}
-          />
-          <span
-            className={`w-1 rounded-full bg-amber-300 ${
-              isSpeaking
-                ? "h-6 animate-[voiceWave_0.6s_ease-in-out_infinite]"
-                : "h-1"
-            }`}
-          />
-          <span
-            className={`w-1 rounded-full bg-emerald-300 ${
-              isSpeaking
-                ? "h-3 animate-[voiceWave_0.5s_ease-in-out_infinite]"
-                : "h-1"
+            className={`mt-2 rounded-full bg-slate-950 transition-all ${
+              isSpeaking ? "h-2 w-4 animate-pulse" : "h-1 w-3"
             }`}
           />
         </div>
-      </div>
-
-      <div className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full border-2 border-slate-950 bg-white text-slate-950 shadow-lg">
-        {isSpeaking ? <Volume2 size={15} /> : <ChefHat size={15} />}
       </div>
 
       <style jsx>{`
         @keyframes chefFloat {
           0%,
           100% {
-            transform: translateY(0) scale(1);
+            transform: translateY(0) rotate(-1deg);
           }
           50% {
-            transform: translateY(-4px) scale(1.015);
+            transform: translateY(-4px) rotate(1deg);
           }
         }
 
-        @keyframes voiceWave {
+        @keyframes chefBlink {
           0%,
+          92%,
           100% {
-            transform: scaleY(0.55);
-            opacity: 0.65;
-          }
-          50% {
             transform: scaleY(1);
-            opacity: 1;
+          }
+          95% {
+            transform: scaleY(0.15);
           }
         }
       `}</style>
