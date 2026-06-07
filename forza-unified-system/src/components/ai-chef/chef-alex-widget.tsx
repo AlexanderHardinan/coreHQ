@@ -34,102 +34,6 @@ type ChefAlexWidgetProps = {
   role?: UserRole;
 };
 
-const chefAlexNewFeatureKnowledge = `
-New Forza features Chef Alex must understand:
-
-1. Main Panel
-The Main Panel is the new multi-outlet command radar placed before Dashboard in the sidebar. It is designed for Super Admin and Manager users. It monitors Forza and Fusion outlets in one executive view.
-
-2. Main Panel Radar
-The Main Panel shows an animated radar/map-style command center. It displays both outlets, Forza and Fusion, with live operational alert signals.
-
-3. Area Filters
-The Main Panel can filter alerts by:
-- All Areas
-- Kitchen
-- Bar
-- Global
-
-4. Alert Priority Logic
-Critical alerts include:
-- Expired products
-- Low stock
-- Inventory discrepancy
-- Negative calculated stock
-
-Warning alerts include:
-- Overstock
-- Expiring soon
-- Waste
-- Shrinkage
-
-Stable means no active alert trigger is currently detected.
-
-5. Alert Actions
-Main Panel alerts can now be:
-- Acknowledged
-- Marked as Investigating
-- Marked as Resolved
-
-Users can also add operational notes to alert actions.
-
-6. Alert Persistence
-Alert action status and notes are saved in main_panel_alert_actions and remain after refresh.
-
-7. Executive Exports
-The Main Panel can export executive alert reports:
-- PDF export
-- CSV export
-
-The export respects the active area filter and includes:
-- Product / Issue
-- Outlet
-- Area
-- Alert Status
-- Meta
-- Priority
-- Action Status
-- Action Note
-- Action Updated At
-
-8. Realtime Flow
-Main Panel reacts to realtime changes from:
-- brands
-- brand_units
-- products
-- inventory_movements
-- main_panel_alert_actions
-
-9. Commercial Flow
-Inventory, Kitchen Ops, Bar Ops, Dashboard, and Main Panel must work as one connected commercial system. Alerts should come from live inventory and movement data, not separate fake data.
-`;
-
-const mainPanelKeywords = [
-  "main panel",
-  "radar",
-  "map",
-  "forza",
-  "fusion",
-  "alert",
-  "alerts",
-  "acknowledge",
-  "acknowledged",
-  "investigating",
-  "resolved",
-  "resolve",
-  "note",
-  "notes",
-  "pdf",
-  "csv",
-  "export",
-  "kitchen filter",
-  "bar filter",
-  "global filter",
-  "multi outlet",
-  "multi-outlet",
-  "command radar",
-];
-
 function createMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
@@ -163,144 +67,15 @@ function useTypewriterText(text: string, speed = 18) {
   return displayText;
 }
 
-function isMainPanelQuestion(question: string, pathname: string) {
-  const normalizedQuestion = question.toLowerCase();
-  const isMainPanelPath = pathname.startsWith("/main-panel");
-
-  return (
-    isMainPanelPath ||
-    mainPanelKeywords.some((keyword) => normalizedQuestion.includes(keyword))
-  );
-}
-
-function buildMainPanelAnswer(question: string) {
-  const normalizedQuestion = question.toLowerCase();
-
-  if (
-    normalizedQuestion.includes("pdf") ||
-    normalizedQuestion.includes("csv") ||
-    normalizedQuestion.includes("export") ||
-    normalizedQuestion.includes("report")
-  ) {
-    return [
-      "The Main Panel has executive alert export tools.",
-      "",
-      "Use the PDF button to generate a printable executive alert report. Use the CSV button to download the same alert data for spreadsheet review.",
-      "",
-      "The export follows the current area filter, so if you select Kitchen, Bar, or Global, the report exports only that filtered alert view.",
-      "",
-      "The export includes Product / Issue, Outlet, Area, Alert Status, Meta, Priority, Action Status, Action Note, and Action Updated At.",
-    ].join("\n");
-  }
-
-  if (
-    normalizedQuestion.includes("acknowledge") ||
-    normalizedQuestion.includes("acknowledged") ||
-    normalizedQuestion.includes("investigating") ||
-    normalizedQuestion.includes("resolved") ||
-    normalizedQuestion.includes("resolve") ||
-    normalizedQuestion.includes("note")
-  ) {
-    return [
-      "Main Panel alerts now support operational action tracking.",
-      "",
-      "Each alert can be marked as:",
-      "1. Acknowledged — the team has seen the alert.",
-      "2. Investigating — someone is checking the issue.",
-      "3. Resolved — the issue has been handled operationally.",
-      "",
-      "You can also add an action note before saving the status. The status and note are saved in the system and remain after refresh.",
-    ].join("\n");
-  }
-
-  if (
-    normalizedQuestion.includes("kitchen") ||
-    normalizedQuestion.includes("bar") ||
-    normalizedQuestion.includes("global") ||
-    normalizedQuestion.includes("filter")
-  ) {
-    return [
-      "The Main Panel can filter alerts by operational area.",
-      "",
-      "Use All Areas to see the full operation. Use Kitchen to focus on kitchen inventory and BOH alerts. Use Bar to focus on beverage and FOH bar alerts. Use Global to monitor general products and cross-area operational risks.",
-      "",
-      "The radar metrics, alert cards, and export reports follow the selected filter.",
-    ].join("\n");
-  }
-
-  if (
-    normalizedQuestion.includes("critical") ||
-    normalizedQuestion.includes("warning") ||
-    normalizedQuestion.includes("stable") ||
-    normalizedQuestion.includes("priority")
-  ) {
-    return [
-      "The Main Panel uses three alert levels.",
-      "",
-      "Critical means the issue needs immediate attention. This includes expired products, low stock, inventory discrepancy, and negative calculated stock.",
-      "",
-      "Warning means the issue should be monitored. This includes overstock, expiring soon, waste, and shrinkage.",
-      "",
-      "Stable means no active issue is detected for that outlet or area.",
-    ].join("\n");
-  }
-
-  return [
-    "The Main Panel is the new multi-outlet command radar for Forza and Fusion.",
-    "",
-    "It gives Super Admin and Manager users a live executive view of both outlets, with radar-style monitoring, outlet markers, Kitchen / Bar / Global filters, alert priority signals, and action tracking.",
-    "",
-    "It monitors live inventory and movement data, including low stock, overstock, expired items, expiring soon items, discrepancies, waste, shrinkage, and negative stock.",
-    "",
-    "Managers can acknowledge alerts, mark them as investigating, resolve them, add notes, and export PDF or CSV executive alert reports.",
-  ].join("\n");
-}
-
-function getEnhancedPageContext(pathname: string, defaultContext: string) {
-  if (pathname.startsWith("/main-panel")) {
-    return "You are on the Main Panel. This is the multi-outlet command radar for Forza and Fusion. It shows live outlet alerts, Kitchen / Bar / Global filters, alert priorities, acknowledgment actions, investigation tracking, resolved status, action notes, and PDF/CSV executive alert exports.";
-  }
-
-  return defaultContext;
-}
-
-function getEnhancedQuickQuestions(pathname: string, defaultQuestions: string[]) {
-  const mainPanelQuestions = [
-    "How does Main Panel work?",
-    "How do I acknowledge an alert?",
-    "How do I export PDF or CSV?",
-    "What is Critical vs Warning?",
-  ];
-
-  if (pathname.startsWith("/main-panel")) {
-    return mainPanelQuestions;
-  }
-
-  return [...mainPanelQuestions.slice(0, 2), ...defaultQuestions].slice(0, 6);
-}
-
 export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
   const pathname = usePathname();
 
-  const baseQuickQuestions = useMemo(
+  const quickQuestions = useMemo(
     () => getChefAlexQuickQuestions(pathname),
     [pathname],
   );
 
-  const quickQuestions = useMemo(
-    () => getEnhancedQuickQuestions(pathname, baseQuickQuestions),
-    [baseQuickQuestions, pathname],
-  );
-
-  const basePageContext = useMemo(
-    () => getChefAlexPageContext(pathname),
-    [pathname],
-  );
-
-  const pageContext = useMemo(
-    () => getEnhancedPageContext(pathname, basePageContext),
-    [basePageContext, pathname],
-  );
+  const pageContext = useMemo(() => getChefAlexPageContext(pathname), [pathname]);
 
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -314,7 +89,7 @@ export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
       id: createMessageId(),
       role: "assistant",
       content:
-        "Hello, I am Chef Alex. I can guide you through Forza modules, calculations, realtime sync, Inventory, Kitchen Ops, Bar Ops, Sales Performance, Budgets, Reports, user permissions, and the new Main Panel command radar with alert acknowledgment and PDF/CSV export.",
+        "Hello, I am Chef Alex. I can guide you through the complete Forza platform: Main Panel, Dashboard, Inventory, Kitchen Ops, Bar Ops, Recipe Maker, Sales Performance, Payroll Budget, Operational Budget, Reports, Users, Brand Management, Settings, Profile, realtime sync, UOM costing, alerts, PDF/CSV exports, and troubleshooting.",
     },
   ]);
 
@@ -391,7 +166,7 @@ export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
     };
   }, [activeTypedMessageId, isVoiceEnabled, latestAssistantMessage]);
 
-  async function getChefAlexAiAnswer(question: string) {
+  async function getChefAlexAiAnswer(question: string, localGuideAnswer: string) {
     const response = await fetch("/api/chef-alex", {
       method: "POST",
       headers: {
@@ -401,7 +176,7 @@ export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
         question,
         pathname,
         role,
-        featureContext: chefAlexNewFeatureKnowledge,
+        localGuideAnswer,
       }),
     });
 
@@ -431,40 +206,27 @@ export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
     setInput("");
     setIsThinking(true);
 
-    try {
-      const featureAnswer = isMainPanelQuestion(cleanQuestion, pathname)
-        ? buildMainPanelAnswer(cleanQuestion)
-        : "";
+    const localGuideAnswer = buildChefAlexAnswer(cleanQuestion, {
+      pathname,
+      role,
+    });
 
-      const aiAnswer = featureAnswer
-        ? featureAnswer
-        : await getChefAlexAiAnswer(cleanQuestion);
+    try {
+      const aiAnswer = await getChefAlexAiAnswer(cleanQuestion, localGuideAnswer);
 
       const assistantMessage: ChefAlexMessage = {
         id: createMessageId(),
         role: "assistant",
-        content:
-          aiAnswer ||
-          buildChefAlexAnswer(cleanQuestion, {
-            pathname,
-            role,
-          }),
+        content: aiAnswer || localGuideAnswer,
       };
 
       setMessages((current) => [...current, assistantMessage]);
       setActiveTypedMessageId(assistantMessage.id);
     } catch {
-      const fallbackAnswer = isMainPanelQuestion(cleanQuestion, pathname)
-        ? buildMainPanelAnswer(cleanQuestion)
-        : buildChefAlexAnswer(cleanQuestion, {
-            pathname,
-            role,
-          });
-
       const assistantMessage: ChefAlexMessage = {
         id: createMessageId(),
         role: "assistant",
-        content: `${fallbackAnswer}\n\nLocal fallback used because the AI service is not available right now.`,
+        content: localGuideAnswer,
       };
 
       setMessages((current) => [...current, assistantMessage]);
@@ -528,7 +290,7 @@ export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
                   </div>
 
                   <p className="mt-1 text-xs font-bold text-slate-300">
-                    AI-Powered Forza System Guide
+                    Complete Forza Platform Guide
                   </p>
 
                   <div className="mt-2 flex items-center gap-2 text-[11px] font-bold text-slate-300">
@@ -540,7 +302,7 @@ export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
                       }`}
                     />
                     {isThinking
-                      ? "Thinking with AI..."
+                      ? "Thinking with Forza guide..."
                       : isSpeaking
                         ? "Speaking..."
                         : "Ready to guide"}
@@ -641,7 +403,7 @@ export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
                 <div className="rounded-[1.35rem] border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-500 shadow-sm">
                   <div className="flex items-center gap-2">
                     <Sparkles size={16} className="animate-spin" />
-                    Chef Alex is thinking with AI...
+                    Chef Alex is reading the Forza guide...
                   </div>
                 </div>
               </div>
@@ -664,7 +426,7 @@ export function ChefAlexWidget({ role }: ChefAlexWidgetProps) {
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 pl-11 pr-4 text-sm font-bold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:bg-white"
-                  placeholder="Ask Chef Alex how Forza works..."
+                  placeholder="Ask Chef Alex about any Forza module..."
                 />
               </div>
 
