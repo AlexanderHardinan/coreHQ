@@ -20,6 +20,8 @@ import {
   CheckCircle2,
   CircleDollarSign,
   Clock3,
+  Download,
+  FileSpreadsheet,
   Flame,
   Gauge,
   GlassWater,
@@ -388,6 +390,28 @@ function getBrandAccent(code: string) {
     badge: "bg-slate-950 text-white",
     soft: "bg-amber-50 text-amber-800 border-amber-100",
   };
+}
+
+function escapeCsvValue(value: string | number | null | undefined) {
+  const stringValue = String(value ?? "");
+  const escapedValue = stringValue.replaceAll('"', '""');
+
+  return `"${escapedValue}"`;
+}
+
+function escapeHtml(value: string | number | null | undefined) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function getReportDateStamp() {
+  const now = new Date();
+
+  return now.toISOString().slice(0, 19).replaceAll(":", "-");
 }
 
 export function MainPanelClient({
@@ -848,6 +872,284 @@ export function MainPanelClient({
     }
   }
 
+  function getExportRows() {
+    return alertRows.map((alert) => {
+      const action = alertActionMap.get(`${alert.brandId}:${alert.alertKey}`);
+      const actionStatus = getActionStatusLabel(action?.alert_status);
+      const actionNote = action?.alert_note || "";
+      const actionUpdatedAt = action?.updated_at || "";
+
+      return {
+        productIssue: alert.productName,
+        outlet: `${alert.brandName} · ${alert.unitName}`,
+        area: areaLabels[alert.area],
+        alertStatus: alert.status,
+        meta: alert.meta,
+        priority: alert.priority,
+        actionStatus,
+        actionNote,
+        actionUpdatedAt,
+      };
+    });
+  }
+
+  function downloadAlertCsv() {
+    const exportRows = getExportRows();
+
+    const headers = [
+      "Product / Issue",
+      "Outlet",
+      "Area",
+      "Alert Status",
+      "Meta",
+      "Priority",
+      "Action Status",
+      "Action Note",
+      "Action Updated At",
+    ];
+
+    const csvRows = [
+      headers.map(escapeCsvValue).join(","),
+      ...exportRows.map((row) =>
+        [
+          row.productIssue,
+          row.outlet,
+          row.area,
+          row.alertStatus,
+          row.meta,
+          row.priority,
+          row.actionStatus,
+          row.actionNote,
+          row.actionUpdatedAt,
+        ]
+          .map(escapeCsvValue)
+          .join(","),
+      ),
+    ];
+
+    const blob = new Blob([csvRows.join("\n")], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `main-panel-alert-report-${areaFilter}-${getReportDateStamp()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadAlertPdf() {
+    const exportRows = getExportRows();
+
+    if (exportRows.length === 0) {
+      window.alert("No alert rows available for the current filter.");
+      return;
+    }
+
+    const generatedAt = new Date().toLocaleString();
+    const areaLabel = areaFilter === "all" ? "All Areas" : areaLabels[areaFilter];
+
+    const rowsHtml = exportRows
+      .map(
+        (row) => `
+          <tr>
+            <td>${escapeHtml(row.productIssue)}</td>
+            <td>${escapeHtml(row.outlet)}</td>
+            <td>${escapeHtml(row.area)}</td>
+            <td>${escapeHtml(row.alertStatus)}</td>
+            <td>${escapeHtml(row.meta)}</td>
+            <td>${escapeHtml(row.priority)}</td>
+            <td>${escapeHtml(row.actionStatus)}</td>
+            <td>${escapeHtml(row.actionNote || "-")}</td>
+          </tr>
+        `,
+      )
+      .join("");
+
+    const html = `
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Main Panel Executive Alert Report</title>
+          <style>
+            * { box-sizing: border-box; }
+            body {
+              margin: 0;
+              padding: 32px;
+              color: #0f172a;
+              font-family: Arial, Helvetica, sans-serif;
+              background: #ffffff;
+            }
+            .sheet {
+              max-width: 1180px;
+              margin: 0 auto;
+              border: 1px solid #e2e8f0;
+              border-radius: 24px;
+              overflow: hidden;
+            }
+            .header {
+              padding: 28px;
+              background: linear-gradient(135deg, #0f172a, #1e293b);
+              color: #ffffff;
+            }
+            .headerTop {
+              display: flex;
+              justify-content: space-between;
+              gap: 24px;
+              align-items: flex-start;
+            }
+            .brand {
+              font-size: 12px;
+              letter-spacing: 1.4px;
+              text-transform: uppercase;
+              font-weight: 900;
+              color: #d4af37;
+            }
+            h1 {
+              margin: 10px 0 0;
+              font-size: 30px;
+              line-height: 1.1;
+            }
+            .badge {
+              display: inline-block;
+              padding: 8px 12px;
+              border-radius: 999px;
+              background: rgba(255,255,255,.12);
+              font-size: 12px;
+              font-weight: 900;
+              white-space: nowrap;
+            }
+            .content { padding: 28px; }
+            .grid {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 12px;
+              margin-bottom: 24px;
+            }
+            .card {
+              border: 1px solid #e2e8f0;
+              border-radius: 18px;
+              padding: 14px;
+              background: #f8fafc;
+            }
+            .label {
+              font-size: 10px;
+              text-transform: uppercase;
+              letter-spacing: .8px;
+              color: #64748b;
+              font-weight: 900;
+            }
+            .value {
+              margin-top: 6px;
+              font-size: 15px;
+              color: #0f172a;
+              font-weight: 900;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              overflow: hidden;
+              border-radius: 16px;
+              font-size: 11px;
+            }
+            th {
+              text-align: left;
+              background: #0f172a;
+              color: #ffffff;
+              padding: 9px;
+              font-size: 9px;
+              text-transform: uppercase;
+              letter-spacing: .7px;
+            }
+            td {
+              border-bottom: 1px solid #e2e8f0;
+              padding: 9px;
+              vertical-align: top;
+            }
+            .footer {
+              margin-top: 28px;
+              padding-top: 18px;
+              border-top: 1px solid #e2e8f0;
+              display: flex;
+              justify-content: space-between;
+              gap: 18px;
+              font-size: 11px;
+              color: #64748b;
+              font-weight: 700;
+            }
+            @media print {
+              body { padding: 0; }
+              .sheet { border: 0; border-radius: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <main class="sheet">
+            <section class="header">
+              <div class="headerTop">
+                <div>
+                  <div class="brand">Forza Unified System</div>
+                  <h1>Main Panel Executive Alert Report</h1>
+                </div>
+                <div class="badge">${escapeHtml(areaLabel)}</div>
+              </div>
+            </section>
+
+            <section class="content">
+              <div class="grid">
+                <div class="card"><div class="label">Area Filter</div><div class="value">${escapeHtml(areaLabel)}</div></div>
+                <div class="card"><div class="label">Total Alerts</div><div class="value">${exportRows.length}</div></div>
+                <div class="card"><div class="label">Critical</div><div class="value">${criticalAlerts}</div></div>
+                <div class="card"><div class="label">Warning</div><div class="value">${warningAlerts}</div></div>
+                <div class="card"><div class="label">Acknowledged</div><div class="value">${acknowledgedCount}</div></div>
+                <div class="card"><div class="label">Investigating</div><div class="value">${investigatingCount}</div></div>
+                <div class="card"><div class="label">Resolved</div><div class="value">${resolvedCount}</div></div>
+                <div class="card"><div class="label">Generated</div><div class="value">${escapeHtml(generatedAt)}</div></div>
+              </div>
+
+              <table>
+                <thead>
+                  <tr>
+                    <th>Product / Issue</th>
+                    <th>Outlet</th>
+                    <th>Area</th>
+                    <th>Alert Status</th>
+                    <th>Meta</th>
+                    <th>Priority</th>
+                    <th>Action Status</th>
+                    <th>Action Note</th>
+                  </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+              </table>
+
+              <div class="footer">
+                <div>Main Panel Radar Export</div>
+                <div>Developer Rights Chef Alex @FORZA 2026</div>
+              </div>
+            </section>
+          </main>
+          <script>window.onload = function () { window.print(); };</script>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "_blank", "width=1200,height=900");
+
+    if (!printWindow) {
+      window.alert("Allow popups to export the Main Panel PDF report.");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+  }
+
   return (
     <div className="space-y-6">
       <section className="glass-panel relative overflow-hidden rounded-[2.35rem] p-6 md:p-8">
@@ -1241,9 +1543,29 @@ export function MainPanelClient({
             </h2>
           </div>
 
-          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-xs font-black uppercase tracking-wide text-white shadow-xl">
-            <RefreshCw size={15} />
-            Auto Refresh + Action Sync
+          <div className="flex flex-wrap gap-2">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-xs font-black uppercase tracking-wide text-white shadow-xl">
+              <RefreshCw size={15} />
+              Auto Refresh + Action Sync
+            </div>
+
+            <button
+              type="button"
+              onClick={downloadAlertPdf}
+              className="forza-button-hover inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-700 shadow-sm"
+            >
+              <Download size={15} />
+              PDF
+            </button>
+
+            <button
+              type="button"
+              onClick={downloadAlertCsv}
+              className="forza-button-hover inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-700 shadow-sm"
+            >
+              <FileSpreadsheet size={15} />
+              CSV
+            </button>
           </div>
         </div>
 
