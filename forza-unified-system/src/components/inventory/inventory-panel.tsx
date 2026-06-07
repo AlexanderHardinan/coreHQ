@@ -297,18 +297,20 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
-function getStockStatus(product: InventoryProduct) {
-  if (
-    product.maximum_stock > 0 &&
-    product.current_stock > product.maximum_stock
-  ) {
+function getStockStatus(product: InventoryProduct, calculatedStock?: number) {
+  const stockQuantity =
+    typeof calculatedStock === "number"
+      ? calculatedStock
+      : Number(product.current_stock || 0);
+
+  if (product.maximum_stock > 0 && stockQuantity > product.maximum_stock) {
     return {
       label: "Over Stocked",
       className: "bg-amber-50 text-amber-700",
     };
   }
 
-  if (product.current_stock <= product.minimum_stock) {
+  if (stockQuantity <= product.minimum_stock) {
     return {
       label: "Low Stock",
       className: "bg-red-50 text-red-700",
@@ -500,11 +502,7 @@ function normalizeProductCategoryForArea(
 ): ProductCategoryValue {
   const allowedCategories = productCategoryOptionsByArea[area] || ["Food"];
 
-  if (
-    value === "Food" ||
-    value === "Beverage" ||
-    value === "Others"
-  ) {
+  if (value === "Food" || value === "Beverage" || value === "Others") {
     if (allowedCategories.includes(value)) {
       return value;
     }
@@ -702,6 +700,101 @@ export function InventoryPanel({
     return map;
   }, [movementList]);
 
+  const calculatedProductBalanceMap = useMemo(() => {
+    const map = new Map<string, number>();
+    const movementsByProduct = new Map<string, InventoryMovement[]>();
+
+    movementList.forEach((movement) => {
+      const current = movementsByProduct.get(movement.product_id) || [];
+      current.push(movement);
+      movementsByProduct.set(movement.product_id, current);
+    });
+
+    movementsByProduct.forEach((productMovements, productId) => {
+      let runningBalance = 0;
+
+      sortMovementsOldestFirst(productMovements).forEach((movement) => {
+        const direction = getMovementDirection(movement.movement_type);
+
+        if (direction === "count") {
+          if (movement.physical_count_qty !== null) {
+            runningBalance = Number(movement.physical_count_qty || 0);
+          }
+        } else {
+          runningBalance += getMovementBalanceEffect(movement);
+        }
+      });
+
+      map.set(productId, runningBalance);
+    });
+
+    return map;
+  }, [movementList]);
+
+  function getCalculatedProductBalance(product: InventoryProduct) {
+    return calculatedProductBalanceMap.get(product.id) ?? 0;
+  }
+
+  function getGeneratedSkuBase(
+    nextProductName: string,
+    nextUnitId: string,
+    nextOpsArea: OpsArea,
+  ) {
+    const brandCode = toCode(selectedBrand?.code || "BRAND");
+    const unitCode =
+      toCode(units.find((item) => item.id === nextUnitId)?.code || "UNIT") ||
+      "UNIT";
+    const areaCode = toCode(nextOpsArea);
+    const productCode = toCode(nextProductName) || "PRODUCT";
+
+    return `${brandCode}-${unitCode}-${areaCode}-${productCode}`;
+  }
+
+  function getNextGeneratedSku(
+    nextProductName: string,
+    nextUnitId: string = selectedUnitId,
+    nextOpsArea: OpsArea = selectedOpsArea,
+    excludedProductId: string = editId,
+  ) {
+    const baseSku = getGeneratedSkuBase(nextProductName, nextUnitId, nextOpsArea);
+
+    const existingSkuSet = new Set(
+      productList
+        .filter(
+          (product) =>
+            product.id !== excludedProductId &&
+            product.brand_id === selectedBrand?.id &&
+            product.brand_unit_id === nextUnitId &&
+            product.ops_area === nextOpsArea,
+        )
+        .map((product) => product.sku.toUpperCase()),
+    );
+
+    for (let index = 1; index <= 99999; index += 1) {
+      const candidate = `${baseSku}-${String(index).padStart(5, "0")}`;
+
+      if (!existingSkuSet.has(candidate)) {
+        return candidate;
+      }
+    }
+
+    return `${baseSku}-${Date.now()}`;
+  }
+
+  useEffect(() => {
+    if (mode !== "create") {
+      return;
+    }
+
+    if (!productName.trim()) {
+      setSku("");
+      return;
+    }
+
+    setSku(getNextGeneratedSku(productName, selectedUnitId, selectedOpsArea, ""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, productName, selectedBrand?.id, selectedOpsArea, selectedUnitId, productList]);
+
   const reportProducts = useMemo(() => {
     if (reportScope === "product") {
       return visibleProducts.filter((product) => product.id === reportProductId);
@@ -776,13 +869,17 @@ export function InventoryPanel({
   }, [visibleMovements]);
 
   const inventoryStats = useMemo(() => {
-    const lowStock = visibleProducts.filter(
-      (product) => getStockStatus(product).label === "Low Stock",
-    ).length;
+    const lowStock = visibleProducts.filter((product) => {
+      const calculatedStock = calculatedProductBalanceMap.get(product.id) ?? 0;
 
-    const overStocked = visibleProducts.filter(
-      (product) => getStockStatus(product).label === "Over Stocked",
-    ).length;
+      return getStockStatus(product, calculatedStock).label === "Low Stock";
+    }).length;
+
+    const overStocked = visibleProducts.filter((product) => {
+      const calculatedStock = calculatedProductBalanceMap.get(product.id) ?? 0;
+
+      return getStockStatus(product, calculatedStock).label === "Over Stocked";
+    }).length;
 
     const expiring = visibleProducts.filter((product) =>
       ["Expired", "Expiring Soon"].includes(
@@ -790,10 +887,11 @@ export function InventoryPanel({
       ),
     ).length;
 
-    const value = visibleProducts.reduce(
-      (total, product) => total + product.current_stock * product.unit_cost,
-      0,
-    );
+    const value = visibleProducts.reduce((total, product) => {
+      const calculatedStock = calculatedProductBalanceMap.get(product.id) ?? 0;
+
+      return total + calculatedStock * product.unit_cost;
+    }, 0);
 
     return {
       totalProducts: visibleProducts.length,
@@ -802,7 +900,7 @@ export function InventoryPanel({
       expiring,
       value,
     };
-  }, [visibleProducts]);
+  }, [calculatedProductBalanceMap, visibleProducts]);
 
   async function refreshMovements(sourceProducts = productList) {
     const productIds = sourceProducts.map((product) => product.id);
@@ -820,7 +918,7 @@ export function InventoryPanel({
       .in("product_id", productIds)
       .order("movement_date", { ascending: false })
       .order("created_at", { ascending: false })
-      .limit(150);
+      .limit(500);
 
     if (error) {
       toast.error(error.message);
@@ -907,7 +1005,12 @@ export function InventoryPanel({
       )
       .subscribe();
 
+    const fallbackRefresh = window.setInterval(() => {
+      refreshInventoryData();
+    }, 5000);
+
     return () => {
+      window.clearInterval(fallbackRefresh);
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -996,30 +1099,12 @@ export function InventoryPanel({
   }
 
   function generateSku() {
-    const brandCode = selectedBrand?.code || "BRAND";
-    const unitCode = selectedUnit?.code || "UNIT";
-    const areaCode = selectedOpsArea.toUpperCase();
-    const categoryCode = `${toCode(productCategory)}-${toCode(productGroup)}`;
+    if (!productName.trim()) {
+      toast.error("Enter a product name first. SKU is generated from the product.");
+      return;
+    }
 
-    const existingCount =
-      productList.filter((product) => {
-        const normalizedCategory = normalizeProductCategoryForArea(
-          product.ops_area,
-          product.product_category,
-        );
-
-        return (
-          product.brand_unit_id === selectedUnitId &&
-          product.ops_area === selectedOpsArea &&
-          normalizedCategory === productCategory &&
-          normalizeProductGroup(normalizedCategory, product.product_group) ===
-            productGroup
-        );
-      }).length + 1;
-
-    const nextNumber = String(existingCount).padStart(5, "0");
-
-    setSku(`${brandCode}-${unitCode}-${areaCode}-${categoryCode}-${nextNumber}`);
+    setSku(getNextGeneratedSku(productName, selectedUnitId, selectedOpsArea, editId));
   }
 
   function editProduct(product: InventoryProduct) {
@@ -1098,7 +1183,8 @@ export function InventoryPanel({
 
     const productRows = reportProducts
       .map((product) => {
-        const stockStatus = getStockStatus(product);
+        const calculatedStock = getCalculatedProductBalance(product);
+        const stockStatus = getStockStatus(product, calculatedStock);
         const expiryStatus = getExpiryStatus(product.expiry_date);
         const display = getCategoryDisplay(product);
 
@@ -1108,11 +1194,11 @@ export function InventoryPanel({
             <td>${escapeHtml(product.sku)}</td>
             <td>${escapeHtml(display.category)} / ${escapeHtml(display.group)}</td>
             <td>${escapeHtml(opsAreaLabels[product.ops_area])}</td>
-            <td>${formatQty(product.current_stock)} ${escapeHtml(product.unit)}</td>
+            <td>${formatQty(calculatedStock)} ${escapeHtml(product.unit)}</td>
             <td>${formatQty(product.minimum_stock)}</td>
             <td>${formatQty(product.maximum_stock)}</td>
             <td>${formatCurrency(product.unit_cost)}</td>
-            <td>${formatCurrency(product.current_stock * product.unit_cost)}</td>
+            <td>${formatCurrency(calculatedStock * product.unit_cost)}</td>
             <td>${escapeHtml(stockStatus.label)}</td>
             <td>${escapeHtml(expiryStatus.label)}</td>
           </tr>
@@ -1160,10 +1246,11 @@ export function InventoryPanel({
       })
       .join("");
 
-    const totalValue = reportProducts.reduce(
-      (total, product) => total + product.current_stock * product.unit_cost,
-      0,
-    );
+    const totalValue = reportProducts.reduce((total, product) => {
+      const calculatedStock = getCalculatedProductBalance(product);
+
+      return total + calculatedStock * product.unit_cost;
+    }, 0);
 
     const html = `
       <!doctype html>
@@ -1321,7 +1408,7 @@ export function InventoryPanel({
                     <th>SKU</th>
                     <th>Category / Group</th>
                     <th>Area</th>
-                    <th>Qty Left</th>
+                    <th>Calculated Qty Left</th>
                     <th>Min</th>
                     <th>Max</th>
                     <th>Unit Cost</th>
@@ -1399,13 +1486,7 @@ export function InventoryPanel({
       return;
     }
 
-    if (!sku.trim()) {
-      toast.error("SKU is required. Generate or enter a SKU.");
-      return;
-    }
-
     const normalizedProductName = normalizeText(productName);
-    const normalizedSku = normalizeText(sku);
 
     const duplicateProductName = productList.find(
       (product) =>
@@ -1418,24 +1499,15 @@ export function InventoryPanel({
     );
 
     if (duplicateProductName) {
-      toast.error("Product already exists. Use the existing product instead.");
+      toast.error("Product already exists in this branch and area.");
       return;
     }
 
-    const duplicateSku = productList.find(
-      (product) =>
-        product.is_active &&
-        product.brand_id === selectedBrand.id &&
-        product.brand_unit_id === selectedUnitId &&
-        product.ops_area === selectedOpsArea &&
-        normalizeText(product.sku) === normalizedSku &&
-        product.id !== editId,
-    );
+    const nextSku =
+      sku.trim() ||
+      getNextGeneratedSku(productName, selectedUnitId, selectedOpsArea, editId);
 
-    if (duplicateSku) {
-      toast.error("SKU already exists. Generate a different SKU.");
-      return;
-    }
+    setSku(nextSku);
 
     setIsSaving(true);
 
@@ -1447,7 +1519,7 @@ export function InventoryPanel({
       product_group: productGroup,
       ops_area: selectedOpsArea,
       product_name: productName.trim(),
-      sku: sku.trim().toUpperCase(),
+      sku: nextSku.trim().toUpperCase(),
       unit,
       supplier_name: supplierName.trim() || null,
       opening_stock: Number(openingStock || 0),
@@ -1469,12 +1541,12 @@ export function InventoryPanel({
 
       if (error) {
         if (isDuplicateInventoryError(error.message)) {
-          toast.error("Product already exists. Use the existing product instead.");
+          toast.error("Product already exists in this branch and area.");
           return;
         }
 
         if (isDuplicateSkuError(error.message)) {
-          toast.error("SKU already exists. Generate a different SKU.");
+          toast.error("Generated SKU already exists. Generate a different SKU.");
           return;
         }
 
@@ -1508,12 +1580,12 @@ export function InventoryPanel({
 
     if (error) {
       if (isDuplicateInventoryError(error.message)) {
-        toast.error("Product already exists. Use the existing product instead.");
+        toast.error("Product already exists in this branch and area.");
         return;
       }
 
       if (isDuplicateSkuError(error.message)) {
-        toast.error("SKU already exists. Generate a different SKU.");
+        toast.error("Generated SKU already exists. Generate a different SKU.");
         return;
       }
 
@@ -1528,7 +1600,7 @@ export function InventoryPanel({
     setMovementProductId(createdProduct.id);
     updateInventoryUrl(selectedUnitId, selectedOpsArea);
     toast.success(
-      "Product created successfully. Stock will calculate after Product In or movement entry.",
+      "Product created successfully. Stock will calculate only after Product In or movement entry.",
     );
     resetForm();
   }
@@ -1765,7 +1837,7 @@ export function InventoryPanel({
               className="forza-button-hover inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl"
             >
               <Plus size={17} />
-              Generate SKU
+              Regenerate SKU
             </button>
           </div>
         </div>
@@ -1848,13 +1920,13 @@ export function InventoryPanel({
             </div>
           </div>
 
-          <Field label="SKU">
+          <Field label="System Generated SKU">
             <input
               required
+              readOnly
               value={sku}
-              onChange={(event) => setSku(event.target.value.toUpperCase())}
-              className="forza-input"
-              placeholder="Auto generated SKU"
+              className="forza-input cursor-not-allowed bg-slate-100"
+              placeholder="SKU generates after product name"
             />
           </Field>
 
@@ -1941,11 +2013,12 @@ export function InventoryPanel({
 
           <div className="rounded-3xl border border-blue-100 bg-blue-50 p-4 md:col-span-2 xl:col-span-4">
             <p className="text-xs font-black uppercase tracking-wide text-blue-700">
-              Area-Based Category Rule
+              SKU + Calculation Rule
             </p>
             <p className="mt-2 text-sm font-bold leading-6 text-blue-800">
-              Kitchen uses Food groups. Bar uses Beverage groups. Global uses
-              Others groups. Stock quantity and value follow the selected UOM.
+              SKU is generated by brand, branch, area, and product name. Category
+              and group do not control duplication. Stock quantity and value
+              calculate from movement ledger only, using the product UOM.
             </p>
           </div>
 
@@ -2267,7 +2340,7 @@ export function InventoryPanel({
                 <th className="px-4">Category / Group</th>
                 <th className="px-4">SKU</th>
                 <th className="px-4">Area</th>
-                <th className="px-4">Actual Qty Left</th>
+                <th className="px-4">Calculated Qty Left</th>
                 <th className="px-4">Min</th>
                 <th className="px-4">Max</th>
                 <th className="px-4">Cost</th>
@@ -2280,7 +2353,8 @@ export function InventoryPanel({
 
             <tbody>
               {visibleProducts.map((product) => {
-                const stockStatus = getStockStatus(product);
+                const calculatedStock = getCalculatedProductBalance(product);
+                const stockStatus = getStockStatus(product, calculatedStock);
                 const expiryStatus = getExpiryStatus(product.expiry_date);
                 const display = getCategoryDisplay(product);
 
@@ -2313,7 +2387,7 @@ export function InventoryPanel({
                       {opsAreaLabels[product.ops_area]}
                     </td>
                     <td className="px-4 py-4 text-sm font-black text-slate-950">
-                      {formatQty(product.current_stock)} {product.unit}
+                      {formatQty(calculatedStock)} {product.unit}
                     </td>
                     <td className="px-4 py-4 text-sm font-bold text-slate-600">
                       {product.minimum_stock}
@@ -2325,7 +2399,7 @@ export function InventoryPanel({
                       {formatCurrency(product.unit_cost)}
                     </td>
                     <td className="px-4 py-4 text-sm font-black text-slate-950">
-                      {formatCurrency(product.current_stock * product.unit_cost)}
+                      {formatCurrency(calculatedStock * product.unit_cost)}
                     </td>
                     <td className="px-4 py-4">
                       <span
