@@ -94,6 +94,15 @@ type DashboardSoldItem = {
   sold_date: string;
 };
 
+type DashboardSalesRevenueRecord = {
+  id: string;
+  brand_id: string;
+  brand_unit_id: string | null;
+  revenue_date: string;
+  net_revenue: number;
+  is_active: boolean;
+};
+
 type AlertPriority = "critical" | "warning" | "stable";
 
 const stockInTypes: DashboardMovementType[] = [
@@ -423,6 +432,16 @@ export default async function DashboardPage({
     .limit(300);
 
   const soldItems = (soldItemsData || []) as DashboardSoldItem[];
+
+  const { data: salesRevenueData } = await supabase
+    .from("sales_revenue")
+    .select("id, brand_id, brand_unit_id, revenue_date, net_revenue, is_active")
+    .eq("brand_id", selectedBrandId)
+    .eq("is_active", true)
+    .order("revenue_date", { ascending: false })
+    .limit(500);
+  const salesRevenue = (salesRevenueData || []) as DashboardSalesRevenueRecord[];
+
   const calculatedProductBalanceMap = buildCalculatedProductBalanceMap(movements);
 
   const inventoryValue = products.reduce((total, product) => {
@@ -476,6 +495,11 @@ export default async function DashboardPage({
 
   const totalSales = soldItems.reduce(
     (total, item) => total + Number(item.total_sales || 0),
+    0,
+  );
+
+  const totalNetRevenue = salesRevenue.reduce(
+    (total, record) => total + Number(record.net_revenue || 0),
     0,
   );
 
@@ -625,8 +649,8 @@ export default async function DashboardPage({
     },
     {
       label: "Net Revenue",
-      value: formatCurrency(totalSales),
-      sub: "Sales performance",
+      value: formatCurrency(totalNetRevenue),
+      sub: "Sales Performance source",
       icon: TrendingUp,
       priority: "stable" as AlertPriority,
     },
