@@ -14,6 +14,7 @@ import {
   LoaderCircle,
   LogOut,
   Menu,
+  Radar,
   Settings,
   ShieldCheck,
   TrendingUp,
@@ -31,6 +32,7 @@ import { roleLabels } from "@/lib/auth/permissions";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 const iconMap = {
+  Radar,
   LayoutDashboard,
   ChefHat,
   GlassWater,
