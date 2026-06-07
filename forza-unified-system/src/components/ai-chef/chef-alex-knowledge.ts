@@ -141,9 +141,27 @@ const brandManagementQuickQuestions = [
   "Why is brand access restricted?",
 ];
 
+const settingsQuickQuestions = [
+  "How do Settings work?",
+  "What are alert thresholds?",
+  "How should system preferences work?",
+  "How do settings affect reports?",
+  "How do settings affect alerts?",
+  "Who should update settings?",
+];
+
+const profileQuickQuestions = [
+  "How does Profile work?",
+  "How do I update my avatar?",
+  "How does profile sync?",
+  "Why is my avatar not showing?",
+  "What profile details are used?",
+  "How does profile connect to the shell?",
+];
+
 export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
   {
-    title: "Forza system overview",
+    title: "Forza complete system overview",
     module: "System",
     keywords: [
       "forza",
@@ -158,9 +176,28 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
       "connected",
       "one flow",
       "unified",
+      "complete guide",
+      "full guide",
+      "whole platform",
     ],
     answer:
-      "Forza is a commercial-grade hospitality operations system. It connects Main Panel, Dashboard, Inventory, Kitchen Ops, Bar Ops, Recipe Maker, Sales Performance, Payroll Budget, Operational Budget, Reports, Users, Brand Management, Settings, and Profile into one unified workflow. The core rule is that every calculation should come from trusted source tables, update in realtime, and avoid disconnected manual values. Inventory movements, product UOM, product activity status, recipe costing, sales, reports, budgets, and alert tracking should work together as one operational flow.",
+      "Forza is a commercial-grade hospitality operations platform. It connects Main Panel, Dashboard, Inventory, Kitchen Ops, Bar Ops, Recipe Maker, Sales Performance, Payroll Budget, Operational Budget, Reports, Users, Brand Management, Settings, and Profile into one operational flow. The commercial rule is simple: every calculation must come from trusted source data, must respect UOM, must update in realtime, and must not leave disconnected records. Product setup, stock movement, recipe costing, sales, budget variance, reports, and alerts must all agree with each other.",
+  },
+  {
+    title: "Commercial data flow",
+    module: "System",
+    keywords: [
+      "commercial flow",
+      "data flow",
+      "one system",
+      "one source",
+      "source of truth",
+      "linked system",
+      "everything together",
+      "system flow",
+    ],
+    answer:
+      "The correct commercial flow is: Brand and Branch define the workspace, Inventory creates the product master, Product In creates stock, Kitchen Ops and Bar Ops consume or adjust stock through movements, Recipe Maker defines ingredient costing, Sales Performance records revenue, sold consumption deducts ingredients, Dashboard summarizes live performance, Main Panel shows live alerts, and Reports export the same source data. If one module changes data, related modules should reflect it without manual refresh.",
   },
   {
     title: "Main Panel overview",
@@ -180,7 +217,7 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
       "command center",
     ],
     answer:
-      "The Main Panel is the multi-outlet command radar for Forza and Fusion. It appears before Dashboard in the sidebar for Super Admin and Manager users. It shows both outlets in one executive radar view, with live alert monitoring for Kitchen, Bar, and Global areas. The Main Panel reads live product and movement data, then highlights low stock, overstock, expired products, expiring soon products, discrepancies, waste, shrinkage, negative stock, and operational alert status.",
+      "The Main Panel is the multi-outlet command radar for Forza and Fusion. It appears before Dashboard in the sidebar for Super Admin and Manager users. It shows both outlets in one executive radar view, with live alert monitoring for Kitchen, Bar, and Global areas. It reads live product and movement data, then highlights low stock, overstock, expired products, expiring soon products, discrepancies, waste, shrinkage, negative stock, and operational alert status.",
   },
   {
     title: "Main Panel area filters",
@@ -277,7 +314,7 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
       "performance dashboard",
     ],
     answer:
-      "The Dashboard is the operational summary page. It should summarize live data from active products, inventory movements, and valid linked sales records. It should not rely on stale disconnected data. The Dashboard should show inventory value, stock in, stock out, waste, shrinkage, sold quantity, revenue indicators, alerts, top consumed ingredients, top sold items, and latest stock movements.",
+      "The Dashboard is the operational summary page. It summarizes live data from active products, inventory movements, and valid linked sales records. It should show inventory value, stock in, stock out, waste, shrinkage, sold quantity, revenue indicators, alerts, top consumed ingredients, top sold items, and latest stock movements. It should not rely on stale disconnected data.",
   },
   {
     title: "Dashboard realtime",
@@ -292,6 +329,20 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
     ],
     answer:
       "Dashboard is a server-rendered page, so realtime behavior should be supported by a client realtime refresher. When products, inventory_movements, sold_items, or recipe_sales change, the dashboard should refresh automatically. Sold Qty should calculate from active product-linked sold_consumption movements, not stale deleted product data.",
+  },
+  {
+    title: "Dashboard sold quantity",
+    module: "Dashboard",
+    keywords: [
+      "sold qty",
+      "sold quantity",
+      "dashboard sold",
+      "sold consumption",
+      "deleted product sold qty",
+      "stale sold qty",
+    ],
+    answer:
+      "Dashboard Sold Qty should come from active product-linked sold_consumption inventory movements. If a product was deleted or made inactive, Dashboard should not keep counting its old sold quantity. Commercial logic must filter against valid active products and avoid stale rows that no longer belong to the current operation.",
   },
   {
     title: "Dashboard stale revenue",
@@ -328,6 +379,21 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
       "Inventory is the product master and stock movement center. Creating or editing a product creates master data only. It should not calculate stock by itself. Stock calculates only when there is a movement such as Product In, Transfer In, Adjustment In, Production Consumption, Sold Consumption, Waste, Shrinkage, Transfer Out, Adjustment Out, or Physical Count. Every movement follows the product UOM: gram, ml, pc, or bottle.",
   },
   {
+    title: "Inventory product creation",
+    module: "Inventory",
+    keywords: [
+      "create product",
+      "edit product",
+      "product creation",
+      "new product",
+      "product setup",
+      "master data",
+      "stock should not calculate",
+    ],
+    answer:
+      "Create/Edit Product should only create or update product master data. It should not calculate stock immediately. A product becomes part of stock value only after a real movement is entered, such as Product In. This prevents false inventory value from appearing before the product is actually received, counted, or moved.",
+  },
+  {
     title: "Inventory commercial costing",
     module: "Inventory",
     keywords: [
@@ -343,6 +409,22 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
     ],
     answer:
       "Commercial inventory costing uses Packaging Amount, Packaging UOM, and Packaging Cost. The user enters the package amount, such as 1000, the UOM, such as gram, and the packaging cost, such as 20. The system automatically calculates Unit Cost per UOM as Packaging Cost divided by Packaging Amount. Example: 20 divided by 1000 gram equals 0.02 per gram. Product In and consumption then use that UOM-based unit cost.",
+  },
+  {
+    title: "Inventory UOM rules",
+    module: "Inventory",
+    keywords: [
+      "uom",
+      "unit",
+      "gram",
+      "ml",
+      "pc",
+      "bottle",
+      "calculate by uom",
+      "movement uom",
+    ],
+    answer:
+      "Forza standardizes product UOM to gram, ml, pc, and bottle. Movements must be entered in the product UOM. If the product is gram, Product In, consumption, waste, and stock count are calculated in gram. If the product is ml, movements are calculated in ml. This keeps Inventory, Kitchen Ops, Bar Ops, Dashboard, Main Panel, and Reports aligned.",
   },
   {
     title: "Area-based inventory categories",
@@ -396,7 +478,39 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
       "Inventory movement balance should calculate from the ledger, oldest to newest, per product. Stock-in movements increase the balance. Stock-out movements deduct the balance. Physical Count resets the balance to the counted quantity. Product creation alone should not create calculated stock. This prevents false stock value before the product is actually received or moved.",
   },
   {
-    title: "Discrepancy",
+    title: "Inventory stock in",
+    module: "Inventory",
+    keywords: [
+      "product in",
+      "stock in",
+      "delivery",
+      "receive stock",
+      "supplier delivery",
+      "purchase",
+      "add stock",
+    ],
+    answer:
+      "Product In is the standard movement for receiving stock. It increases the calculated stock balance using the product UOM and computed unit cost. Example: if flour is 0.02 per gram and Product In is 1000 gram, stock value increases by 20. Product In should be the first movement that creates stock quantity and value for a newly created product.",
+  },
+  {
+    title: "Inventory stock out",
+    module: "Inventory",
+    keywords: [
+      "stock out",
+      "consume",
+      "deduct",
+      "waste",
+      "shrinkage",
+      "transfer out",
+      "adjustment out",
+      "production consumption",
+      "sold consumption",
+    ],
+    answer:
+      "Stock-out movements deduct from the calculated balance. Production Consumption, Sold Consumption, Waste, Shrinkage, Transfer Out, and Adjustment Out all reduce stock. Each deduction uses the product UOM and unit cost. For example, if a product costs 0.02 per gram and 200 gram is consumed, the stock quantity drops by 200 gram and stock value drops by 4.",
+  },
+  {
+    title: "Physical count and discrepancy",
     module: "Inventory",
     keywords: [
       "discrepancy",
@@ -408,7 +522,22 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
       "variance",
     ],
     answer:
-      "Discrepancy is calculated by comparing physical count against calculated system balance. Physical Count minus System Balance equals Discrepancy. If the physical count is lower, the result is missing stock. If it is higher, the result is over stock. If both match, it is on track.",
+      "Discrepancy is calculated by comparing physical count against calculated system balance. Physical Count minus System Balance equals Discrepancy. If the physical count is lower, the result is missing stock. If it is higher, the result is over stock. If both match, it is on track. A physical count should reset the system balance to the counted quantity going forward.",
+  },
+  {
+    title: "Expiry tracking",
+    module: "Inventory",
+    keywords: [
+      "expiry",
+      "expired",
+      "expiring",
+      "expiry date",
+      "expiry alert",
+      "expired item",
+      "expiring soon",
+    ],
+    answer:
+      "Expiry tracking uses the product expiry date. Expired products become Critical alerts. Products expiring soon become Warning alerts. Main Panel, Dashboard, Inventory, and Reports should all read the same expiry data so expired and expiring items are visible to operations before they become waste or risk.",
   },
   {
     title: "Kitchen Ops calculation",
@@ -424,7 +553,7 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
       "kitchen balance",
     ],
     answer:
-      "Kitchen Ops reads kitchen products and kitchen inventory movements. It shows kitchen stock health, production consumption, waste, shrinkage, discrepancy, and calculated movement balance. The correct ledger calculation runs oldest to newest per product. Product In, Transfer In, and Adjustment In increase balance. Production Consumption, Sold Consumption, Waste, Shrinkage, Transfer Out, and Adjustment Out deduct balance. Physical Count resets the system balance to the counted quantity.",
+      "Kitchen Ops reads kitchen products and kitchen inventory movements. It shows kitchen stock health, production consumption, sold consumption, waste, shrinkage, discrepancy, and calculated movement balance. The ledger calculation runs oldest to newest per product. Product In, Transfer In, and Adjustment In increase balance. Production Consumption, Sold Consumption, Waste, Shrinkage, Transfer Out, and Adjustment Out deduct balance. Physical Count resets the system balance to the counted quantity.",
   },
   {
     title: "Kitchen Ops realtime",
@@ -438,6 +567,32 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
     ],
     answer:
       "Kitchen Ops should sync with Inventory in realtime. If Inventory adds, edits, deletes, or moves a kitchen product, Kitchen Ops should reflect the update without manual refresh. It should listen to products and inventory_movements and calculate balances from the same ledger rules as Inventory.",
+  },
+  {
+    title: "Kitchen production consumption",
+    module: "Kitchen Ops",
+    keywords: [
+      "production consumption",
+      "kitchen consumption",
+      "boh consumption",
+      "deduct kitchen stock",
+      "production deduct",
+    ],
+    answer:
+      "Production Consumption deducts kitchen stock when ingredients are used for preparation, batch production, mise en place, or recipe production. It should always deduct by the product UOM and should create a movement in inventory_movements so Inventory, Kitchen Ops, Dashboard, Main Panel, and Reports all see the same deduction.",
+  },
+  {
+    title: "Kitchen waste",
+    module: "Kitchen Ops",
+    keywords: [
+      "kitchen waste",
+      "waste kitchen",
+      "spoiled",
+      "discard",
+      "kitchen wastage",
+    ],
+    answer:
+      "Kitchen Waste deducts stock because the product is no longer usable. Waste should be recorded as a movement with product, quantity, UOM, date, and notes. Waste affects Inventory value, Kitchen Ops balance, Dashboard waste metrics, Main Panel warning alerts, and Reports.",
   },
   {
     title: "Bar Ops calculation",
@@ -471,6 +626,35 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
       "Bar Ops should react to whatever changes in Inventory. Product changes, Product In, waste, shrinkage, consumption, and product deletion should update Bar Ops without manual refresh. The commercial rule is that Bar Ops and Inventory must use the same source tables and the same UOM-based movement calculation.",
   },
   {
+    title: "Bottle and ml bar logic",
+    module: "Bar Ops",
+    keywords: [
+      "bottle",
+      "ml",
+      "bar bottle",
+      "bottle stock",
+      "liquor",
+      "wine bottle",
+      "beer bottle",
+    ],
+    answer:
+      "Bar products can use ml, bottle, pc, or other standardized UOM depending on setup. For accurate beverage costing, bottle products should be converted consistently when needed. If a product is tracked by ml, all consumption must be in ml. If it is tracked by bottle, movements must be in bottle unless a conversion feature is explicitly used.",
+  },
+  {
+    title: "Bar waste and shrinkage",
+    module: "Bar Ops",
+    keywords: [
+      "bar waste",
+      "bar shrinkage",
+      "spillage",
+      "broken bottle",
+      "lost bottle",
+      "missing liquor",
+    ],
+    answer:
+      "Bar Waste deducts stock for unusable beverage items, while Shrinkage records unexplained loss or missing stock. Both must create inventory movements so the loss appears in Bar Ops, Inventory, Dashboard, Main Panel, and Reports. These movements should be monitored because they directly affect beverage cost and margins.",
+  },
+  {
     title: "Recipe Maker",
     module: "Recipe Maker",
     keywords: [
@@ -486,6 +670,34 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
     ],
     answer:
       "Recipe Maker handles recipe costing, ingredients, batch yield, cost per portion, selling price, and margin analysis. Recipe items should align with Inventory UOM to keep consumption accurate. Batch yield can use gram, ml, pc, or bottle logic where applicable. Recipe selling price should be based on cost and target food cost percentage.",
+  },
+  {
+    title: "Recipe ingredient costing",
+    module: "Recipe Maker",
+    keywords: [
+      "ingredient cost",
+      "recipe ingredients",
+      "recipe item",
+      "cost per ingredient",
+      "uom snapshot",
+      "ingredient uom",
+    ],
+    answer:
+      "Recipe ingredient cost should use the product unit cost per UOM at the time of calculation. Each ingredient quantity should match or convert correctly to the product UOM. For commercial accuracy, recipes should store enough product snapshot data to keep historical recipe costs stable even if product prices later change.",
+  },
+  {
+    title: "Recipe selling price",
+    module: "Recipe Maker",
+    keywords: [
+      "selling price",
+      "suggested selling price",
+      "food cost percentage",
+      "target food cost",
+      "margin",
+      "recipe margin",
+    ],
+    answer:
+      "Suggested selling price is calculated from recipe cost and target food cost percentage. For example, if the recipe cost is 5 and the target food cost is 25%, suggested selling price is 20. This gives managers a practical price guide while still allowing manual pricing decisions.",
   },
   {
     title: "Recipe consumption",
@@ -517,7 +729,21 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
       "selling price",
     ],
     answer:
-      "Sales Performance should represent revenue from POS or controlled manual sales entries when POS integration is not available. It should handle gross sales, discounts, net sales, and sales adjustments. Sold items may affect inventory consumption, but revenue should stay aligned with POS or the official Sales Performance source.",
+      "Sales Performance represents revenue from POS or controlled manual sales entries when POS integration is not available. It should handle gross sales, discounts, net sales, and sales adjustments. Sold items may affect inventory consumption, but revenue should stay aligned with POS or the official Sales Performance source.",
+  },
+  {
+    title: "Sales gross net discount",
+    module: "Sales Performance",
+    keywords: [
+      "gross sales",
+      "net sales",
+      "discount",
+      "sales discount",
+      "revenue after discount",
+      "sales calculation",
+    ],
+    answer:
+      "Gross sales are the sales amount before discount. Discounts reduce gross sales. Net sales are the final revenue after discount and adjustments. Payroll Budget and Operational Budget should use net sales when calculating cost percentages and budget variance.",
   },
   {
     title: "Sales and inventory connection",
@@ -534,6 +760,20 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
       "The correct commercial sales flow is: create sale, create valid linked revenue record, create sold_consumption inventory movement, update Dashboard and Reports. If a sale is deleted or reversed, the revenue record and inventory movement should also be deleted or reversed. This prevents stale sold quantity and stale revenue.",
   },
   {
+    title: "POS integration",
+    module: "Sales Performance",
+    keywords: [
+      "pos",
+      "pos integration",
+      "external sales",
+      "import sales",
+      "pos connect",
+      "manual sales",
+    ],
+    answer:
+      "If POS integration is available, Sales Performance should use POS as the trusted sales source. If POS is not available, controlled manual entries can be used, but they must be linked properly to recipes, sold items, and inventory movements where applicable. The system should avoid disconnected manual revenue that does not link to operations.",
+  },
+  {
     title: "Payroll Budget",
     module: "Payroll Budget",
     keywords: [
@@ -547,6 +787,20 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
     ],
     answer:
       "Payroll Budget tracks departmental payroll planning and compares payroll cost against Sales Performance net revenue. If Sales Performance already stores net revenue, Payroll Budget should link to it instead of asking the user to manually type revenue again. This keeps budget variance consistent and commercial-grade.",
+  },
+  {
+    title: "Payroll budget variance",
+    module: "Payroll Budget",
+    keywords: [
+      "payroll variance",
+      "labor variance",
+      "payroll percentage",
+      "labor percentage",
+      "actual payroll",
+      "budget payroll",
+    ],
+    answer:
+      "Payroll variance compares budgeted payroll against actual payroll. Labor percentage compares payroll cost against net sales. If net sales increase or decrease, payroll budget performance should update from linked Sales Performance data. This allows managers to control labor cost realistically.",
   },
   {
     title: "Operational Budget",
@@ -566,6 +820,20 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
       "Operational Budget tracks operating costs such as food, beverage, utilities, maintenance, support, admin, and other expenses. Revenue should link from Sales Performance net sales when available, so budget variance remains uniform and accurate.",
   },
   {
+    title: "Operational budget variance",
+    module: "Operational Budget",
+    keywords: [
+      "operational variance",
+      "expense variance",
+      "budget variance",
+      "actual expense",
+      "budget expense",
+      "opex variance",
+    ],
+    answer:
+      "Operational Budget variance compares budgeted expenses against actual expenses. If actual cost exceeds budget, the system should flag the variance. For commercial accuracy, expense categories should remain consistent and reports should show monthly performance clearly.",
+  },
+  {
     title: "Reports",
     module: "Reports",
     keywords: [
@@ -581,6 +849,33 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
     ],
     answer:
       "Reports summarize live system data into analytical views, tables, charts, PDF exports, and CSV exports. Commercial reports should read from the same source tables as each module, so report totals match Inventory, Kitchen Ops, Bar Ops, Sales Performance, Payroll Budget, Operational Budget, Dashboard, and Main Panel.",
+  },
+  {
+    title: "Report export",
+    module: "Reports",
+    keywords: [
+      "pdf export",
+      "csv export",
+      "download report",
+      "print report",
+      "executive report",
+      "report export",
+    ],
+    answer:
+      "PDF export is best for printable executive summaries, ownership review, and formal reporting. CSV export is best for spreadsheet analysis, accounting review, and deeper filtering. A commercial report should include filters, source data consistency, generated date, and clear totals.",
+  },
+  {
+    title: "Reports realtime accuracy",
+    module: "Reports",
+    keywords: [
+      "reports realtime",
+      "report not matching",
+      "report mismatch",
+      "report wrong",
+      "report total wrong",
+    ],
+    answer:
+      "Reports must match the source modules. If Inventory says one stock value but Reports show another, check whether Reports use the same products and inventory_movements calculation. Reports should not duplicate calculation logic differently from Inventory, Dashboard, or Main Panel.",
   },
   {
     title: "Users and roles",
@@ -600,6 +895,57 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
     ],
     answer:
       "User access is controlled by role. BOH Staff should see BOH-authorized modules such as Kitchen Ops, Inventory, Recipe Maker, and Profile. FOH Staff should see FOH-authorized modules such as Bar Ops, Inventory, Sales Performance, and Profile. Managers can access operational modules including Main Panel but not Super Admin-only controls. Super Admin can access everything, including Users and Brand Management.",
+  },
+  {
+    title: "BOH Staff access",
+    module: "Users",
+    keywords: [
+      "boh staff",
+      "boh access",
+      "kitchen staff",
+      "back of house",
+      "boh permission",
+    ],
+    answer:
+      "BOH Staff should focus on Kitchen Ops, Inventory, Recipe Maker, and Profile. They should not access executive control areas such as Main Panel, Users, or Brand Management unless a future restricted BOH-specific view is created.",
+  },
+  {
+    title: "FOH Staff access",
+    module: "Users",
+    keywords: [
+      "foh staff",
+      "foh access",
+      "bar staff",
+      "front of house",
+      "foh permission",
+    ],
+    answer:
+      "FOH Staff should focus on Bar Ops, Inventory, Sales Performance, and Profile. They should not access executive control areas such as Main Panel, Users, or Brand Management unless a future restricted FOH-specific view is created.",
+  },
+  {
+    title: "Manager access",
+    module: "Users",
+    keywords: [
+      "manager access",
+      "manager permission",
+      "manager role",
+      "manager can access",
+    ],
+    answer:
+      "Managers can access operational modules such as Main Panel, Dashboard, Inventory, Kitchen Ops, Bar Ops, Recipe Maker, Sales Performance, Reports, Settings, and Profile. Managers should not access Super Admin-only controls such as Users and Brand Management.",
+  },
+  {
+    title: "Super Admin access",
+    module: "Users",
+    keywords: [
+      "super admin",
+      "super admin access",
+      "admin permission",
+      "admin role",
+      "all modules",
+    ],
+    answer:
+      "Super Admin can access all modules, including Main Panel, Dashboard, Inventory, Kitchen Ops, Bar Ops, Recipe Maker, Sales Performance, Payroll Budget, Operational Budget, Reports, Users, Brand Management, Settings, and Profile.",
   },
   {
     title: "Main Panel role access",
@@ -634,6 +980,34 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
       "Brand Management controls brands, branch units, groups, and category setup. Forza and Fusion are separate brand workspaces. Super Admin manages brand-level configuration, while operational pages read the selected brand and branch data. Brand and unit IDs are important because products and movements must be connected to the correct outlet.",
   },
   {
+    title: "Forza and Fusion",
+    module: "Brand Management",
+    keywords: [
+      "forza and fusion",
+      "forza outlet",
+      "fusion outlet",
+      "two outlets",
+      "brand switcher",
+      "active brand",
+    ],
+    answer:
+      "Forza and Fusion are separate brand/outlet workspaces in the system. The brand switcher controls which brand is active in operational modules. Main Panel can monitor both outlets together, while other modules usually work inside the selected brand context.",
+  },
+  {
+    title: "Branch units",
+    module: "Brand Management",
+    keywords: [
+      "branch unit",
+      "brand unit",
+      "unit",
+      "branch",
+      "outlet unit",
+      "location",
+    ],
+    answer:
+      "Branch units represent outlet locations under a brand. Products and movements should be connected to the correct brand_unit_id so calculations stay separated by outlet. If a product or movement is attached to the wrong branch unit, reports and module views can look incorrect.",
+  },
+  {
     title: "Settings",
     module: "Settings",
     keywords: [
@@ -648,6 +1022,20 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
       "Settings should manage system preferences, thresholds, and operational configuration. Alert thresholds, report preferences, and system behavior should be controlled carefully because they affect operational accuracy across Dashboard, Main Panel, Inventory, and Reports.",
   },
   {
+    title: "Alert thresholds",
+    module: "Settings",
+    keywords: [
+      "alert threshold",
+      "low stock threshold",
+      "minimum stock",
+      "maximum stock",
+      "overstock threshold",
+      "expiry threshold",
+    ],
+    answer:
+      "Alert thresholds control when the system warns the user. Minimum stock creates Low Stock alerts when calculated stock is at or below the minimum. Maximum stock creates Overstock warnings when calculated stock is above maximum. Expiry thresholds help flag expired and expiring soon products.",
+  },
+  {
     title: "Profile",
     module: "Profile",
     keywords: [
@@ -660,6 +1048,19 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
     ],
     answer:
       "Profile is where the user manages personal account details and avatar information. Profile changes should update the dashboard shell and user identity display consistently across the system.",
+  },
+  {
+    title: "Profile avatar sync",
+    module: "Profile",
+    keywords: [
+      "avatar not showing",
+      "profile image",
+      "profile picture",
+      "avatar sync",
+      "user image",
+    ],
+    answer:
+      "If an avatar is not showing, confirm the profile avatar_url is saved correctly, storage access is valid, and the DashboardShell is loading the latest profile image. Avatar updates should appear across the shell without requiring unrelated code changes.",
   },
   {
     title: "Realtime commercial sync",
@@ -678,6 +1079,20 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
     ],
     answer:
       "Forza is commercial-grade and calculation-focused, so Inventory, Kitchen Ops, Bar Ops, Dashboard, Main Panel, Reports, Budgets, and calculation pages should react live when source data changes. If a page requires manual refresh, it needs Supabase realtime listeners for affected tables such as products, inventory_movements, sold_items, recipe_sales, brands, brand_units, and alert action tables, plus fallback refresh protection.",
+  },
+  {
+    title: "Realtime source tables",
+    module: "Realtime",
+    keywords: [
+      "source tables",
+      "realtime tables",
+      "products table",
+      "inventory movements table",
+      "sold items table",
+      "recipe sales table",
+    ],
+    answer:
+      "Common realtime source tables include products, inventory_movements, brands, brand_units, sold_items, recipe_sales, recipes, and main_panel_alert_actions. The correct tables depend on the page. Inventory, Kitchen Ops, and Bar Ops usually need products and inventory_movements. Main Panel also needs brands, brand_units, and alert actions. Dashboard may need products, inventory_movements, sold_items, and recipe_sales.",
   },
   {
     title: "Troubleshooting stuck data",
@@ -710,6 +1125,34 @@ export const chefAlexKnowledge: ChefAlexKnowledgeItem[] = [
     ],
     answer:
       "All Forza calculation modules must calculate by UOM. A product has a packaging amount, packaging UOM, packaging cost, and computed unit cost. Movements are entered in the product UOM. Stock value equals calculated quantity left multiplied by unit cost per UOM. This rule must be consistent across Inventory, Kitchen Ops, Bar Ops, Dashboard, Main Panel, and Reports.",
+  },
+  {
+    title: "Deleted product cleanup",
+    module: "Troubleshooting",
+    keywords: [
+      "deleted product",
+      "deleted item",
+      "still showing",
+      "stale item",
+      "deleted but still counted",
+      "inactive product",
+    ],
+    answer:
+      "If a deleted or inactive product is still counted, check whether the module is filtering only active products and valid product IDs. Old movements, sold items, or manual revenue rows can remain in the database. Commercial logic should either reverse linked records or exclude invalid inactive/deleted links from calculations.",
+  },
+  {
+    title: "Disconnected sales cleanup",
+    module: "Troubleshooting",
+    keywords: [
+      "disconnected sales",
+      "manual sold item",
+      "recipe_id null",
+      "orphan sale",
+      "orphan sold item",
+      "delete stale revenue",
+    ],
+    answer:
+      "Disconnected sold_items rows with recipe_id null can cause revenue to remain after an item is deleted. To keep the system commercial-grade, sales should be linked to a valid recipe or official sales source. Dashboard and Reports should avoid counting disconnected manual rows unless the system intentionally supports manual revenue entries.",
   },
 ];
 
@@ -759,6 +1202,14 @@ export function getChefAlexQuickQuestions(pathname: string) {
 
   if (pathname.startsWith("/brand-management")) {
     return brandManagementQuickQuestions;
+  }
+
+  if (pathname.startsWith("/settings")) {
+    return settingsQuickQuestions;
+  }
+
+  if (pathname.startsWith("/profile")) {
+    return profileQuickQuestions;
   }
 
   return defaultQuickQuestions;
@@ -826,7 +1277,7 @@ export function getChefAlexPageContext(pathname: string) {
 
 export function getChefAlexRoleContext(role?: UserRole) {
   if (role === "boh_staff") {
-    return "The current user role is BOH Staff. BOH Staff should focus on Kitchen Ops, Inventory, Recipe Maker, and Profile. They should not expect access to unauthorized pages such as Main Panel, Dashboard executive controls, Users, or Brand Management.";
+    return "The current user role is BOH Staff. BOH Staff should focus on Kitchen Ops, Inventory, Recipe Maker, and Profile. They should not expect access to unauthorized pages such as Main Panel, Users, or Brand Management.";
   }
 
   if (role === "foh_staff") {
@@ -884,7 +1335,7 @@ export function buildChefAlexAnswer(
   const roleContext = getChefAlexRoleContext(context.role);
 
   if (!bestItem) {
-    return `Chef Alex guidance — System:\n\n${pageContext}\n\n${roleContext}\n\nAsk me about a specific Forza module, Main Panel radar, alert actions, PDF/CSV export, Dashboard calculation, Inventory movement, UOM costing, Kitchen Ops, Bar Ops, Recipe Maker, Sales Performance, Budget, Reports, realtime sync, or role permission workflow.`;
+    return `Chef Alex guidance — System:\n\n${pageContext}\n\n${roleContext}\n\nAsk me about a specific Forza module, complete platform guide, Main Panel radar, alert actions, PDF/CSV export, Dashboard calculation, Inventory movement, UOM costing, Kitchen Ops, Bar Ops, Recipe Maker, Sales Performance, Budget, Reports, realtime sync, or role permission workflow.`;
   }
 
   return `Chef Alex guidance — ${bestItem.module}:\n\n${bestItem.answer}\n\nPage context: ${pageContext}\n\nRole context: ${roleContext}`;
