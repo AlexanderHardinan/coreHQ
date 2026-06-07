@@ -15,10 +15,8 @@ import {
   LayoutGrid,
   PieChart,
   ShieldAlert,
-  ShieldCheck,
   Sparkles,
   Store,
-  TrendingDown,
   TrendingUp,
   Zap,
 } from "lucide-react";
@@ -27,6 +25,7 @@ import {
   DashboardShell,
   type DashboardBrand,
 } from "@/components/layout/dashboard-shell";
+import { DashboardRealtimeSync } from "@/components/dashboard/dashboard-realtime-sync";
 import { getAllowedModules, type UserRole } from "@/lib/auth/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
@@ -79,6 +78,7 @@ type DashboardMovement = {
   system_balance_after: number | null;
   physical_count_qty: number | null;
   discrepancy_qty: number | null;
+  created_at: string | null;
 };
 
 type DashboardSoldItem = {
@@ -146,15 +146,100 @@ function formatQty(value: number) {
   return String(Number(safeValue.toFixed(3)));
 }
 
-function getStockStatus(product: DashboardProduct) {
+function getMovementDirection(type: DashboardMovementType) {
+  if (stockInTypes.includes(type)) {
+    return "in";
+  }
+
+  if (stockOutTypes.includes(type)) {
+    return "out";
+  }
+
+  return "count";
+}
+
+function getMovementBalanceEffect(movement: DashboardMovement) {
+  const direction = getMovementDirection(movement.movement_type);
+  const quantity = Number(movement.quantity || 0);
+
+  if (direction === "in") {
+    return quantity;
+  }
+
+  if (direction === "out") {
+    return quantity * -1;
+  }
+
+  return 0;
+}
+
+function sortMovementsOldestFirst(movements: DashboardMovement[]) {
+  return [...movements].sort((a, b) => {
+    const dateCompare = a.movement_date.localeCompare(b.movement_date);
+
+    if (dateCompare !== 0) {
+      return dateCompare;
+    }
+
+    const createdA = a.created_at || "";
+    const createdB = b.created_at || "";
+
+    return createdA.localeCompare(createdB);
+  });
+}
+
+function buildCalculatedProductBalanceMap(movements: DashboardMovement[]) {
+  const map = new Map<string, number>();
+  const movementsByProduct = new Map<string, DashboardMovement[]>();
+
+  movements.forEach((movement) => {
+    const current = movementsByProduct.get(movement.product_id) || [];
+    current.push(movement);
+    movementsByProduct.set(movement.product_id, current);
+  });
+
+  movementsByProduct.forEach((productMovements, productId) => {
+    let runningBalance = 0;
+
+    sortMovementsOldestFirst(productMovements).forEach((movement) => {
+      const direction = getMovementDirection(movement.movement_type);
+
+      if (direction === "count") {
+        if (movement.physical_count_qty !== null) {
+          runningBalance = Number(movement.physical_count_qty || 0);
+        }
+      } else {
+        runningBalance += getMovementBalanceEffect(movement);
+      }
+    });
+
+    map.set(productId, runningBalance);
+  });
+
+  return map;
+}
+
+function getProductStock(
+  product: DashboardProduct,
+  calculatedProductBalanceMap: Map<string, number>,
+) {
+  return calculatedProductBalanceMap.get(product.id) ?? 0;
+}
+
+function getStockStatus(
+  product: DashboardProduct,
+  calculatedProductBalanceMap: Map<string, number>,
+) {
+  const stockQuantity = getProductStock(product, calculatedProductBalanceMap);
+
   if (
     Number(product.maximum_stock || 0) > 0 &&
-    Number(product.current_stock || 0) > Number(product.maximum_stock || 0)
+    stockQuantity > Number(product.maximum_stock || 0)
   ) {
     return "overstock";
   }
 
-  if (Number(product.current_stock || 0) <= Number(product.minimum_stock || 0)) {
+  if (stockQuantity <= Number(product.minimum_stock || 0)) {
     return "low";
   }
 
@@ -316,13 +401,13 @@ export default async function DashboardPage({
       ? await supabase
           .from("inventory_movements")
           .select(
-            "id, product_id, movement_type, quantity, movement_date, system_balance_after, physical_count_qty, discrepancy_qty",
+            "id, product_id, movement_type, quantity, movement_date, system_balance_after, physical_count_qty, discrepancy_qty, created_at",
           )
           .eq("brand_id", selectedBrandId)
           .in("product_id", productIds)
           .order("movement_date", { ascending: false })
           .order("created_at", { ascending: false })
-          .limit(300)
+          .limit(500)
       : { data: [] };
 
   const movements = (movementsData || []) as DashboardMovement[];
@@ -337,19 +422,21 @@ export default async function DashboardPage({
     .limit(300);
 
   const soldItems = (soldItemsData || []) as DashboardSoldItem[];
+  const calculatedProductBalanceMap = buildCalculatedProductBalanceMap(movements);
 
-  const inventoryValue = products.reduce(
-    (total, product) =>
-      total + Number(product.current_stock || 0) * Number(product.unit_cost || 0),
-    0,
-  );
+  const inventoryValue = products.reduce((total, product) => {
+    const calculatedStock = getProductStock(product, calculatedProductBalanceMap);
+
+    return total + calculatedStock * Number(product.unit_cost || 0);
+  }, 0);
 
   const lowStockProducts = products.filter(
-    (product) => getStockStatus(product) === "low",
+    (product) => getStockStatus(product, calculatedProductBalanceMap) === "low",
   );
 
   const overStockProducts = products.filter(
-    (product) => getStockStatus(product) === "overstock",
+    (product) =>
+      getStockStatus(product, calculatedProductBalanceMap) === "overstock",
   );
 
   const expiredProducts = products.filter(
@@ -382,10 +469,9 @@ export default async function DashboardPage({
     .filter((movement) => movement.movement_type === "shrinkage")
     .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
 
-  const soldQty = soldItems.reduce(
-    (total, item) => total + Number(item.quantity || 0),
-    0,
-  );
+  const soldQty = movements
+    .filter((movement) => movement.movement_type === "sold_consumption")
+    .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
 
   const totalSales = soldItems.reduce(
     (total, item) => total + Number(item.total_sales || 0),
@@ -466,7 +552,11 @@ export default async function DashboardPage({
     .slice(0, 6);
 
   const topLowestStock = [...products]
-    .sort((a, b) => Number(a.current_stock || 0) - Number(b.current_stock || 0))
+    .sort(
+      (a, b) =>
+        getProductStock(a, calculatedProductBalanceMap) -
+        getProductStock(b, calculatedProductBalanceMap),
+    )
     .slice(0, 8);
 
   const latestMovements = movements.slice(0, 10);
@@ -476,7 +566,9 @@ export default async function DashboardPage({
       id: `expired-${product.id}`,
       title: "Expired Item Detected",
       label: product.product_name,
-      meta: `${formatQty(product.current_stock)} ${product.unit} left`,
+      meta: `${formatQty(getProductStock(product, calculatedProductBalanceMap))} ${
+        product.unit
+      } left`,
       priority: "critical" as AlertPriority,
       icon: Flame,
     })),
@@ -484,7 +576,9 @@ export default async function DashboardPage({
       id: `low-${product.id}`,
       title: "Low Stock Alert",
       label: product.product_name,
-      meta: `${formatQty(product.current_stock)} ${product.unit} left`,
+      meta: `${formatQty(getProductStock(product, calculatedProductBalanceMap))} ${
+        product.unit
+      } left`,
       priority: "critical" as AlertPriority,
       icon: AlertTriangle,
     })),
@@ -492,7 +586,9 @@ export default async function DashboardPage({
       id: `over-${product.id}`,
       title: "Overstock Alert",
       label: product.product_name,
-      meta: `${formatQty(product.current_stock)} ${product.unit} on hand`,
+      meta: `${formatQty(getProductStock(product, calculatedProductBalanceMap))} ${
+        product.unit
+      } on hand`,
       priority: "warning" as AlertPriority,
       icon: Boxes,
     })),
@@ -550,13 +646,12 @@ export default async function DashboardPage({
   ];
 
   const matrixCards: {
-      title: string;
-      value: string;
-      description: string;
-      icon: typeof Flame;
-      priority: AlertPriority;
-    }[] = [
-  
+    title: string;
+    value: string;
+    description: string;
+    icon: typeof Flame;
+    priority: AlertPriority;
+  }[] = [
     {
       title: "Low Stock",
       value: String(lowStockProducts.length),
@@ -602,7 +697,7 @@ export default async function DashboardPage({
     {
       title: "Sold Qty",
       value: formatQty(soldQty),
-      description: "Total sold quantity",
+      description: "Active product-linked sold consumption",
       icon: Store,
       priority: "stable" as AlertPriority,
     },
@@ -619,6 +714,8 @@ export default async function DashboardPage({
       brands={brands}
       selectedBrand={selectedBrand}
     >
+      <DashboardRealtimeSync brandId={selectedBrandId} />
+
       <section className="glass-panel relative overflow-hidden rounded-[2.25rem] p-6 md:p-8">
         <div className="absolute -right-24 -top-24 h-72 w-72 animate-pulse rounded-full bg-emerald-200/50 blur-3xl" />
         <div className="absolute -bottom-24 -left-20 h-72 w-72 animate-pulse rounded-full bg-amber-200/50 blur-3xl" />
@@ -823,7 +920,14 @@ export default async function DashboardPage({
 
           <div className="grid gap-4 md:grid-cols-2">
             {topLowestStock.map((product) => {
-              const stockStatus = getStockStatus(product);
+              const stockQuantity = getProductStock(
+                product,
+                calculatedProductBalanceMap,
+              );
+              const stockStatus = getStockStatus(
+                product,
+                calculatedProductBalanceMap,
+              );
               const expiryStatus = getExpiryStatus(product.expiry_date);
               const priority: AlertPriority =
                 expiryStatus === "expired" || stockStatus === "low"
@@ -856,7 +960,7 @@ export default async function DashboardPage({
                   </p>
 
                   <p className="mt-4 text-3xl font-black text-slate-950">
-                    {formatQty(product.current_stock)} {product.unit}
+                    {formatQty(stockQuantity)} {product.unit}
                   </p>
 
                   <div className="mt-4 flex flex-wrap gap-2">
@@ -1037,11 +1141,7 @@ export default async function DashboardPage({
                       </p>
                     </div>
                     <p className="text-sm font-black text-slate-950">
-                      {movement.movement_type === "stock_count"
-                        ? "Count"
-                        : `${formatQty(movement.quantity)} ${
-                            product?.unit || ""
-                          }`}
+                      {formatQty(movement.quantity)} {product?.unit || ""}
                     </p>
                   </div>
                 </div>
@@ -1050,7 +1150,7 @@ export default async function DashboardPage({
 
             {latestMovements.length === 0 ? (
               <div className="rounded-3xl bg-white/75 p-5 text-sm font-bold text-slate-500">
-                No movement records found.
+                No inventory movements recorded yet.
               </div>
             ) : null}
           </div>
@@ -1081,12 +1181,12 @@ function PremiumMetricCard({
     <div
       className={`relative overflow-hidden rounded-[2rem] border p-5 shadow-lg transition duration-300 hover:-translate-y-1 hover:shadow-xl ${classes.card}`}
     >
-      <div className="absolute -right-10 -top-10 h-24 w-24 rounded-full bg-white/40 blur-2xl" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.9),transparent_35%)]" />
 
       {priority !== "stable" ? (
-        <div className={`absolute right-5 top-5 h-3 w-3 rounded-full ${classes.glow}`}>
+        <div className={`absolute right-5 top-5 h-4 w-4 rounded-full ${classes.glow}`}>
           <span
-            className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-70 ${classes.glow}`}
+            className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${classes.glow}`}
           />
         </div>
       ) : null}
@@ -1186,25 +1286,12 @@ type MiniSignalProps = {
 };
 
 function MiniSignal({ label, value }: MiniSignalProps) {
-  const isActive = value > 0;
-
   return (
-    <div className="rounded-2xl bg-white/80 p-3 shadow-sm">
+    <div className="rounded-2xl bg-white/70 p-3 shadow-sm">
       <p className="text-xs font-black uppercase tracking-wide text-slate-400">
         {label}
       </p>
-      <div className="mt-2 flex items-center justify-between">
-        <p className="text-xl font-black text-slate-950">{value}</p>
-        <span
-          className={`relative h-3 w-3 rounded-full ${
-            isActive ? "bg-red-500" : "bg-emerald-500"
-          }`}
-        >
-          {isActive ? (
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-70" />
-          ) : null}
-        </span>
-      </div>
+      <p className="mt-1 text-xl font-black text-slate-950">{value}</p>
     </div>
   );
 }
