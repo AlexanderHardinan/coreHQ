@@ -140,7 +140,7 @@ export default async function InventoryPage({ searchParams }: InventoryPageProps
   const { data: productsData } = await supabase
     .from("products")
     .select(
-      "id, brand_id, brand_unit_id, category_id, ops_area, product_name, sku, unit, supplier_name, opening_stock, current_stock, minimum_stock, maximum_stock, unit_cost, expiry_date, storage_area, is_active",
+      "id, brand_id, brand_unit_id, category_id, product_category, product_group, ops_area, product_name, sku, unit, supplier_name, opening_stock, current_stock, minimum_stock, maximum_stock, packaging_amount, packaging_cost, unit_cost, expiry_date, storage_area, is_active",
     )
     .eq("brand_id", selectedBrandId)
     .eq("is_active", true)
