@@ -225,7 +225,7 @@ export function DashboardShell({
   }
 
   return (
-    <main className="relative min-h-screen p-4 md:p-6">
+    <main className="relative min-h-screen overflow-x-hidden p-3 md:p-4">
       {showGlobalLoader ? (
         <div className="fixed left-0 top-0 z-[9999] w-full">
           <div className="h-1 overflow-hidden bg-slate-200">
@@ -278,8 +278,8 @@ export function DashboardShell({
         </div>
       ) : null}
 
-      <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[290px_1fr]">
-        <aside className="liquid-sidebar glass-panel hidden rounded-[2rem] p-5 lg:sticky lg:top-6 lg:block lg:h-[calc(100vh-3rem)] lg:overflow-y-auto">
+      <div className="grid w-full gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <aside className="liquid-sidebar glass-panel hidden rounded-[2rem] p-5 lg:sticky lg:top-4 lg:block lg:h-[calc(100vh-2rem)] lg:overflow-y-auto">
           <SidebarContent
             pathname={activePathname}
             modules={modules}
@@ -292,7 +292,7 @@ export function DashboardShell({
           />
         </aside>
 
-        <section className="space-y-6 pt-14 lg:pt-0">
+        <section className="min-w-0 space-y-5 pt-14 lg:pt-0">
           <header className="glass-panel rounded-[2rem] p-5 md:p-6">
             <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
               <div>
