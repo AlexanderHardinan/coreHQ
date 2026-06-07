@@ -80,6 +80,8 @@ export type InventoryProduct = {
   current_stock: number;
   minimum_stock: number;
   maximum_stock: number;
+  packaging_amount: number;
+  packaging_cost: number;
   unit_cost: number;
   expiry_date: string | null;
   storage_area: string | null;
@@ -278,6 +280,25 @@ function formatQty(value: number) {
   }
 
   return String(Number(safeValue.toFixed(3)));
+}
+
+function formatCost(value: number) {
+  return String(Number(Number(value || 0).toFixed(6)));
+}
+
+function calculateUnitCost(packagingAmount: string | number, packagingCost: string | number) {
+  const amount = Number(packagingAmount || 0);
+  const cost = Number(packagingCost || 0);
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return 0;
+  }
+
+  if (!Number.isFinite(cost) || cost < 0) {
+    return 0;
+  }
+
+  return cost / amount;
 }
 
 function formatCurrency(value: number) {
@@ -562,7 +583,8 @@ export function InventoryPanel({
   const [openingStock, setOpeningStock] = useState("0");
   const [minimumStock, setMinimumStock] = useState("0");
   const [maximumStock, setMaximumStock] = useState("0");
-  const [unitCost, setUnitCost] = useState("0");
+  const [packagingAmount, setPackagingAmount] = useState("0");
+  const [packagingCost, setPackagingCost] = useState("0");
   const [expiryDate, setExpiryDate] = useState("");
   const [storageArea, setStorageArea] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -586,6 +608,11 @@ export function InventoryPanel({
     useState<ProductGroupValue>(safeInitialGroup);
   const [reportDateFrom, setReportDateFrom] = useState("");
   const [reportDateTo, setReportDateTo] = useState("");
+
+  const computedUnitCost = useMemo(
+    () => calculateUnitCost(packagingAmount, packagingCost),
+    [packagingAmount, packagingCost],
+  );
 
   useEffect(() => {
     setProductList(products);
@@ -795,6 +822,12 @@ export function InventoryPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, productName, selectedBrand?.id, selectedOpsArea, selectedUnitId, productList]);
 
+  useEffect(() => {
+    if (selectedMovementProduct) {
+      setMovementUnitCost(String(selectedMovementProduct.unit_cost || 0));
+    }
+  }, [selectedMovementProduct]);
+
   const reportProducts = useMemo(() => {
     if (reportScope === "product") {
       return visibleProducts.filter((product) => product.id === reportProductId);
@@ -936,7 +969,7 @@ export function InventoryPanel({
     const { data, error } = await supabase
       .from("products")
       .select(
-        "id, brand_id, brand_unit_id, category_id, product_category, product_group, ops_area, product_name, sku, unit, supplier_name, opening_stock, current_stock, minimum_stock, maximum_stock, unit_cost, expiry_date, storage_area, is_active",
+        "id, brand_id, brand_unit_id, category_id, product_category, product_group, ops_area, product_name, sku, unit, supplier_name, opening_stock, current_stock, minimum_stock, maximum_stock, packaging_amount, packaging_cost, unit_cost, expiry_date, storage_area, is_active",
       )
       .eq("brand_id", selectedBrand.id)
       .eq("is_active", true)
@@ -1083,7 +1116,8 @@ export function InventoryPanel({
     setOpeningStock("0");
     setMinimumStock("0");
     setMaximumStock("0");
-    setUnitCost("0");
+    setPackagingAmount("0");
+    setPackagingCost("0");
     setExpiryDate("");
     setStorageArea("");
   }
@@ -1128,7 +1162,8 @@ export function InventoryPanel({
     setOpeningStock(String(product.opening_stock || 0));
     setMinimumStock(String(product.minimum_stock || 0));
     setMaximumStock(String(product.maximum_stock || 0));
-    setUnitCost(String(product.unit_cost || 0));
+    setPackagingAmount(String(product.packaging_amount || 0));
+    setPackagingCost(String(product.packaging_cost || 0));
     setExpiryDate(product.expiry_date || "");
     setStorageArea(product.storage_area || "");
     updateInventoryUrl(product.brand_unit_id, nextOpsArea);
@@ -1194,10 +1229,10 @@ export function InventoryPanel({
             <td>${escapeHtml(product.sku)}</td>
             <td>${escapeHtml(display.category)} / ${escapeHtml(display.group)}</td>
             <td>${escapeHtml(opsAreaLabels[product.ops_area])}</td>
+            <td>${formatQty(product.packaging_amount || 0)} ${escapeHtml(product.unit)}</td>
+            <td>${formatCurrency(product.packaging_cost || 0)}</td>
+            <td>${formatCurrency(product.unit_cost || 0)}</td>
             <td>${formatQty(calculatedStock)} ${escapeHtml(product.unit)}</td>
-            <td>${formatQty(product.minimum_stock)}</td>
-            <td>${formatQty(product.maximum_stock)}</td>
-            <td>${formatCurrency(product.unit_cost)}</td>
             <td>${formatCurrency(calculatedStock * product.unit_cost)}</td>
             <td>${escapeHtml(stockStatus.label)}</td>
             <td>${escapeHtml(expiryStatus.label)}</td>
@@ -1408,10 +1443,10 @@ export function InventoryPanel({
                     <th>SKU</th>
                     <th>Category / Group</th>
                     <th>Area</th>
+                    <th>Package Amount</th>
+                    <th>Package Cost</th>
+                    <th>Unit Cost / UOM</th>
                     <th>Calculated Qty Left</th>
-                    <th>Min</th>
-                    <th>Max</th>
-                    <th>Unit Cost</th>
                     <th>Value</th>
                     <th>Stock</th>
                     <th>Expiry</th>
@@ -1486,6 +1521,20 @@ export function InventoryPanel({
       return;
     }
 
+    const packageAmountNumber = Number(packagingAmount || 0);
+    const packageCostNumber = Number(packagingCost || 0);
+    const nextUnitCost = calculateUnitCost(packageAmountNumber, packageCostNumber);
+
+    if (!Number.isFinite(packageAmountNumber) || packageAmountNumber <= 0) {
+      toast.error("Packaging amount must be greater than zero.");
+      return;
+    }
+
+    if (!Number.isFinite(packageCostNumber) || packageCostNumber < 0) {
+      toast.error("Packaging cost must be zero or greater.");
+      return;
+    }
+
     const normalizedProductName = normalizeText(productName);
 
     const duplicateProductName = productList.find(
@@ -1525,7 +1574,9 @@ export function InventoryPanel({
       opening_stock: Number(openingStock || 0),
       minimum_stock: Number(minimumStock || 0),
       maximum_stock: Number(maximumStock || 0),
-      unit_cost: Number(unitCost || 0),
+      packaging_amount: packageAmountNumber,
+      packaging_cost: packageCostNumber,
+      unit_cost: nextUnitCost,
       expiry_date: expiryDate || null,
       storage_area: storageArea.trim() || null,
       is_active: true,
@@ -1572,7 +1623,7 @@ export function InventoryPanel({
         current_stock: 0,
       })
       .select(
-        "id, brand_id, brand_unit_id, category_id, product_category, product_group, ops_area, product_name, sku, unit, supplier_name, opening_stock, current_stock, minimum_stock, maximum_stock, unit_cost, expiry_date, storage_area, is_active",
+        "id, brand_id, brand_unit_id, category_id, product_category, product_group, ops_area, product_name, sku, unit, supplier_name, opening_stock, current_stock, minimum_stock, maximum_stock, packaging_amount, packaging_cost, unit_cost, expiry_date, storage_area, is_active",
       )
       .single();
 
@@ -1600,7 +1651,7 @@ export function InventoryPanel({
     setMovementProductId(createdProduct.id);
     updateInventoryUrl(selectedUnitId, selectedOpsArea);
     toast.success(
-      "Product created successfully. Stock will calculate only after Product In or movement entry.",
+      "Product created successfully. Unit cost is calculated from packaging cost and packaging amount.",
     );
     resetForm();
   }
@@ -1661,7 +1712,7 @@ export function InventoryPanel({
       ops_area: selectedMovementProduct.ops_area,
       movement_type: movementType,
       quantity: direction === "count" ? 0 : movementQuantity,
-      unit_cost: Number(movementUnitCost || selectedMovementProduct.unit_cost || 0),
+      unit_cost: Number(selectedMovementProduct.unit_cost || 0),
       physical_count_qty:
         direction === "count" ? Number(physicalCountQty || 0) : null,
       reference_code: movementReference.trim() || null,
@@ -1698,7 +1749,8 @@ export function InventoryPanel({
               Product setup does not create stock value. Stock and inventory
               value calculate only after Product In, Transfer In, Adjustment In,
               consumption, waste, shrinkage, transfer, or physical count
-              movements. Every movement follows the product UOM.
+              movements. Every movement follows the product UOM and the
+              automatically computed unit cost.
             </p>
           </div>
 
@@ -1930,7 +1982,20 @@ export function InventoryPanel({
             />
           </Field>
 
-          <Field label="Unit / UOM">
+          <Field label="Packaging Amount">
+            <input
+              required
+              type="number"
+              step="0.001"
+              min="0"
+              value={packagingAmount}
+              onChange={(event) => setPackagingAmount(event.target.value)}
+              className="forza-input"
+              placeholder="Example: 1000"
+            />
+          </Field>
+
+          <Field label="Packaging UOM">
             <select
               value={unit}
               onChange={(event) => setUnit(event.target.value)}
@@ -1942,6 +2007,27 @@ export function InventoryPanel({
                 </option>
               ))}
             </select>
+          </Field>
+
+          <Field label="Packaging Cost (€)">
+            <input
+              required
+              type="number"
+              step="0.0001"
+              min="0"
+              value={packagingCost}
+              onChange={(event) => setPackagingCost(event.target.value)}
+              className="forza-input"
+              placeholder="Example: 20"
+            />
+          </Field>
+
+          <Field label={`Auto Unit Cost per ${unit}`}>
+            <input
+              readOnly
+              value={formatCost(computedUnitCost)}
+              className="forza-input cursor-not-allowed bg-slate-100"
+            />
           </Field>
 
           <Field label="Supplier">
@@ -1983,16 +2069,6 @@ export function InventoryPanel({
             />
           </Field>
 
-          <Field label="Unit Cost (€)">
-            <input
-              type="number"
-              step="0.0001"
-              value={unitCost}
-              onChange={(event) => setUnitCost(event.target.value)}
-              className="forza-input"
-            />
-          </Field>
-
           <Field label="Expiry Date">
             <input
               type="date"
@@ -2013,12 +2089,12 @@ export function InventoryPanel({
 
           <div className="rounded-3xl border border-blue-100 bg-blue-50 p-4 md:col-span-2 xl:col-span-4">
             <p className="text-xs font-black uppercase tracking-wide text-blue-700">
-              SKU + Calculation Rule
+              Commercial Costing Rule
             </p>
             <p className="mt-2 text-sm font-bold leading-6 text-blue-800">
-              SKU is generated by brand, branch, area, and product name. Category
-              and group do not control duplication. Stock quantity and value
-              calculate from movement ledger only, using the product UOM.
+              Packaging Cost ÷ Packaging Amount = Auto Unit Cost per UOM. Example:
+              €20 ÷ 1000 gram = €0.02 per gram. Stock quantity and value calculate
+              from the movement ledger using this unit cost.
             </p>
           </div>
 
@@ -2130,13 +2206,17 @@ export function InventoryPanel({
             </Field>
           )}
 
-          <Field label="Unit Cost (€)">
+          <Field
+            label={`Movement Unit Cost${
+              selectedMovementProduct?.unit
+                ? ` / ${selectedMovementProduct.unit}`
+                : ""
+            }`}
+          >
             <input
-              type="number"
-              step="0.0001"
-              value={movementUnitCost}
-              onChange={(event) => setMovementUnitCost(event.target.value)}
-              className="forza-input"
+              readOnly
+              value={formatCost(Number(movementUnitCost || 0))}
+              className="forza-input cursor-not-allowed bg-slate-100"
             />
           </Field>
 
@@ -2175,7 +2255,7 @@ export function InventoryPanel({
             </p>
             <p className="mt-2 text-sm font-bold text-slate-700">
               {selectedMovementProduct
-                ? `${selectedMovementProduct.product_name} uses ${selectedMovementProduct.unit}. Movement quantity will be calculated in ${selectedMovementProduct.unit}.`
+                ? `${selectedMovementProduct.product_name} uses ${selectedMovementProduct.unit}. Movement quantity will be calculated in ${selectedMovementProduct.unit} at ${formatCurrency(selectedMovementProduct.unit_cost || 0)} per ${selectedMovementProduct.unit}.`
                 : "Select a product to see the movement UOM."}
             </p>
           </div>
@@ -2333,17 +2413,17 @@ export function InventoryPanel({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1240px] border-separate border-spacing-y-3">
+          <table className="w-full min-w-[1360px] border-separate border-spacing-y-3">
             <thead>
               <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-400">
                 <th className="px-4">Product</th>
                 <th className="px-4">Category / Group</th>
                 <th className="px-4">SKU</th>
                 <th className="px-4">Area</th>
+                <th className="px-4">Package</th>
+                <th className="px-4">Package Cost</th>
+                <th className="px-4">Unit Cost / UOM</th>
                 <th className="px-4">Calculated Qty Left</th>
-                <th className="px-4">Min</th>
-                <th className="px-4">Max</th>
-                <th className="px-4">Cost</th>
                 <th className="px-4">Value</th>
                 <th className="px-4">Stock Status</th>
                 <th className="px-4">Expiry</th>
@@ -2386,17 +2466,17 @@ export function InventoryPanel({
                     <td className="px-4 py-4 text-sm font-bold text-slate-700">
                       {opsAreaLabels[product.ops_area]}
                     </td>
-                    <td className="px-4 py-4 text-sm font-black text-slate-950">
-                      {formatQty(calculatedStock)} {product.unit}
-                    </td>
-                    <td className="px-4 py-4 text-sm font-bold text-slate-600">
-                      {product.minimum_stock}
-                    </td>
-                    <td className="px-4 py-4 text-sm font-bold text-slate-600">
-                      {product.maximum_stock}
+                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
+                      {formatQty(product.packaging_amount || 0)} {product.unit}
                     </td>
                     <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                      {formatCurrency(product.unit_cost)}
+                      {formatCurrency(product.packaging_cost || 0)}
+                    </td>
+                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
+                      {formatCurrency(product.unit_cost || 0)} / {product.unit}
+                    </td>
+                    <td className="px-4 py-4 text-sm font-black text-slate-950">
+                      {formatQty(calculatedStock)} {product.unit}
                     </td>
                     <td className="px-4 py-4 text-sm font-black text-slate-950">
                       {formatCurrency(calculatedStock * product.unit_cost)}
