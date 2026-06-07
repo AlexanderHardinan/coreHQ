@@ -1,30 +1,38 @@
+// File name: src/components/main-panel/main-panel-client.tsx
+
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
-  BarChart3,
   Bell,
   Boxes,
   Building2,
   CalendarClock,
   ChefHat,
+  CheckCircle2,
   CircleDollarSign,
+  Clock3,
   Flame,
   Gauge,
   GlassWater,
   Globe2,
   MapPin,
+  MessageSquareText,
   Package,
   Radar,
   RefreshCw,
   Satellite,
   ShieldAlert,
-  Sparkles,
   Target,
   Waves,
-  Zap,
 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 
@@ -102,7 +110,39 @@ type MainPanelClientProps = {
 };
 
 type AlertPriority = "critical" | "warning" | "stable";
+type AlertActionStatus = "acknowledged" | "investigating" | "resolved";
 type AreaFilter = "all" | MainPanelOpsArea;
+
+type MainPanelAlertAction = {
+  id: string;
+  brand_id: string;
+  brand_unit_id: string | null;
+  product_id: string | null;
+  alert_key: string;
+  alert_type: string;
+  alert_status: AlertActionStatus;
+  alert_note: string | null;
+  ops_area: MainPanelOpsArea;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type MainPanelAlertRow = {
+  id: string;
+  alertKey: string;
+  alertType: string;
+  brandId: string;
+  unitId: string | null;
+  productId: string | null;
+  productName: string;
+  brandName: string;
+  unitName: string;
+  area: MainPanelOpsArea;
+  status: string;
+  meta: string;
+  priority: AlertPriority;
+};
 
 const stockInTypes: MainPanelMovementType[] = [
   "opening_stock",
@@ -300,6 +340,38 @@ function getPriorityClasses(priority: AlertPriority) {
   };
 }
 
+function getActionStatusLabel(status: AlertActionStatus | null | undefined) {
+  if (status === "acknowledged") {
+    return "Acknowledged";
+  }
+
+  if (status === "investigating") {
+    return "Investigating";
+  }
+
+  if (status === "resolved") {
+    return "Resolved";
+  }
+
+  return "Active";
+}
+
+function getActionStatusClasses(status: AlertActionStatus | null | undefined) {
+  if (status === "acknowledged") {
+    return "border-blue-100 bg-blue-50 text-blue-700";
+  }
+
+  if (status === "investigating") {
+    return "border-amber-100 bg-amber-50 text-amber-700";
+  }
+
+  if (status === "resolved") {
+    return "border-emerald-100 bg-emerald-50 text-emerald-700";
+  }
+
+  return "border-slate-950 bg-slate-950 text-white";
+}
+
 function getBrandAccent(code: string) {
   if (code === "FUSION") {
     return {
@@ -329,8 +401,41 @@ export function MainPanelClient({
   const refreshTimerRef = useRef<number | null>(null);
 
   const [areaFilter, setAreaFilter] = useState<AreaFilter>("all");
+  const [alertActions, setAlertActions] = useState<MainPanelAlertAction[]>([]);
+  const [noteByAlertKey, setNoteByAlertKey] = useState<Record<string, string>>(
+    {},
+  );
+  const [savingAlertKey, setSavingAlertKey] = useState("");
 
   const brandIds = useMemo(() => brands.map((brand) => brand.id), [brands]);
+  const brandIdsKey = brandIds.join("-");
+
+  async function loadAlertActions() {
+    if (brandIds.length === 0) {
+      setAlertActions([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("main_panel_alert_actions")
+      .select(
+        "id, brand_id, brand_unit_id, product_id, alert_key, alert_type, alert_status, alert_note, ops_area, created_by, created_at, updated_at",
+      )
+      .in("brand_id", brandIds)
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      console.error(error.message);
+      return;
+    }
+
+    setAlertActions((data || []) as MainPanelAlertAction[]);
+  }
+
+  useEffect(() => {
+    loadAlertActions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandIdsKey]);
 
   useEffect(() => {
     if (brandIds.length === 0) {
@@ -348,7 +453,7 @@ export function MainPanelClient({
     }
 
     const channel = supabase
-      .channel(`main-panel-command-radar-${brandIds.join("-")}`)
+      .channel(`main-panel-command-radar-${brandIdsKey}`)
       .on(
         "postgres_changes",
         {
@@ -385,6 +490,17 @@ export function MainPanelClient({
         },
         scheduleRefresh,
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "main_panel_alert_actions",
+        },
+        () => {
+          loadAlertActions();
+        },
+      )
       .subscribe();
 
     const fallbackRefresh = window.setInterval(() => {
@@ -399,7 +515,8 @@ export function MainPanelClient({
       window.clearInterval(fallbackRefresh);
       supabase.removeChannel(channel);
     };
-  }, [brandIds, router, supabase]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandIdsKey, router, supabase]);
 
   const balanceMap = useMemo(
     () => buildCalculatedProductBalanceMap(movements),
@@ -420,17 +537,18 @@ export function MainPanelClient({
     return movements.filter((movement) => productIds.has(movement.product_id));
   }, [filteredProducts, movements]);
 
+  const alertActionMap = useMemo(() => {
+    const map = new Map<string, MainPanelAlertAction>();
+
+    alertActions.forEach((action) => {
+      map.set(`${action.brand_id}:${action.alert_key}`, action);
+    });
+
+    return map;
+  }, [alertActions]);
+
   const alertRows = useMemo(() => {
-    const rows: {
-      id: string;
-      productName: string;
-      brandName: string;
-      unitName: string;
-      area: MainPanelOpsArea;
-      status: string;
-      meta: string;
-      priority: AlertPriority;
-    }[] = [];
+    const rows: MainPanelAlertRow[] = [];
 
     filteredProducts.forEach((product) => {
       const brand = brands.find((item) => item.id === product.brand_id);
@@ -438,10 +556,17 @@ export function MainPanelClient({
       const stockQty = getProductStock(product, balanceMap);
       const stockStatus = getStockStatus(product, balanceMap);
       const expiryStatus = getExpiryStatus(product.expiry_date);
+      const brandId = product.brand_id || "";
+      const unitId = product.brand_unit_id || null;
 
       if (stockQty < 0) {
         rows.push({
           id: `negative-${product.id}`,
+          alertKey: `negative-${product.id}`,
+          alertType: "negative_stock",
+          brandId,
+          unitId,
+          productId: product.id,
           productName: product.product_name,
           brandName: brand?.name || "Unknown Brand",
           unitName: unit?.name || "Unknown Outlet",
@@ -455,6 +580,11 @@ export function MainPanelClient({
       if (expiryStatus === "expired") {
         rows.push({
           id: `expired-${product.id}`,
+          alertKey: `expired-${product.id}`,
+          alertType: "expired",
+          brandId,
+          unitId,
+          productId: product.id,
           productName: product.product_name,
           brandName: brand?.name || "Unknown Brand",
           unitName: unit?.name || "Unknown Outlet",
@@ -468,6 +598,11 @@ export function MainPanelClient({
       if (stockStatus === "low") {
         rows.push({
           id: `low-${product.id}`,
+          alertKey: `low-${product.id}`,
+          alertType: "low_stock",
+          brandId,
+          unitId,
+          productId: product.id,
           productName: product.product_name,
           brandName: brand?.name || "Unknown Brand",
           unitName: unit?.name || "Unknown Outlet",
@@ -481,6 +616,11 @@ export function MainPanelClient({
       if (stockStatus === "overstock") {
         rows.push({
           id: `over-${product.id}`,
+          alertKey: `over-${product.id}`,
+          alertType: "overstock",
+          brandId,
+          unitId,
+          productId: product.id,
           productName: product.product_name,
           brandName: brand?.name || "Unknown Brand",
           unitName: unit?.name || "Unknown Outlet",
@@ -494,6 +634,11 @@ export function MainPanelClient({
       if (expiryStatus === "expiring_soon") {
         rows.push({
           id: `expiring-${product.id}`,
+          alertKey: `expiring-${product.id}`,
+          alertType: "expiring_soon",
+          brandId,
+          unitId,
+          productId: product.id,
           productName: product.product_name,
           brandName: brand?.name || "Unknown Brand",
           unitName: unit?.name || "Unknown Outlet",
@@ -519,6 +664,11 @@ export function MainPanelClient({
 
         rows.push({
           id: `discrepancy-${movement.id}`,
+          alertKey: `discrepancy-${movement.id}`,
+          alertType: "discrepancy",
+          brandId: movement.brand_id || "",
+          unitId: movement.brand_unit_id || null,
+          productId: movement.product_id || null,
           productName: product?.product_name || "Unknown Product",
           brandName: brand?.name || "Unknown Brand",
           unitName: unit?.name || "Unknown Outlet",
@@ -576,6 +726,24 @@ export function MainPanelClient({
     .filter((movement) => movement.movement_type === "shrinkage")
     .reduce((total, movement) => total + Number(movement.quantity || 0), 0);
 
+  const acknowledgedCount = alertRows.filter((alert) => {
+    const action = alertActionMap.get(`${alert.brandId}:${alert.alertKey}`);
+
+    return action?.alert_status === "acknowledged";
+  }).length;
+
+  const investigatingCount = alertRows.filter((alert) => {
+    const action = alertActionMap.get(`${alert.brandId}:${alert.alertKey}`);
+
+    return action?.alert_status === "investigating";
+  }).length;
+
+  const resolvedCount = alertRows.filter((alert) => {
+    const action = alertActionMap.get(`${alert.brandId}:${alert.alertKey}`);
+
+    return action?.alert_status === "resolved";
+  }).length;
+
   const criticalAlerts = alertRows.filter(
     (alert) => alert.priority === "critical",
   ).length;
@@ -614,6 +782,72 @@ export function MainPanelClient({
     },
   );
 
+  async function saveAlertAction(
+    alert: MainPanelAlertRow,
+    status: AlertActionStatus,
+  ) {
+    if (!alert.brandId || savingAlertKey) {
+      return;
+    }
+
+    setSavingAlertKey(alert.id);
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      setSavingAlertKey("");
+      return;
+    }
+
+    const note = String(noteByAlertKey[alert.id] || "").trim();
+
+    const payload = {
+      brand_id: alert.brandId,
+      brand_unit_id: alert.unitId,
+      product_id: alert.productId,
+      alert_key: alert.alertKey,
+      alert_type: alert.alertType,
+      alert_status: status,
+      alert_note: note || null,
+      ops_area: alert.area,
+      created_by: user.id,
+    };
+
+    const { data, error } = await supabase
+      .from("main_panel_alert_actions")
+      .upsert(payload, {
+        onConflict: "brand_id,alert_key",
+      })
+      .select(
+        "id, brand_id, brand_unit_id, product_id, alert_key, alert_type, alert_status, alert_note, ops_area, created_by, created_at, updated_at",
+      )
+      .single();
+
+    setSavingAlertKey("");
+
+    if (error) {
+      console.error(error.message);
+      return;
+    }
+
+    if (data) {
+      setAlertActions((current) => {
+        const next = current.filter(
+          (action) =>
+            !(
+              action.brand_id === data.brand_id &&
+              action.alert_key === data.alert_key
+            ),
+        );
+
+        return [data as MainPanelAlertAction, ...next];
+      });
+    }
+  }
+
   return (
     <div className="space-y-6">
       <section className="glass-panel relative overflow-hidden rounded-[2.35rem] p-6 md:p-8">
@@ -637,7 +871,8 @@ export function MainPanelClient({
             <p className="mt-4 max-w-3xl text-sm font-semibold leading-6 text-slate-600">
               Full animated command center for all outlet alerts, kitchen
               operations, bar operations, global stock risks, expiry warnings,
-              discrepancies, waste, shrinkage, and inventory value.
+              discrepancies, waste, shrinkage, inventory value, and alert
+              resolution tracking.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
@@ -700,8 +935,8 @@ export function MainPanelClient({
             <div className="mt-5 grid grid-cols-2 gap-3">
               <MiniSignal label="Critical" value={criticalAlerts} />
               <MiniSignal label="Warning" value={warningAlerts} />
-              <MiniSignal label="Products" value={filteredProducts.length} />
-              <MiniSignal label="Movements" value={filteredMovements.length} />
+              <MiniSignal label="Investigating" value={investigatingCount} />
+              <MiniSignal label="Resolved" value={resolvedCount} />
             </div>
           </div>
         </div>
@@ -735,6 +970,30 @@ export function MainPanelClient({
           sub="All outlet alert triggers"
           priority={globalPriority}
           icon={<Target size={22} />}
+        />
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-3">
+        <ActionMetricCard
+          label="Acknowledged"
+          value={acknowledgedCount}
+          description="Alerts seen by the operations team"
+          icon={<MessageSquareText size={22} />}
+          className="border-blue-100 bg-blue-50/90 text-blue-700"
+        />
+        <ActionMetricCard
+          label="Investigating"
+          value={investigatingCount}
+          description="Alerts currently being checked"
+          icon={<Clock3 size={22} />}
+          className="border-amber-100 bg-amber-50/90 text-amber-700"
+        />
+        <ActionMetricCard
+          label="Resolved"
+          value={resolvedCount}
+          description="Alerts marked operationally resolved"
+          icon={<CheckCircle2 size={22} />}
+          className="border-emerald-100 bg-emerald-50/90 text-emerald-700"
         />
       </section>
 
@@ -984,12 +1243,12 @@ export function MainPanelClient({
 
           <div className="inline-flex w-fit items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-xs font-black uppercase tracking-wide text-white shadow-xl">
             <RefreshCw size={15} />
-            Auto Refresh
+            Auto Refresh + Action Sync
           </div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[960px] border-separate border-spacing-y-3">
+          <table className="w-full min-w-[1280px] border-separate border-spacing-y-3">
             <thead>
               <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-400">
                 <th className="px-4">Product / Issue</th>
@@ -998,12 +1257,18 @@ export function MainPanelClient({
                 <th className="px-4">Status</th>
                 <th className="px-4">Meta</th>
                 <th className="px-4">Priority</th>
+                <th className="px-4">Action Status</th>
+                <th className="px-4">Operational Action</th>
               </tr>
             </thead>
 
             <tbody>
               {alertRows.slice(0, 18).map((alert) => {
                 const classes = getPriorityClasses(alert.priority);
+                const action = alertActionMap.get(
+                  `${alert.brandId}:${alert.alertKey}`,
+                );
+                const actionStatus = action?.alert_status;
                 const AreaIcon =
                   alert.area === "kitchen"
                     ? ChefHat
@@ -1036,7 +1301,7 @@ export function MainPanelClient({
                     <td className="px-4 py-4 text-sm font-bold text-slate-500">
                       {alert.meta}
                     </td>
-                    <td className="rounded-r-2xl px-4 py-4">
+                    <td className="px-4 py-4">
                       <span
                         className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black uppercase ${classes.badge}`}
                       >
@@ -1047,6 +1312,78 @@ export function MainPanelClient({
                         {alert.priority}
                       </span>
                     </td>
+                    <td className="px-4 py-4">
+                      <span
+                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-black uppercase ${getActionStatusClasses(
+                          actionStatus,
+                        )}`}
+                      >
+                        {actionStatus === "resolved" ? (
+                          <CheckCircle2 size={14} />
+                        ) : actionStatus === "investigating" ? (
+                          <Clock3 size={14} />
+                        ) : actionStatus === "acknowledged" ? (
+                          <MessageSquareText size={14} />
+                        ) : (
+                          <Bell size={14} />
+                        )}
+                        {getActionStatusLabel(actionStatus)}
+                      </span>
+
+                      {action?.alert_note ? (
+                        <p className="mt-2 max-w-[220px] text-xs font-bold leading-5 text-slate-500">
+                          {action.alert_note}
+                        </p>
+                      ) : null}
+                    </td>
+                    <td className="rounded-r-2xl px-4 py-4">
+                      <div className="flex min-w-[280px] flex-col gap-2">
+                        <input
+                          value={
+                            noteByAlertKey[alert.id] || action?.alert_note || ""
+                          }
+                          onChange={(event) =>
+                            setNoteByAlertKey((current) => ({
+                              ...current,
+                              [alert.id]: event.target.value,
+                            }))
+                          }
+                          className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 outline-none transition focus:border-slate-950 focus:bg-white"
+                          placeholder="Optional action note"
+                        />
+
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={savingAlertKey === alert.id}
+                            onClick={() =>
+                              saveAlertAction(alert, "acknowledged")
+                            }
+                            className="forza-button-hover rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Acknowledge
+                          </button>
+                          <button
+                            type="button"
+                            disabled={savingAlertKey === alert.id}
+                            onClick={() =>
+                              saveAlertAction(alert, "investigating")
+                            }
+                            className="forza-button-hover rounded-full border border-amber-100 bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Investigating
+                          </button>
+                          <button
+                            type="button"
+                            disabled={savingAlertKey === alert.id}
+                            onClick={() => saveAlertAction(alert, "resolved")}
+                            className="forza-button-hover rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Resolve
+                          </button>
+                        </div>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -1054,7 +1391,7 @@ export function MainPanelClient({
               {alertRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={8}
                     className="rounded-2xl bg-white px-4 py-8 text-center text-sm font-black text-emerald-700"
                   >
                     No active alerts. All outlets are stable.
@@ -1085,7 +1422,7 @@ type MetricCardProps = {
   value: string;
   sub: string;
   priority: AlertPriority;
-  icon: React.ReactNode;
+  icon: ReactNode;
 };
 
 function MetricCard({ label, value, sub, priority, icon }: MetricCardProps) {
@@ -1098,7 +1435,9 @@ function MetricCard({ label, value, sub, priority, icon }: MetricCardProps) {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.9),transparent_35%)]" />
 
       {priority !== "stable" ? (
-        <div className={`absolute right-5 top-5 h-4 w-4 rounded-full ${classes.dot}`}>
+        <div
+          className={`absolute right-5 top-5 h-4 w-4 rounded-full ${classes.dot}`}
+        >
           <span
             className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${classes.dot}`}
           />
@@ -1117,6 +1456,37 @@ function MetricCard({ label, value, sub, priority, icon }: MetricCardProps) {
       </p>
       <p className="relative z-10 mt-1 text-xs font-black uppercase tracking-wide text-slate-400">
         {sub}
+      </p>
+    </div>
+  );
+}
+
+type ActionMetricCardProps = {
+  label: string;
+  value: number;
+  description: string;
+  icon: ReactNode;
+  className: string;
+};
+
+function ActionMetricCard({
+  label,
+  value,
+  description,
+  icon,
+  className,
+}: ActionMetricCardProps) {
+  return (
+    <div
+      className={`relative overflow-hidden rounded-[2rem] border p-5 shadow-lg transition duration-300 hover:-translate-y-1 hover:shadow-xl ${className}`}
+    >
+      <div className="relative z-10 mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 shadow-xl">
+        {icon}
+      </div>
+      <p className="relative z-10 text-sm font-bold opacity-80">{label}</p>
+      <p className="relative z-10 mt-2 text-3xl font-black">{value}</p>
+      <p className="relative z-10 mt-1 text-xs font-black uppercase tracking-wide opacity-70">
+        {description}
       </p>
     </div>
   );
