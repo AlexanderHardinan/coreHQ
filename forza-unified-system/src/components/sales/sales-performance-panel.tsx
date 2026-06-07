@@ -1,9 +1,13 @@
+// File name: src/components/sales/sales-performance-panel.tsx
+
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   BarChart3,
   CalendarDays,
+  ChefHat,
   CircleDollarSign,
   Download,
   Edit3,
@@ -32,6 +36,8 @@ export type SalesUnit = {
 
 export type SalesChannel = "manual" | "pos" | "imported";
 
+export type SalesOpsArea = "kitchen" | "bar" | "global";
+
 export type SalesRevenueRecord = {
   id: string;
   brand_id: string;
@@ -54,6 +60,66 @@ export type SalesRevenueRecord = {
   updated_at: string;
 };
 
+export type SalesRecipe = {
+  id: string;
+  brand_id: string | null;
+  brand_unit_id: string;
+  ops_area: SalesOpsArea;
+  recipe_name: string;
+  recipe_category: string | null;
+  batch_yield: number;
+  portion_yield: number;
+  selling_price: number;
+  food_cost_percent: number;
+  total_recipe_cost: number;
+  cost_per_portion: number;
+  is_active: boolean;
+};
+
+export type SalesRecipeItem = {
+  id: string;
+  recipe_id: string;
+  product_id: string;
+  quantity: number;
+  unit: string;
+  unit_cost_snapshot: number;
+  total_cost: number;
+};
+
+export type SalesProduct = {
+  id: string;
+  brand_id: string | null;
+  brand_unit_id: string;
+  ops_area: SalesOpsArea;
+  product_name: string;
+  sku: string;
+  unit: string;
+  unit_cost: number;
+  current_stock: number;
+  is_active: boolean;
+};
+
+export type RecipeSaleRecord = {
+  id: string;
+  brand_id: string;
+  brand_unit_id: string;
+  recipe_id: string;
+  ops_area: SalesOpsArea;
+  quantity: number;
+  selling_price: number;
+  gross_sales: number;
+  discount_amount: number;
+  net_sales: number;
+  sold_date: string;
+  source: string;
+  source_reference: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type SalesPerformancePanelProps = {
   userId: string;
   role: UserRole;
@@ -64,6 +130,10 @@ type SalesPerformancePanelProps = {
   } | null;
   units: SalesUnit[];
   salesRevenue: SalesRevenueRecord[];
+  recipes?: SalesRecipe[];
+  recipeItems?: SalesRecipeItem[];
+  products?: SalesProduct[];
+  recipeSales?: RecipeSaleRecord[];
 };
 
 type SalesFormState = {
@@ -79,6 +149,16 @@ type SalesFormState = {
   taxAmount: string;
   notes: string;
   sourceReference: string;
+};
+
+type SoldDishFormState = {
+  recipeId: string;
+  brandUnitId: string;
+  soldDate: string;
+  quantity: string;
+  sellingPrice: string;
+  discountAmount: string;
+  notes: string;
 };
 
 type CategoryPerformance = {
@@ -106,6 +186,19 @@ const salesChannelLabels: Record<SalesChannel, string> = {
   manual: "Manual",
   pos: "POS",
   imported: "Imported",
+};
+
+const roleLabels: Record<UserRole, string> = {
+  boh_staff: "BOH Staff",
+  foh_staff: "FOH Staff",
+  manager: "Manager",
+  super_admin: "Super Admin",
+};
+
+const opsAreaLabels: Record<SalesOpsArea, string> = {
+  kitchen: "Kitchen",
+  bar: "Bar",
+  global: "Global",
 };
 
 function todayDate() {
@@ -147,6 +240,13 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
+function escapeCsvValue(value: string | number | null | undefined) {
+  const stringValue = String(value ?? "");
+  const escapedValue = stringValue.replaceAll('"', '""');
+
+  return `"${escapedValue}"`;
+}
+
 function calculateNetRevenue(
   grossSales: number,
   discountAmount: number,
@@ -179,17 +279,51 @@ function getEmptyForm(unitId: string): SalesFormState {
   };
 }
 
+function getEmptySoldDishForm(unitId: string): SoldDishFormState {
+  return {
+    recipeId: "",
+    brandUnitId: unitId || "",
+    soldDate: todayDate(),
+    quantity: "1",
+    sellingPrice: "0",
+    discountAmount: "0",
+    notes: "",
+  };
+}
+
+function getRecipeIngredientDeductionQty(
+  recipe: SalesRecipe,
+  item: SalesRecipeItem,
+  soldQuantity: number,
+) {
+  const itemQuantity = Number(item.quantity || 0);
+  const portionYield = Number(recipe.portion_yield || 0);
+
+  if (portionYield > 0) {
+    return (itemQuantity / portionYield) * soldQuantity;
+  }
+
+  return itemQuantity * soldQuantity;
+}
+
 export function SalesPerformancePanel({
   userId,
   role,
   selectedBrand,
   units,
   salesRevenue,
+  recipes = [],
+  recipeItems = [],
+  products = [],
+  recipeSales = [],
 }: SalesPerformancePanelProps) {
+  const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const defaultUnitId = units[0]?.id || "";
 
   const [records, setRecords] = useState<SalesRevenueRecord[]>(salesRevenue);
+  const [soldDishRecords, setSoldDishRecords] =
+    useState<RecipeSaleRecord[]>(recipeSales);
   const [selectedUnitId, setSelectedUnitId] = useState(defaultUnitId);
   const [selectedChannel, setSelectedChannel] = useState<SalesChannel | "all">(
     "all",
@@ -198,14 +332,41 @@ export function SalesPerformancePanel({
   const [dateTo, setDateTo] = useState(todayDate());
   const [search, setSearch] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingSoldDish, setIsSavingSoldDish] = useState(false);
+  const [deletingSaleId, setDeletingSaleId] = useState("");
   const [form, setForm] = useState<SalesFormState>(() =>
     getEmptyForm(defaultUnitId),
   );
+  const [soldDishForm, setSoldDishForm] = useState<SoldDishFormState>(() =>
+    getEmptySoldDishForm(defaultUnitId),
+  );
+
+  useEffect(() => {
+    setRecords(salesRevenue);
+  }, [salesRevenue]);
+
+  useEffect(() => {
+    setSoldDishRecords(recipeSales);
+  }, [recipeSales]);
 
   const selectedUnit = useMemo(
     () => units.find((unit) => unit.id === selectedUnitId) || null,
     [selectedUnitId, units],
   );
+
+  const selectedRecipe = useMemo(
+    () =>
+      recipes.find((recipe) => recipe.id === soldDishForm.recipeId) || null,
+    [recipes, soldDishForm.recipeId],
+  );
+
+  const selectedRecipeItems = useMemo(() => {
+    if (!selectedRecipe) {
+      return [];
+    }
+
+    return recipeItems.filter((item) => item.recipe_id === selectedRecipe.id);
+  }, [recipeItems, selectedRecipe]);
 
   const formGrossSales = Number(form.grossSales || 0);
   const formDiscountAmount = Number(form.discountAmount || 0);
@@ -217,6 +378,38 @@ export function SalesPerformancePanel({
     formServiceCharge,
     formTaxAmount,
   );
+
+  const soldDishQuantity = Number(soldDishForm.quantity || 0);
+  const soldDishSellingPrice = Number(soldDishForm.sellingPrice || 0);
+  const soldDishDiscount = Number(soldDishForm.discountAmount || 0);
+  const soldDishGrossSales = soldDishQuantity * soldDishSellingPrice;
+  const soldDishNetSales = Math.max(0, soldDishGrossSales - soldDishDiscount);
+
+  const soldDishIngredientPreview = useMemo(() => {
+    if (!selectedRecipe) {
+      return [];
+    }
+
+    return selectedRecipeItems.map((item) => {
+      const product = products.find((entry) => entry.id === item.product_id);
+      const deductionQty = getRecipeIngredientDeductionQty(
+        selectedRecipe,
+        item,
+        soldDishQuantity,
+      );
+      const unitCost = Number(
+        product?.unit_cost ?? item.unit_cost_snapshot ?? 0,
+      );
+
+      return {
+        item,
+        product,
+        deductionQty,
+        unitCost,
+        totalCost: deductionQty * unitCost,
+      };
+    });
+  }, [products, selectedRecipe, selectedRecipeItems, soldDishQuantity]);
 
   const filteredRecords = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -245,6 +438,35 @@ export function SalesPerformancePanel({
     });
   }, [dateFrom, dateTo, records, search, selectedChannel, selectedUnitId]);
 
+  const filteredSoldDishRecords = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return soldDishRecords.filter((sale) => {
+      const recipe = recipes.find((entry) => entry.id === sale.recipe_id);
+      const unit = units.find((entry) => entry.id === sale.brand_unit_id);
+      const matchesUnit =
+        !selectedUnitId || sale.brand_unit_id === selectedUnitId;
+      const matchesDateFrom = !dateFrom || sale.sold_date >= dateFrom;
+      const matchesDateTo = !dateTo || sale.sold_date <= dateTo;
+      const matchesSearch =
+        !query ||
+        String(recipe?.recipe_name || "").toLowerCase().includes(query) ||
+        String(unit?.name || "").toLowerCase().includes(query) ||
+        String(sale.notes || "").toLowerCase().includes(query) ||
+        String(sale.source_reference || "").toLowerCase().includes(query);
+
+      return matchesUnit && matchesDateFrom && matchesDateTo && matchesSearch;
+    });
+  }, [
+    dateFrom,
+    dateTo,
+    recipes,
+    search,
+    selectedUnitId,
+    soldDishRecords,
+    units,
+  ]);
+
   const stats = useMemo(() => {
     const grossSales = filteredRecords.reduce(
       (total, record) => total + Number(record.gross_sales || 0),
@@ -271,19 +493,32 @@ export function SalesPerformancePanel({
       0,
     );
 
+    const soldDishNetSales = filteredSoldDishRecords.reduce(
+      (total, sale) => total + Number(sale.net_sales || 0),
+      0,
+    );
+
+    const soldDishQty = filteredSoldDishRecords.reduce(
+      (total, sale) => total + Number(sale.quantity || 0),
+      0,
+    );
+
     const averageEntry =
       filteredRecords.length > 0 ? netRevenue / filteredRecords.length : 0;
 
     return {
       entryCount: filteredRecords.length,
+      dishSaleCount: filteredSoldDishRecords.length,
+      soldDishQty,
       grossSales,
       discounts,
       serviceCharge,
       tax,
       netRevenue,
+      soldDishNetSales,
       averageEntry,
     };
-  }, [filteredRecords]);
+  }, [filteredRecords, filteredSoldDishRecords]);
 
   const categoryPerformance = useMemo(() => {
     const categoryMap = new Map<string, CategoryPerformance>();
@@ -395,6 +630,41 @@ export function SalesPerformancePanel({
     );
   }, [filteredRecords]);
 
+  const recipeSalesByRecipe = useMemo(() => {
+    const saleMap = new Map<
+      string,
+      {
+        recipeId: string;
+        recipeName: string;
+        quantity: number;
+        netSales: number;
+        saleCount: number;
+      }
+    >();
+
+    filteredSoldDishRecords.forEach((sale) => {
+      const recipe = recipes.find((entry) => entry.id === sale.recipe_id);
+      const current = saleMap.get(sale.recipe_id) || {
+        recipeId: sale.recipe_id,
+        recipeName: recipe?.recipe_name || "Unknown Recipe",
+        quantity: 0,
+        netSales: 0,
+        saleCount: 0,
+      };
+
+      saleMap.set(sale.recipe_id, {
+        ...current,
+        quantity: current.quantity + Number(sale.quantity || 0),
+        netSales: current.netSales + Number(sale.net_sales || 0),
+        saleCount: current.saleCount + 1,
+      });
+    });
+
+    return Array.from(saleMap.values()).sort(
+      (a, b) => b.netSales - a.netSales,
+    );
+  }, [filteredSoldDishRecords, recipes]);
+
   function updateForm(key: keyof SalesFormState, value: string) {
     setForm((current) => ({
       ...current,
@@ -402,8 +672,32 @@ export function SalesPerformancePanel({
     }));
   }
 
+  function updateSoldDishForm(key: keyof SoldDishFormState, value: string) {
+    setSoldDishForm((current) => ({
+      ...current,
+      [key]: value,
+    }));
+
+    if (key === "recipeId") {
+      const recipe = recipes.find((entry) => entry.id === value);
+
+      if (recipe) {
+        setSoldDishForm((current) => ({
+          ...current,
+          recipeId: value,
+          brandUnitId: recipe.brand_unit_id || current.brandUnitId,
+          sellingPrice: String(Number(recipe.selling_price || 0)),
+        }));
+      }
+    }
+  }
+
   function resetForm() {
     setForm(getEmptyForm(selectedUnitId || defaultUnitId));
+  }
+
+  function resetSoldDishForm() {
+    setSoldDishForm(getEmptySoldDishForm(selectedUnitId || defaultUnitId));
   }
 
   async function handleSaveRevenue(event: React.FormEvent<HTMLFormElement>) {
@@ -520,16 +814,200 @@ export function SalesPerformancePanel({
       form.id ? "Sales revenue updated." : "Sales revenue saved.",
     );
     resetForm();
+    router.refresh();
+  }
+
+  async function handleSaveSoldDish(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedBrand?.id) {
+      toast.error("Selected brand is required.");
+      return;
+    }
+
+    if (!selectedRecipe) {
+      toast.error("Recipe is required.");
+      return;
+    }
+
+    if (!soldDishForm.brandUnitId) {
+      toast.error("Branch unit is required.");
+      return;
+    }
+
+    if (!soldDishForm.soldDate) {
+      toast.error("Sold date is required.");
+      return;
+    }
+
+    if (soldDishQuantity <= 0) {
+      toast.error("Sold quantity must be greater than zero.");
+      return;
+    }
+
+    if (soldDishSellingPrice < 0 || soldDishDiscount < 0) {
+      toast.error("Selling price and discount cannot be negative.");
+      return;
+    }
+
+    if (selectedRecipeItems.length === 0) {
+      toast.error("This recipe has no ingredients to deduct.");
+      return;
+    }
+
+    const missingProducts = selectedRecipeItems.filter(
+      (item) => !products.some((product) => product.id === item.product_id),
+    );
+
+    if (missingProducts.length > 0) {
+      toast.error("Some recipe ingredients are missing active products.");
+      return;
+    }
+
+    setIsSavingSoldDish(true);
+
+    const recipeSalePayload = {
+      brand_id: selectedBrand.id,
+      brand_unit_id: soldDishForm.brandUnitId,
+      recipe_id: selectedRecipe.id,
+      ops_area: selectedRecipe.ops_area,
+      quantity: soldDishQuantity,
+      selling_price: soldDishSellingPrice,
+      gross_sales: soldDishGrossSales,
+      discount_amount: soldDishDiscount,
+      net_sales: soldDishNetSales,
+      sold_date: soldDishForm.soldDate,
+      source: "manual",
+      source_reference: null,
+      notes: soldDishForm.notes.trim() || null,
+      is_active: true,
+      created_by: userId,
+    };
+
+    const { data: recipeSaleData, error: recipeSaleError } = await supabase
+      .from("recipe_sales")
+      .insert(recipeSalePayload)
+      .select(
+        "id, brand_id, brand_unit_id, recipe_id, ops_area, quantity, selling_price, gross_sales, discount_amount, net_sales, sold_date, source, source_reference, notes, is_active, created_by, created_at, updated_at",
+      )
+      .single();
+
+    if (recipeSaleError || !recipeSaleData) {
+      setIsSavingSoldDish(false);
+      toast.error(recipeSaleError?.message || "Unable to save sold dish.");
+      return;
+    }
+
+    const savedRecipeSale = recipeSaleData as RecipeSaleRecord;
+    const referenceCode = `SALE:${savedRecipeSale.id}`;
+
+    const movementRows = soldDishIngredientPreview.map((entry) => {
+      const product = entry.product as SalesProduct;
+
+      return {
+        brand_id: selectedBrand.id,
+        brand_unit_id: product.brand_unit_id || soldDishForm.brandUnitId,
+        product_id: product.id,
+        ops_area: product.ops_area,
+        movement_type: "sold_consumption",
+        quantity: entry.deductionQty,
+        unit_cost: entry.unitCost,
+        total_cost: entry.totalCost,
+        reference_code: referenceCode,
+        notes: `Manual sold dish: ${selectedRecipe.recipe_name} × ${formatQty(
+          soldDishQuantity,
+        )}`,
+        movement_date: soldDishForm.soldDate,
+        created_by: userId,
+        balance_direction: -1,
+      };
+    });
+
+    const { error: movementError } = await supabase
+      .from("inventory_movements")
+      .insert(movementRows);
+
+    if (movementError) {
+      await supabase
+        .from("recipe_sales")
+        .update({
+          is_active: false,
+          source_reference: `${referenceCode}:FAILED_MOVEMENT`,
+        })
+        .eq("id", savedRecipeSale.id);
+
+      setIsSavingSoldDish(false);
+      toast.error(movementError.message);
+      return;
+    }
+
+    const revenuePayload = {
+      brand_id: selectedBrand.id,
+      brand_unit_id: soldDishForm.brandUnitId,
+      revenue_date: soldDishForm.soldDate,
+      revenue_month: `${soldDishForm.soldDate.slice(0, 7)}-01`,
+      sales_channel: "manual" as SalesChannel,
+      category: selectedRecipe.recipe_category || "Recipe Sale",
+      product_name: selectedRecipe.recipe_name,
+      gross_sales: soldDishGrossSales,
+      discount_amount: soldDishDiscount,
+      service_charge: 0,
+      tax_amount: 0,
+      net_revenue: soldDishNetSales,
+      notes: soldDishForm.notes.trim() || null,
+      source_reference: referenceCode,
+      is_active: true,
+      created_by: userId,
+    };
+
+    const { data: revenueData, error: revenueError } = await supabase
+      .from("sales_revenue")
+      .insert(revenuePayload)
+      .select(
+        "id, brand_id, brand_unit_id, revenue_date, revenue_month, sales_channel, category, product_name, gross_sales, discount_amount, service_charge, tax_amount, net_revenue, notes, source_reference, is_active, created_by, created_at, updated_at",
+      )
+      .single();
+
+    await supabase
+      .from("recipe_sales")
+      .update({
+        source_reference: referenceCode,
+      })
+      .eq("id", savedRecipeSale.id);
+
+    setIsSavingSoldDish(false);
+
+    if (revenueError) {
+      toast.warning(
+        "Dish sale saved and ingredients deducted, but revenue mirror failed.",
+      );
+    }
+
+    setSoldDishRecords((current) => [
+      {
+        ...savedRecipeSale,
+        source_reference: referenceCode,
+      },
+      ...current,
+    ]);
+
+    if (revenueData) {
+      setRecords((current) => [revenueData as SalesRevenueRecord, ...current]);
+    }
+
+    toast.success("Sold dish saved and ingredients deducted.");
+    resetSoldDishForm();
+    router.refresh();
   }
 
   function handleEditRevenue(record: SalesRevenueRecord) {
     setForm({
       id: record.id,
-      brandUnitId: record.brand_unit_id || defaultUnitId,
+      brandUnitId: record.brand_unit_id || "",
       revenueDate: record.revenue_date,
       salesChannel: record.sales_channel,
-      category: record.category || "General",
-      productName: record.product_name || "General Sales",
+      category: record.category,
+      productName: record.product_name,
       grossSales: String(Number(record.gross_sales || 0)),
       discountAmount: String(Number(record.discount_amount || 0)),
       serviceCharge: String(Number(record.service_charge || 0)),
@@ -538,76 +1016,174 @@ export function SalesPerformancePanel({
       sourceReference: record.source_reference || "",
     });
 
-    toast.success("Sales revenue loaded for editing.");
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   }
 
-  async function handleDeleteRevenue(id: string) {
+  async function handleDeleteRevenue(recordId: string) {
+    const confirmed = window.confirm(
+      "Delete this revenue record from Sales Performance?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
     const { error } = await supabase
       .from("sales_revenue")
       .update({
         is_active: false,
       })
-      .eq("id", id);
+      .eq("id", recordId);
 
     if (error) {
       toast.error(error.message);
       return;
     }
 
-    setRecords((current) => current.filter((record) => record.id !== id));
-    toast.success("Sales revenue removed.");
+    setRecords((current) => current.filter((record) => record.id !== recordId));
+    toast.success("Sales revenue deleted.");
+    router.refresh();
   }
 
-  function downloadSalesPdf() {
-    if (filteredRecords.length === 0) {
-      toast.error("No sales revenue data available for PDF.");
+  async function handleDeleteRecipeSale(sale: RecipeSaleRecord) {
+    const recipe = recipes.find((entry) => entry.id === sale.recipe_id);
+    const confirmed = window.confirm(
+      `Delete this sold dish entry${
+        recipe ? ` for ${recipe.recipe_name}` : ""
+      } and reverse linked ingredient deductions?`,
+    );
+
+    if (!confirmed) {
       return;
     }
 
-    const categoryRows = categoryPerformance
-      .map(
-        (category) => `
-          <tr>
-            <td>${escapeHtml(category.category)}</td>
-            <td>${category.entryCount}</td>
-            <td>${formatCurrency(category.grossSales)}</td>
-            <td>${formatCurrency(category.discountAmount)}</td>
-            <td>${formatCurrency(category.serviceCharge)}</td>
-            <td>${formatCurrency(category.taxAmount)}</td>
-            <td>${formatCurrency(category.netRevenue)}</td>
-          </tr>
-        `,
-      )
-      .join("");
+    setDeletingSaleId(sale.id);
 
-    const productRows = productPerformance
-      .map(
-        (product) => `
-          <tr>
-            <td>${escapeHtml(product.productName)}</td>
-            <td>${escapeHtml(product.category)}</td>
-            <td>${product.entryCount}</td>
-            <td>${formatCurrency(product.grossSales)}</td>
-            <td>${formatCurrency(product.netRevenue)}</td>
-          </tr>
-        `,
-      )
-      .join("");
+    const referenceCode = sale.source_reference || `SALE:${sale.id}`;
 
-    const dailyRows = dailyPerformance
-      .map(
-        (day) => `
+    const { error: movementError } = await supabase
+      .from("inventory_movements")
+      .delete()
+      .eq("reference_code", referenceCode);
+
+    if (movementError) {
+      setDeletingSaleId("");
+      toast.error(movementError.message);
+      return;
+    }
+
+    const { error: revenueError } = await supabase
+      .from("sales_revenue")
+      .update({
+        is_active: false,
+      })
+      .eq("source_reference", referenceCode);
+
+    if (revenueError) {
+      setDeletingSaleId("");
+      toast.error(revenueError.message);
+      return;
+    }
+
+    const { error: saleError } = await supabase
+      .from("recipe_sales")
+      .update({
+        is_active: false,
+      })
+      .eq("id", sale.id);
+
+    setDeletingSaleId("");
+
+    if (saleError) {
+      toast.error(saleError.message);
+      return;
+    }
+
+    setSoldDishRecords((current) =>
+      current.filter((record) => record.id !== sale.id),
+    );
+    setRecords((current) =>
+      current.filter((record) => record.source_reference !== referenceCode),
+    );
+
+    toast.success("Sold dish entry deleted and ingredient deductions reversed.");
+    router.refresh();
+  }
+
+  function exportCsv() {
+    const headers = [
+      "Date",
+      "Unit",
+      "Channel",
+      "Category",
+      "Product",
+      "Gross Sales",
+      "Discount",
+      "Service Charge",
+      "Tax",
+      "Net Revenue",
+      "Reference",
+      "Notes",
+    ];
+
+    const rows = filteredRecords.map((record) => {
+      const unit = units.find((entry) => entry.id === record.brand_unit_id);
+
+      return [
+        record.revenue_date,
+        unit?.name || "",
+        salesChannelLabels[record.sales_channel] || record.sales_channel,
+        record.category,
+        record.product_name,
+        Number(record.gross_sales || 0),
+        Number(record.discount_amount || 0),
+        Number(record.service_charge || 0),
+        Number(record.tax_amount || 0),
+        Number(record.net_revenue || 0),
+        record.source_reference || "",
+        record.notes || "",
+      ];
+    });
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map(escapeCsvValue).join(","))
+      .join("\n");
+
+    const blob = new Blob([csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `sales-performance-${selectedBrand?.code || "brand"}-${todayDate()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function exportPdf() {
+    const rowsHtml = filteredRecords
+      .map((record) => {
+        const unit = units.find((entry) => entry.id === record.brand_unit_id);
+
+        return `
           <tr>
-            <td>${escapeHtml(day.date)}</td>
-            <td>${day.entryCount}</td>
-            <td>${formatCurrency(day.grossSales)}</td>
-            <td>${formatCurrency(day.discounts)}</td>
-            <td>${formatCurrency(day.serviceCharge)}</td>
-            <td>${formatCurrency(day.tax)}</td>
-            <td>${formatCurrency(day.netRevenue)}</td>
+            <td>${escapeHtml(record.revenue_date)}</td>
+            <td>${escapeHtml(unit?.name || "")}</td>
+            <td>${escapeHtml(salesChannelLabels[record.sales_channel])}</td>
+            <td>${escapeHtml(record.category)}</td>
+            <td>${escapeHtml(record.product_name)}</td>
+            <td>${escapeHtml(formatCurrency(Number(record.gross_sales || 0)))}</td>
+            <td>${escapeHtml(formatCurrency(Number(record.discount_amount || 0)))}</td>
+            <td>${escapeHtml(formatCurrency(Number(record.net_revenue || 0)))}</td>
           </tr>
-        `,
-      )
+        `;
+      })
       .join("");
 
     const html = `
@@ -617,7 +1193,6 @@ export function SalesPerformancePanel({
           <meta charset="utf-8" />
           <title>Sales Performance Report</title>
           <style>
-            * { box-sizing: border-box; }
             body {
               margin: 0;
               padding: 32px;
@@ -626,7 +1201,7 @@ export function SalesPerformancePanel({
               background: #ffffff;
             }
             .sheet {
-              max-width: 1180px;
+              max-width: 1100px;
               margin: 0 auto;
               border: 1px solid #e2e8f0;
               border-radius: 24px;
@@ -634,7 +1209,7 @@ export function SalesPerformancePanel({
             }
             .header {
               padding: 28px;
-              background: linear-gradient(135deg, #0f172a, #1e293b);
+              background: #0f172a;
               color: #ffffff;
             }
             .brand {
@@ -647,10 +1222,11 @@ export function SalesPerformancePanel({
             h1 {
               margin: 10px 0 0;
               font-size: 30px;
-              line-height: 1.1;
             }
-            .content { padding: 28px; }
-            .grid {
+            .content {
+              padding: 28px;
+            }
+            .stats {
               display: grid;
               grid-template-columns: repeat(4, 1fr);
               gap: 12px;
@@ -675,27 +1251,23 @@ export function SalesPerformancePanel({
               color: #0f172a;
               font-weight: 900;
             }
-            h2 {
-              margin: 26px 0 12px;
-              font-size: 18px;
-            }
             table {
               width: 100%;
               border-collapse: collapse;
-              font-size: 10px;
+              font-size: 11px;
             }
             th {
               text-align: left;
               background: #0f172a;
               color: #ffffff;
-              padding: 8px;
-              font-size: 8px;
+              padding: 9px;
+              font-size: 9px;
               text-transform: uppercase;
               letter-spacing: .7px;
             }
             td {
               border-bottom: 1px solid #e2e8f0;
-              padding: 8px;
+              padding: 9px;
               vertical-align: top;
             }
             .footer {
@@ -718,86 +1290,38 @@ export function SalesPerformancePanel({
         <body>
           <main class="sheet">
             <section class="header">
-              <div class="brand">💶 Forza Unified System</div>
+              <div class="brand">Forza Unified System</div>
               <h1>Sales Performance Report</h1>
             </section>
-
             <section class="content">
-              <div class="grid">
-                <div class="card"><div class="label">Brand</div><div class="value">${escapeHtml(selectedBrand?.name || "Selected Brand")}</div></div>
-                <div class="card"><div class="label">Branch</div><div class="value">${escapeHtml(selectedUnit?.name || "Selected Branch")}</div></div>
-                <div class="card"><div class="label">Date Range</div><div class="value">${escapeHtml(dateFrom || "Start")} to ${escapeHtml(dateTo || "Today")}</div></div>
-                <div class="card"><div class="label">Net Revenue</div><div class="value">${formatCurrency(stats.netRevenue)}</div></div>
-                <div class="card"><div class="label">Gross Sales</div><div class="value">${formatCurrency(stats.grossSales)}</div></div>
-                <div class="card"><div class="label">Discount</div><div class="value">${formatCurrency(stats.discounts)}</div></div>
-                <div class="card"><div class="label">Service Charge</div><div class="value">${formatCurrency(stats.serviceCharge)}</div></div>
-                <div class="card"><div class="label">Tax</div><div class="value">${formatCurrency(stats.tax)}</div></div>
+              <div class="stats">
+                <div class="card"><div class="label">Brand</div><div class="value">${escapeHtml(selectedBrand?.name || "N/A")}</div></div>
+                <div class="card"><div class="label">Unit</div><div class="value">${escapeHtml(selectedUnit?.name || "All")}</div></div>
+                <div class="card"><div class="label">Entries</div><div class="value">${stats.entryCount}</div></div>
+                <div class="card"><div class="label">Net Revenue</div><div class="value">${escapeHtml(formatCurrency(stats.netRevenue))}</div></div>
               </div>
-
-              <h2>📊 Category Performance</h2>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Category</th>
-                    <th>Entries</th>
-                    <th>Gross</th>
-                    <th>Discount</th>
-                    <th>Service</th>
-                    <th>Tax</th>
-                    <th>Net Revenue</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${categoryRows || `<tr><td colspan="7">No category data found.</td></tr>`}
-                </tbody>
-              </table>
-
-              <h2>📦 Product / Item Performance</h2>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Product / Item</th>
-                    <th>Category</th>
-                    <th>Entries</th>
-                    <th>Gross</th>
-                    <th>Net Revenue</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${productRows || `<tr><td colspan="5">No product data found.</td></tr>`}
-                </tbody>
-              </table>
-
-              <h2>📅 Daily Revenue</h2>
               <table>
                 <thead>
                   <tr>
                     <th>Date</th>
-                    <th>Entries</th>
+                    <th>Unit</th>
+                    <th>Channel</th>
+                    <th>Category</th>
+                    <th>Product</th>
                     <th>Gross</th>
                     <th>Discount</th>
-                    <th>Service</th>
-                    <th>Tax</th>
-                    <th>Net Revenue</th>
+                    <th>Net</th>
                   </tr>
                 </thead>
-                <tbody>
-                  ${dailyRows || `<tr><td colspan="7">No daily data found.</td></tr>`}
-                </tbody>
+                <tbody>${rowsHtml}</tbody>
               </table>
-
               <div class="footer">
-                <div>Sales Performance Report</div>
+                <div>Sales Performance Export</div>
                 <div>Developer Rights Chef Alex @FORZA 2026</div>
               </div>
             </section>
           </main>
-
-          <script>
-            window.onload = function () {
-              window.print();
-            };
-          </script>
+          <script>window.onload = function () { window.print(); };</script>
         </body>
       </html>
     `;
@@ -805,7 +1329,7 @@ export function SalesPerformancePanel({
     const printWindow = window.open("", "_blank", "width=1200,height=900");
 
     if (!printWindow) {
-      toast.error("Allow popups to download the sales PDF.");
+      toast.error("Allow popups to export PDF.");
       return;
     }
 
@@ -816,79 +1340,41 @@ export function SalesPerformancePanel({
 
   return (
     <div className="space-y-6">
-      <section className="glass-panel overflow-hidden rounded-[2rem] p-6">
-        <div className="relative">
-          <div className="absolute -right-16 -top-20 h-52 w-52 animate-pulse rounded-full bg-emerald-100/80 blur-3xl" />
-          <div className="absolute -bottom-24 -left-14 h-56 w-56 animate-pulse rounded-full bg-amber-100/80 blur-3xl" />
+      <section className="glass-panel relative overflow-hidden rounded-[2.35rem] p-6 md:p-8">
+        <div className="absolute -right-28 -top-28 h-80 w-80 animate-pulse rounded-full bg-emerald-200/50 blur-3xl" />
+        <div className="absolute -bottom-24 -left-24 h-80 w-80 animate-pulse rounded-full bg-amber-200/50 blur-3xl" />
 
-          <div className="relative z-10 grid gap-5 xl:grid-cols-[1fr_390px] xl:items-center">
-            <div>
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-4 py-2 text-sm font-black text-slate-700 shadow-sm">
-                <Sparkles size={16} />
-                Official Revenue Source
-              </div>
-
-              <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-                Sales Performance Dashboard
-              </p>
-              <h1 className="mt-2 text-3xl font-black text-slate-950 md:text-5xl">
-                {selectedBrand?.name || "Selected Brand"} Net Revenue
-              </h1>
-              <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-600">
-                Sales Performance is the official revenue source for manual
-                entry now and POS integration later. Inventory sold consumption
-                remains separate for stock deduction.
-              </p>
+        <div className="relative z-10 flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/85 px-4 py-2 text-sm font-black text-slate-700 shadow-sm">
+              <TrendingUp size={17} />
+              Sales Performance
             </div>
 
-            <div className="rounded-[2rem] border border-slate-200 bg-white/85 p-5 shadow-sm">
-              <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-400">
-                Branch Unit
-              </label>
-              <select
-                value={selectedUnitId}
-                onChange={(event) => {
-                  setSelectedUnitId(event.target.value);
-                  setForm((current) => ({
-                    ...current,
-                    brandUnitId: event.target.value,
-                  }));
-                }}
-                className="forza-input"
-              >
-                {units.map((unit) => (
-                  <option key={unit.id} value={unit.id}>
-                    {unit.name}
-                  </option>
-                ))}
-              </select>
+            <p className="text-sm font-black uppercase tracking-[0.24em] text-slate-400">
+              Manual Sales Now · POS Ready Later
+            </p>
+            <h1 className="mt-3 max-w-4xl text-4xl font-black tracking-tight text-slate-950 md:text-6xl">
+              Revenue, Sold Dishes, and Ingredient Deduction
+            </h1>
+            <p className="mt-4 max-w-3xl text-sm font-semibold leading-6 text-slate-600">
+              Record manual sold dishes from Recipe Maker, generate sales
+              revenue, and deduct all recipe ingredients through
+              sold_consumption inventory movements. The structure is ready for
+              POS integration later.
+            </p>
+          </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-400">
-                    Date From
-                  </label>
-                  <input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(event) => setDateFrom(event.target.value)}
-                    className="forza-input"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-400">
-                    Date To
-                  </label>
-                  <input
-                    type="date"
-                    value={dateTo}
-                    onChange={(event) => setDateTo(event.target.value)}
-                    className="forza-input"
-                  />
-                </div>
-              </div>
-            </div>
+          <div className="rounded-[2rem] border border-slate-200 bg-white/85 p-5 shadow-xl">
+            <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+              Active Brand
+            </p>
+            <p className="mt-2 text-2xl font-black text-slate-950">
+              {selectedBrand?.name || "No Brand"}
+            </p>
+            <p className="mt-1 text-sm font-bold text-slate-500">
+              {roleLabels[role]} · {selectedUnit?.name || "All Units"}
+            </p>
           </div>
         </div>
       </section>
@@ -897,460 +1383,784 @@ export function SalesPerformancePanel({
         <MetricCard
           label="Net Revenue"
           value={formatCurrency(stats.netRevenue)}
+          sub="Filtered revenue records"
           icon={<CircleDollarSign size={22} />}
         />
         <MetricCard
           label="Gross Sales"
           value={formatCurrency(stats.grossSales)}
-          icon={<ReceiptText size={22} />}
-        />
-        <MetricCard
-          label="Discount"
-          value={formatCurrency(stats.discounts)}
-          icon={<PieChart size={22} />}
-        />
-        <MetricCard
-          label="Average Entry"
-          value={formatCurrency(stats.averageEntry)}
-          icon={<TrendingUp size={22} />}
-        />
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          label="Service Charge"
-          value={formatCurrency(stats.serviceCharge)}
-          icon={<ReceiptText size={22} />}
-        />
-        <MetricCard
-          label="Tax"
-          value={formatCurrency(stats.tax)}
-          icon={<CalendarDays size={22} />}
-        />
-        <MetricCard
-          label="Revenue Entries"
-          value={String(stats.entryCount)}
+          sub="Before discount and tax"
           icon={<BarChart3 size={22} />}
         />
         <MetricCard
-          label="Current Net Preview"
-          value={formatCurrency(formNetRevenue)}
-          icon={<PackageSearch size={22} />}
+          label="Sold Dish Qty"
+          value={formatQty(stats.soldDishQty)}
+          sub="Manual recipe sales"
+          icon={<ChefHat size={22} />}
+        />
+        <MetricCard
+          label="Dish Sale Revenue"
+          value={formatCurrency(stats.soldDishNetSales)}
+          sub="From recipe_sales"
+          icon={<ReceiptText size={22} />}
         />
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[430px_1fr]">
-        <section className="glass-panel rounded-[2rem] p-6">
-          <div className="mb-5">
-            <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-              Revenue Entry
-            </p>
-            <h2 className="text-2xl font-black text-slate-950">
-              {form.id ? "Edit Sales Revenue" : "Create Sales Revenue"}
-            </h2>
+      <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+        <section className="glass-panel rounded-[2.35rem] p-6">
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">
+                Sold Dish Entry
+              </p>
+              <h2 className="mt-1 text-3xl font-black text-slate-950">
+                Deduct Recipe Ingredients
+              </h2>
+              <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+                Select a recipe and enter sold quantity. The system deducts all
+                recipe ingredients from inventory by UOM.
+              </p>
+            </div>
+            <Sparkles className="text-slate-400" size={26} />
           </div>
 
-          <form onSubmit={handleSaveRevenue} className="space-y-4">
-            <div>
-              <label className="text-sm font-bold text-slate-700">
-                Branch Unit
-              </label>
+          <form onSubmit={handleSaveSoldDish} className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField label="Branch Unit">
+                <select
+                  value={soldDishForm.brandUnitId}
+                  onChange={(event) =>
+                    updateSoldDishForm("brandUnitId", event.target.value)
+                  }
+                  className="input"
+                >
+                  <option value="">Select unit</option>
+                  {units.map((unit) => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label="Sold Date">
+                <input
+                  type="date"
+                  value={soldDishForm.soldDate}
+                  onChange={(event) =>
+                    updateSoldDishForm("soldDate", event.target.value)
+                  }
+                  className="input"
+                />
+              </FormField>
+            </div>
+
+            <FormField label="Recipe / Dish">
               <select
-                value={form.brandUnitId}
-                onChange={(event) => updateForm("brandUnitId", event.target.value)}
-                className="forza-input mt-2"
+                value={soldDishForm.recipeId}
+                onChange={(event) =>
+                  updateSoldDishForm("recipeId", event.target.value)
+                }
+                className="input"
               >
-                {units.map((unit) => (
-                  <option key={unit.id} value={unit.id}>
-                    {unit.name}
+                <option value="">Select recipe</option>
+                {recipes.map((recipe) => (
+                  <option key={recipe.id} value={recipe.id}>
+                    {recipe.recipe_name} · {opsAreaLabels[recipe.ops_area]}
                   </option>
                 ))}
               </select>
+            </FormField>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <FormField label="Sold Qty">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.001"
+                  value={soldDishForm.quantity}
+                  onChange={(event) =>
+                    updateSoldDishForm("quantity", event.target.value)
+                  }
+                  className="input"
+                />
+              </FormField>
+
+              <FormField label="Selling Price">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={soldDishForm.sellingPrice}
+                  onChange={(event) =>
+                    updateSoldDishForm("sellingPrice", event.target.value)
+                  }
+                  className="input"
+                />
+              </FormField>
+
+              <FormField label="Discount">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={soldDishForm.discountAmount}
+                  onChange={(event) =>
+                    updateSoldDishForm("discountAmount", event.target.value)
+                  }
+                  className="input"
+                />
+              </FormField>
             </div>
 
+            <FormField label="Notes">
+              <textarea
+                value={soldDishForm.notes}
+                onChange={(event) =>
+                  updateSoldDishForm("notes", event.target.value)
+                }
+                className="input min-h-[88px] resize-none"
+                placeholder="Optional sale note"
+              />
+            </FormField>
+
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <MiniStat label="Gross Sales" value={formatCurrency(soldDishGrossSales)} />
+                <MiniStat label="Discount" value={formatCurrency(soldDishDiscount)} />
+                <MiniStat label="Net Sales" value={formatCurrency(soldDishNetSales)} />
+              </div>
+
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-400">
+                  Ingredient deduction preview
+                </p>
+
+                <div className="space-y-2">
+                  {soldDishIngredientPreview.map((entry) => (
+                    <div
+                      key={entry.item.id}
+                      className="flex items-center justify-between gap-4 rounded-2xl bg-white px-4 py-3 text-sm shadow-sm"
+                    >
+                      <div>
+                        <p className="font-black text-slate-950">
+                          {entry.product?.product_name || "Missing Product"}
+                        </p>
+                        <p className="text-xs font-bold text-slate-400">
+                          {entry.product?.sku || "No SKU"}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-black text-slate-950">
+                          -{formatQty(entry.deductionQty)}{" "}
+                          {entry.product?.unit || entry.item.unit}
+                        </p>
+                        <p className="text-xs font-bold text-slate-400">
+                          {formatCurrency(entry.totalCost)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+
+                  {soldDishIngredientPreview.length === 0 ? (
+                    <div className="rounded-2xl bg-white px-4 py-4 text-sm font-bold text-slate-500">
+                      Select a recipe to preview ingredient deductions.
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="submit"
+                disabled={isSavingSoldDish}
+                className="forza-button-hover inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Save size={18} />
+                {isSavingSoldDish ? "Saving..." : "Save Sold Dish"}
+              </button>
+
+              <button
+                type="button"
+                onClick={resetSoldDishForm}
+                className="forza-button-hover inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm"
+              >
+                Reset
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="glass-panel rounded-[2.35rem] p-6">
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">
+                Revenue Entry
+              </p>
+              <h2 className="mt-1 text-3xl font-black text-slate-950">
+                Manual Revenue Record
+              </h2>
+              <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+                Keep this for general sales, POS fallback, imported revenue, or
+                manual revenue entries not linked to recipe deduction.
+              </p>
+            </div>
+            <Plus className="text-slate-400" size={26} />
+          </div>
+
+          <form onSubmit={handleSaveRevenue} className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="text-sm font-bold text-slate-700">
-                  Revenue Date
-                </label>
+              <FormField label="Branch Unit">
+                <select
+                  value={form.brandUnitId}
+                  onChange={(event) =>
+                    updateForm("brandUnitId", event.target.value)
+                  }
+                  className="input"
+                >
+                  <option value="">Select unit</option>
+                  {units.map((unit) => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label="Revenue Date">
                 <input
                   type="date"
                   value={form.revenueDate}
                   onChange={(event) =>
                     updateForm("revenueDate", event.target.value)
                   }
-                  className="forza-input mt-2"
+                  className="input"
                 />
-              </div>
+              </FormField>
+            </div>
 
-              <div>
-                <label className="text-sm font-bold text-slate-700">
-                  Sales Channel
-                </label>
+            <div className="grid gap-4 md:grid-cols-3">
+              <FormField label="Channel">
                 <select
                   value={form.salesChannel}
                   onChange={(event) =>
-                    updateForm("salesChannel", event.target.value as SalesChannel)
+                    updateForm("salesChannel", event.target.value)
                   }
-                  className="forza-input mt-2"
+                  className="input"
                 >
                   <option value="manual">Manual</option>
                   <option value="pos">POS</option>
                   <option value="imported">Imported</option>
                 </select>
-              </div>
-            </div>
+              </FormField>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="text-sm font-bold text-slate-700">
-                  Category
-                </label>
+              <FormField label="Category">
                 <input
                   value={form.category}
                   onChange={(event) => updateForm("category", event.target.value)}
-                  className="forza-input mt-2"
-                  placeholder="Food, Beverage, Delivery..."
+                  className="input"
                 />
-              </div>
+              </FormField>
 
-              <div>
-                <label className="text-sm font-bold text-slate-700">
-                  Product / Revenue Item
-                </label>
+              <FormField label="Product / Revenue Name">
                 <input
                   value={form.productName}
                   onChange={(event) =>
                     updateForm("productName", event.target.value)
                   }
-                  className="forza-input mt-2"
-                  placeholder="General Sales, Food Sales..."
+                  className="input"
                 />
-              </div>
+              </FormField>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-4">
+              <FormField label="Gross Sales">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.grossSales}
+                  onChange={(event) =>
+                    updateForm("grossSales", event.target.value)
+                  }
+                  className="input"
+                />
+              </FormField>
+
+              <FormField label="Discount">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.discountAmount}
+                  onChange={(event) =>
+                    updateForm("discountAmount", event.target.value)
+                  }
+                  className="input"
+                />
+              </FormField>
+
+              <FormField label="Service Charge">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.serviceCharge}
+                  onChange={(event) =>
+                    updateForm("serviceCharge", event.target.value)
+                  }
+                  className="input"
+                />
+              </FormField>
+
+              <FormField label="Tax">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.taxAmount}
+                  onChange={(event) =>
+                    updateForm("taxAmount", event.target.value)
+                  }
+                  className="input"
+                />
+              </FormField>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <NumberField
-                label="Gross Sales (€)"
-                value={form.grossSales}
-                onChange={(value) => updateForm("grossSales", value)}
-              />
-              <NumberField
-                label="Discount (€)"
-                value={form.discountAmount}
-                onChange={(value) => updateForm("discountAmount", value)}
-              />
-              <NumberField
-                label="Service Charge (€)"
-                value={form.serviceCharge}
-                onChange={(value) => updateForm("serviceCharge", value)}
-              />
-              <NumberField
-                label="Tax / VAT (€)"
-                value={form.taxAmount}
-                onChange={(value) => updateForm("taxAmount", value)}
-              />
+              <FormField label="Source Reference">
+                <input
+                  value={form.sourceReference}
+                  onChange={(event) =>
+                    updateForm("sourceReference", event.target.value)
+                  }
+                  className="input"
+                  placeholder="POS ticket, invoice, or manual reference"
+                />
+              </FormField>
+
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+                  Net Revenue
+                </p>
+                <p className="mt-2 text-2xl font-black text-slate-950">
+                  {formatCurrency(formNetRevenue)}
+                </p>
+              </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm">
-              <p className="text-xs font-black uppercase tracking-wide text-slate-400">
-                Net Revenue Formula
-              </p>
-              <p className="mt-2 text-sm font-bold leading-6 text-slate-600">
-                Gross Sales - Discount + Service Charge - Tax = Net Revenue
-              </p>
-              <p className="mt-3 text-3xl font-black text-slate-950">
-                {formatCurrency(formNetRevenue)}
-              </p>
-            </div>
-
-            <div>
-              <label className="text-sm font-bold text-slate-700">
-                Source Reference
-              </label>
-              <input
-                value={form.sourceReference}
-                onChange={(event) =>
-                  updateForm("sourceReference", event.target.value)
-                }
-                className="forza-input mt-2"
-                placeholder="POS batch ID, receipt range, manual ref..."
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-bold text-slate-700">Notes</label>
+            <FormField label="Notes">
               <textarea
                 value={form.notes}
                 onChange={(event) => updateForm("notes", event.target.value)}
-                className="forza-input mt-2 min-h-[100px] resize-none"
-                placeholder="Revenue notes, discount reason, POS remarks..."
+                className="input min-h-[88px] resize-none"
               />
-            </div>
+            </FormField>
 
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="flex flex-wrap gap-3">
               <button
                 type="submit"
                 disabled={isSaving}
-                className="forza-button-hover flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+                className="forza-button-hover inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Save size={18} />
-                {isSaving
-                  ? "Saving..."
-                  : form.id
-                    ? "Update Revenue"
-                    : "Save Revenue"}
+                {isSaving ? "Saving..." : form.id ? "Update Revenue" : "Save Revenue"}
               </button>
 
               <button
                 type="button"
                 onClick={resetForm}
-                className="forza-button-hover flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-black text-slate-950 shadow-sm"
+                className="forza-button-hover inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm"
               >
-                <Plus size={18} />
-                New Entry
+                Reset
               </button>
             </div>
           </form>
         </section>
+      </section>
 
-        <section className="glass-panel rounded-[2rem] p-6">
-          <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-                Revenue Matrix
-              </p>
-              <h2 className="text-2xl font-black text-slate-950">
-                Category & Product Performance
-              </h2>
+      <section className="glass-panel rounded-[2.35rem] p-6">
+        <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">
+              Filters & Exports
+            </p>
+            <h2 className="mt-1 text-3xl font-black text-slate-950">
+              Sales Analysis
+            </h2>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={exportPdf}
+              className="forza-button-hover inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-700 shadow-sm"
+            >
+              <FileText size={15} />
+              PDF
+            </button>
+            <button
+              type="button"
+              onClick={exportCsv}
+              className="forza-button-hover inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-700 shadow-sm"
+            >
+              <Download size={15} />
+              CSV
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <FormField label="Unit Filter">
+            <select
+              value={selectedUnitId}
+              onChange={(event) => {
+                setSelectedUnitId(event.target.value);
+                setForm((current) => ({
+                  ...current,
+                  brandUnitId: event.target.value,
+                }));
+                setSoldDishForm((current) => ({
+                  ...current,
+                  brandUnitId: event.target.value,
+                }));
+              }}
+              className="input"
+            >
+              <option value="">All Units</option>
+              {units.map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  {unit.name}
+                </option>
+              ))}
+            </select>
+          </FormField>
+
+          <FormField label="Channel">
+            <select
+              value={selectedChannel}
+              onChange={(event) =>
+                setSelectedChannel(event.target.value as SalesChannel | "all")
+              }
+              className="input"
+            >
+              <option value="all">All Channels</option>
+              <option value="manual">Manual</option>
+              <option value="pos">POS</option>
+              <option value="imported">Imported</option>
+            </select>
+          </FormField>
+
+          <FormField label="From">
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(event) => setDateFrom(event.target.value)}
+              className="input"
+            />
+          </FormField>
+
+          <FormField label="To">
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(event) => setDateTo(event.target.value)}
+              className="input"
+            />
+          </FormField>
+
+          <FormField label="Search">
+            <div className="relative">
+              <Search
+                size={16}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                className="input pl-10"
+                placeholder="Search sales"
+              />
             </div>
+          </FormField>
+        </div>
+      </section>
 
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <select
-                value={selectedChannel}
-                onChange={(event) =>
-                  setSelectedChannel(event.target.value as SalesChannel | "all")
-                }
-                className="forza-input sm:min-w-[160px]"
-              >
-                <option value="all">All Channels</option>
-                <option value="manual">Manual</option>
-                <option value="pos">POS</option>
-                <option value="imported">Imported</option>
-              </select>
+      <section className="grid gap-6 xl:grid-cols-3">
+        <AnalysisCard
+          title="Category Performance"
+          icon={<PieChart size={24} />}
+          emptyText="No category revenue found."
+        >
+          {categoryPerformance.slice(0, 8).map((item) => (
+            <ListRow
+              key={item.category}
+              title={item.category}
+              subtitle={`${item.entryCount} entries · Gross ${formatCurrency(
+                item.grossSales,
+              )}`}
+              value={formatCurrency(item.netRevenue)}
+            />
+          ))}
+        </AnalysisCard>
 
-              <div className="relative">
-                <Search
-                  size={18}
-                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  className="forza-input pl-11 xl:min-w-[260px]"
-                  placeholder="Search revenue..."
-                />
-              </div>
+        <AnalysisCard
+          title="Product Performance"
+          icon={<PackageSearch size={24} />}
+          emptyText="No product revenue found."
+        >
+          {productPerformance.slice(0, 8).map((item) => (
+            <ListRow
+              key={`${item.productName}-${item.category}`}
+              title={item.productName}
+              subtitle={`${item.category} · ${item.entryCount} entries`}
+              value={formatCurrency(item.netRevenue)}
+            />
+          ))}
+        </AnalysisCard>
 
-              <button
-                type="button"
-                onClick={downloadSalesPdf}
-                className="forza-button-hover inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl"
-              >
-                <Download size={18} />
-                PDF
-              </button>
-            </div>
+        <AnalysisCard
+          title="Top Sold Recipes"
+          icon={<ChefHat size={24} />}
+          emptyText="No sold dish records yet."
+        >
+          {recipeSalesByRecipe.slice(0, 8).map((item) => (
+            <ListRow
+              key={item.recipeId}
+              title={item.recipeName}
+              subtitle={`${formatQty(item.quantity)} sold · ${item.saleCount} entries`}
+              value={formatCurrency(item.netSales)}
+            />
+          ))}
+        </AnalysisCard>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+        <section className="glass-panel rounded-[2.35rem] p-6">
+          <div className="mb-5">
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">
+              Sold Dish History
+            </p>
+            <h2 className="mt-1 text-3xl font-black text-slate-950">
+              Recipe Sales & Ingredient Deduction
+            </h2>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] border-separate border-spacing-y-3">
+              <thead>
+                <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-400">
+                  <th className="px-4">Date</th>
+                  <th className="px-4">Recipe</th>
+                  <th className="px-4">Qty</th>
+                  <th className="px-4">Net Sales</th>
+                  <th className="px-4">Reference</th>
+                  <th className="px-4">Action</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {filteredSoldDishRecords.map((sale) => {
+                  const recipe = recipes.find(
+                    (entry) => entry.id === sale.recipe_id,
+                  );
+
+                  return (
+                    <tr key={sale.id} className="rounded-2xl bg-white shadow-sm">
+                      <td className="rounded-l-2xl px-4 py-4 text-sm font-bold text-slate-600">
+                        {sale.sold_date}
+                      </td>
+                      <td className="px-4 py-4">
+                        <p className="text-sm font-black text-slate-950">
+                          {recipe?.recipe_name || "Unknown Recipe"}
+                        </p>
+                        <p className="text-xs font-bold text-slate-400">
+                          {opsAreaLabels[sale.ops_area]} · {sale.source}
+                        </p>
+                      </td>
+                      <td className="px-4 py-4 text-sm font-black text-slate-950">
+                        {formatQty(Number(sale.quantity || 0))}
+                      </td>
+                      <td className="px-4 py-4 text-sm font-black text-slate-950">
+                        {formatCurrency(Number(sale.net_sales || 0))}
+                      </td>
+                      <td className="px-4 py-4 text-xs font-bold text-slate-500">
+                        {sale.source_reference || `SALE:${sale.id}`}
+                      </td>
+                      <td className="rounded-r-2xl px-4 py-4">
+                        <button
+                          type="button"
+                          disabled={deletingSaleId === sale.id}
+                          onClick={() => handleDeleteRecipeSale(sale)}
+                          className="forza-button-hover inline-flex items-center gap-2 rounded-full bg-red-50 px-3 py-2 text-xs font-black text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Trash2 size={14} />
+                          {deletingSaleId === sale.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {filteredSoldDishRecords.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="rounded-2xl bg-white px-4 py-8 text-center text-sm font-black text-slate-500"
+                    >
+                      No sold dish entries found.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="glass-panel rounded-[2.35rem] p-6">
+          <div className="mb-5">
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">
+              Daily Performance
+            </p>
+            <h2 className="mt-1 text-3xl font-black text-slate-950">
+              Revenue by Day
+            </h2>
           </div>
 
           <div className="space-y-3">
-            {categoryPerformance.map((category) => (
+            {dailyPerformance.slice(0, 10).map((item) => (
               <div
-                key={category.category}
-                className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg"
+                key={item.date}
+                className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm"
               >
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <h3 className="font-black text-slate-950">
-                      {category.category}
-                    </h3>
-                    <p className="mt-1 text-sm font-bold text-slate-500">
-                      Entries: {category.entryCount} · Gross:{" "}
-                      {formatCurrency(category.grossSales)}
+                    <p className="text-sm font-black text-slate-950">
+                      {item.date}
+                    </p>
+                    <p className="mt-1 text-xs font-bold text-slate-400">
+                      {item.entryCount} entries · Gross{" "}
+                      {formatCurrency(item.grossSales)}
                     </p>
                   </div>
                   <p className="text-sm font-black text-slate-950">
-                    {formatCurrency(category.netRevenue)}
+                    {formatCurrency(item.netRevenue)}
                   </p>
                 </div>
               </div>
             ))}
 
-            {categoryPerformance.length === 0 ? (
-              <div className="rounded-3xl border border-slate-200 bg-white/80 p-8 text-center">
-                <FileText className="mx-auto text-slate-300" size={36} />
-                <h3 className="mt-4 text-lg font-black text-slate-950">
-                  No sales revenue found
-                </h3>
-                <p className="mt-2 text-sm font-bold text-slate-500">
-                  Create manual revenue entries or connect POS later.
-                </p>
+            {dailyPerformance.length === 0 ? (
+              <div className="rounded-3xl bg-white/75 p-5 text-sm font-bold text-slate-500">
+                No daily revenue found.
               </div>
             ) : null}
           </div>
         </section>
       </section>
 
-      <section className="glass-panel rounded-[2rem] p-6">
+      <section className="glass-panel rounded-[2.35rem] p-6">
         <div className="mb-5">
-          <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-            Product Performance
+          <p className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">
+            Revenue Records
           </p>
-          <h2 className="text-2xl font-black text-slate-950">
-            Revenue by Product / Item
+          <h2 className="mt-1 text-3xl font-black text-slate-950">
+            Sales Revenue Ledger
           </h2>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] border-separate border-spacing-y-3">
-            <thead>
-              <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-400">
-                <th className="px-4">Product / Item</th>
-                <th className="px-4">Category</th>
-                <th className="px-4">Entries</th>
-                <th className="px-4">Gross</th>
-                <th className="px-4">Discount</th>
-                <th className="px-4">Net Revenue</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {productPerformance.map((product) => (
-                <tr
-                  key={`${product.productName}-${product.category}`}
-                  className="rounded-2xl bg-white shadow-sm"
-                >
-                  <td className="rounded-l-2xl px-4 py-4 text-sm font-black text-slate-950">
-                    {product.productName}
-                  </td>
-                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                    {product.category}
-                  </td>
-                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                    {formatQty(product.entryCount)}
-                  </td>
-                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                    {formatCurrency(product.grossSales)}
-                  </td>
-                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                    {formatCurrency(product.discountAmount)}
-                  </td>
-                  <td className="rounded-r-2xl px-4 py-4 text-sm font-black text-slate-950">
-                    {formatCurrency(product.netRevenue)}
-                  </td>
-                </tr>
-              ))}
-
-              {productPerformance.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="rounded-2xl bg-white px-4 py-8 text-center text-sm font-bold text-slate-500"
-                  >
-                    No product revenue found.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="glass-panel rounded-[2rem] p-6">
-        <div className="mb-5">
-          <p className="text-sm font-black uppercase tracking-wide text-slate-400">
-            Revenue Entries
-          </p>
-          <h2 className="text-2xl font-black text-slate-950">
-            Manual / POS-ready Revenue Records
-          </h2>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] border-separate border-spacing-y-3">
+          <table className="w-full min-w-[1120px] border-separate border-spacing-y-3">
             <thead>
               <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-400">
                 <th className="px-4">Date</th>
+                <th className="px-4">Unit</th>
                 <th className="px-4">Channel</th>
                 <th className="px-4">Category</th>
-                <th className="px-4">Product / Item</th>
+                <th className="px-4">Product / Revenue</th>
                 <th className="px-4">Gross</th>
                 <th className="px-4">Discount</th>
-                <th className="px-4">Service</th>
-                <th className="px-4">Tax</th>
                 <th className="px-4">Net</th>
-                <th className="px-4">Actions</th>
+                <th className="px-4">Reference</th>
+                <th className="px-4">Action</th>
               </tr>
             </thead>
 
             <tbody>
-              {filteredRecords.map((record) => (
-                <tr key={record.id} className="rounded-2xl bg-white shadow-sm">
-                  <td className="rounded-l-2xl px-4 py-4 text-sm font-black text-slate-950">
-                    {record.revenue_date}
-                  </td>
-                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                    {salesChannelLabels[record.sales_channel]}
-                  </td>
-                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                    {record.category}
-                  </td>
-                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                    {record.product_name}
-                  </td>
-                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                    {formatCurrency(record.gross_sales)}
-                  </td>
-                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                    {formatCurrency(record.discount_amount)}
-                  </td>
-                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                    {formatCurrency(record.service_charge)}
-                  </td>
-                  <td className="px-4 py-4 text-sm font-bold text-slate-700">
-                    {formatCurrency(record.tax_amount)}
-                  </td>
-                  <td className="px-4 py-4 text-sm font-black text-slate-950">
-                    {formatCurrency(record.net_revenue)}
-                  </td>
-                  <td className="rounded-r-2xl px-4 py-4">
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleEditRevenue(record)}
-                        className="forza-button-hover inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-3 py-2 text-xs font-black text-white"
-                      >
-                        <Edit3 size={14} />
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteRevenue(record.id)}
-                        className="forza-button-hover inline-flex items-center gap-2 rounded-2xl bg-red-600 px-3 py-2 text-xs font-black text-white"
-                      >
-                        <Trash2 size={14} />
-                        Remove
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {filteredRecords.map((record) => {
+                const unit = units.find(
+                  (entry) => entry.id === record.brand_unit_id,
+                );
+
+                return (
+                  <tr key={record.id} className="rounded-2xl bg-white shadow-sm">
+                    <td className="rounded-l-2xl px-4 py-4 text-sm font-bold text-slate-600">
+                      {record.revenue_date}
+                    </td>
+                    <td className="px-4 py-4 text-sm font-bold text-slate-600">
+                      {unit?.name || "No Unit"}
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black uppercase text-slate-600">
+                        {salesChannelLabels[record.sales_channel] ||
+                          record.sales_channel}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-sm font-bold text-slate-600">
+                      {record.category}
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="text-sm font-black text-slate-950">
+                        {record.product_name}
+                      </p>
+                      {record.notes ? (
+                        <p className="mt-1 max-w-[260px] text-xs font-bold text-slate-400">
+                          {record.notes}
+                        </p>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-4 text-sm font-black text-slate-950">
+                      {formatCurrency(Number(record.gross_sales || 0))}
+                    </td>
+                    <td className="px-4 py-4 text-sm font-black text-slate-950">
+                      {formatCurrency(Number(record.discount_amount || 0))}
+                    </td>
+                    <td className="px-4 py-4 text-sm font-black text-slate-950">
+                      {formatCurrency(Number(record.net_revenue || 0))}
+                    </td>
+                    <td className="px-4 py-4 text-xs font-bold text-slate-500">
+                      {record.source_reference || "-"}
+                    </td>
+                    <td className="rounded-r-2xl px-4 py-4">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleEditRevenue(record)}
+                          className="forza-button-hover inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2 text-xs font-black text-slate-700"
+                        >
+                          <Edit3 size={14} />
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRevenue(record.id)}
+                          className="forza-button-hover inline-flex items-center gap-2 rounded-full bg-red-50 px-3 py-2 text-xs font-black text-red-700"
+                        >
+                          <Trash2 size={14} />
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
 
               {filteredRecords.length === 0 ? (
                 <tr>
                   <td
                     colSpan={10}
-                    className="rounded-2xl bg-white px-4 py-8 text-center text-sm font-bold text-slate-500"
+                    className="rounded-2xl bg-white px-4 py-8 text-center text-sm font-black text-slate-500"
                   >
                     No revenue records found.
                   </td>
@@ -1360,6 +2170,30 @@ export function SalesPerformancePanel({
           </table>
         </div>
       </section>
+
+      <style jsx>{`
+        .input {
+          width: 100%;
+          border-radius: 1rem;
+          border: 1px solid rgb(226 232 240);
+          background: rgba(255, 255, 255, 0.9);
+          padding: 0.85rem 1rem;
+          font-size: 0.875rem;
+          font-weight: 800;
+          color: rgb(15 23 42);
+          outline: none;
+          transition:
+            border-color 150ms ease,
+            background 150ms ease,
+            box-shadow 150ms ease;
+        }
+
+        .input:focus {
+          border-color: rgb(15 23 42);
+          background: white;
+          box-shadow: 0 0 0 4px rgba(15, 23, 42, 0.08);
+        }
+      `}</style>
     </div>
   );
 }
@@ -1367,38 +2201,108 @@ export function SalesPerformancePanel({
 type MetricCardProps = {
   label: string;
   value: string;
+  sub: string;
   icon: React.ReactNode;
 };
 
-function MetricCard({ label, value, icon }: MetricCardProps) {
+function MetricCard({ label, value, sub, icon }: MetricCardProps) {
   return (
-    <div className="glass-panel forza-transition forza-hover rounded-[2rem] p-5">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white">
+    <div className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-white/85 p-5 shadow-lg transition duration-300 hover:-translate-y-1 hover:shadow-xl">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.9),transparent_35%)]" />
+      <div className="relative z-10 mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-xl">
         {icon}
       </div>
-      <p className="text-sm font-bold text-slate-400">{label}</p>
-      <p className="mt-2 text-2xl font-black text-slate-950">{value}</p>
+      <p className="relative z-10 text-sm font-bold text-slate-500">{label}</p>
+      <p className="relative z-10 mt-2 text-3xl font-black text-slate-950">
+        {value}
+      </p>
+      <p className="relative z-10 mt-1 text-xs font-black uppercase tracking-wide text-slate-400">
+        {sub}
+      </p>
     </div>
   );
 }
 
-type NumberFieldProps = {
+type MiniStatProps = {
   label: string;
   value: string;
-  onChange: (value: string) => void;
 };
 
-function NumberField({ label, value, onChange }: NumberFieldProps) {
+function MiniStat({ label, value }: MiniStatProps) {
   return (
-    <div>
-      <label className="text-sm font-bold text-slate-700">{label}</label>
-      <input
-        type="number"
-        step="0.01"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="forza-input mt-2"
-      />
+    <div className="rounded-2xl bg-white p-4 shadow-sm">
+      <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+        {label}
+      </p>
+      <p className="mt-1 text-lg font-black text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+type FormFieldProps = {
+  label: string;
+  children: React.ReactNode;
+};
+
+function FormField({ label, children }: FormFieldProps) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-400">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+type AnalysisCardProps = {
+  title: string;
+  icon: React.ReactNode;
+  emptyText: string;
+  children: React.ReactNode;
+};
+
+function AnalysisCard({ title, icon, emptyText, children }: AnalysisCardProps) {
+  const hasChildren = Boolean(children);
+
+  return (
+    <section className="glass-panel rounded-[2.35rem] p-6">
+      <div className="mb-5 flex items-center justify-between gap-4">
+        <h2 className="text-2xl font-black text-slate-950">{title}</h2>
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-xl">
+          {icon}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {hasChildren ? (
+          children
+        ) : (
+          <div className="rounded-3xl bg-white/75 p-5 text-sm font-bold text-slate-500">
+            {emptyText}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+type ListRowProps = {
+  title: string;
+  subtitle: string;
+  value: string;
+};
+
+function ListRow({ title, subtitle, value }: ListRowProps) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h3 className="font-black text-slate-950">{title}</h3>
+          <p className="mt-1 text-sm font-bold text-slate-500">{subtitle}</p>
+        </div>
+        <p className="text-sm font-black text-slate-950">{value}</p>
+      </div>
     </div>
   );
 }
