@@ -418,6 +418,7 @@ export default async function DashboardPage({
       "id, brand_id, brand_unit_id, recipe_id, ops_area, item_name, quantity, selling_price, total_sales, sold_date",
     )
     .eq("brand_id", selectedBrandId)
+    .not("recipe_id", "is", null)
     .order("sold_date", { ascending: false })
     .limit(300);
 
