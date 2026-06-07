@@ -912,7 +912,6 @@ export function SalesPerformancePanel({
         movement_type: "sold_consumption",
         quantity: entry.deductionQty,
         unit_cost: entry.unitCost,
-        total_cost: entry.totalCost,
         reference_code: referenceCode,
         notes: `Manual sold dish: ${selectedRecipe.recipe_name} × ${formatQty(
           soldDishQuantity,
