@@ -1665,6 +1665,24 @@ export function InventoryPanel({
       return;
     }
 
+    const { data: recipeUsage, error: recipeUsageError } = await supabase
+      .from("recipe_items")
+      .select("id")
+      .eq("product_id", productId)
+      .limit(1);
+
+    if (recipeUsageError) {
+      toast.error(recipeUsageError.message);
+      return;
+    }
+
+    if ((recipeUsage || []).length > 0) {
+      toast.error(
+        "This product is currently used as an ingredient in one or more recipes and cannot be permanently deleted.",
+      );
+      return;
+    }
+
     const { error } = await supabase.from("products").delete().eq("id", productId);
 
     if (error) {
