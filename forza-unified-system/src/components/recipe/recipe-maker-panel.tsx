@@ -565,8 +565,26 @@ export function RecipeMakerPanel({
     }
 
     if ((salesHistory || []).length > 0) {
-      toast.error(
-        "This recipe has recorded sales history and cannot be permanently deleted. Historical sales data must be preserved.",
+      const { error: archiveError } = await supabase
+        .from("recipes")
+        .update({ is_active: false })
+        .eq("id", recipeId);
+
+      if (archiveError) {
+        toast.error(archiveError.message);
+        return;
+      }
+
+      setRecipeList((current) =>
+        current.filter((recipe) => recipe.id !== recipeId),
+      );
+
+      if (activeRecipeId === recipeId) {
+        setActiveRecipeId("");
+      }
+
+      toast.success(
+        "Recipe archived successfully. Sales history and recipe ingredients were preserved.",
       );
       return;
     }
