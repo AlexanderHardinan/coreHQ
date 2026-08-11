@@ -111,7 +111,7 @@ function formatQty(value: number) {
   if (Number.isInteger(safeValue)) {
     return String(safeValue);
   }
-  
+
   return String(Number(safeValue.toFixed(3)));
 }
 
@@ -553,6 +553,24 @@ export function RecipeMakerPanel({
       return;
     }
 
+    const { data: salesHistory, error: salesHistoryError } = await supabase
+      .from("recipe_sales")
+      .select("id")
+      .eq("recipe_id", recipeId)
+      .limit(1);
+
+    if (salesHistoryError) {
+      toast.error(salesHistoryError.message);
+      return;
+    }
+
+    if ((salesHistory || []).length > 0) {
+      toast.error(
+        "This recipe has recorded sales history and cannot be permanently deleted. Historical sales data must be preserved.",
+      );
+      return;
+    }
+
     const { error: itemError } = await supabase
       .from("recipe_items")
       .delete()
@@ -663,7 +681,10 @@ export function RecipeMakerPanel({
       return;
     }
 
-    const { error } = await supabase.from("recipe_items").delete().eq("id", itemId);
+    const { error } = await supabase
+      .from("recipe_items")
+      .delete()
+      .eq("id", itemId);
 
     if (error) {
       toast.error(error.message);
