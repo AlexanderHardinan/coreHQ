@@ -1676,9 +1676,50 @@ export function InventoryPanel({
       return;
     }
 
-    if ((recipeUsage || []).length > 0) {
-      toast.error(
-        "This product is currently used as an ingredient in one or more recipes and cannot be permanently deleted.",
+    const { data: movementHistory, error: movementHistoryError } = await supabase
+      .from("inventory_movements")
+      .select("id")
+      .eq("product_id", productId)
+      .limit(1);
+
+    if (movementHistoryError) {
+      toast.error(movementHistoryError.message);
+      return;
+    }
+
+    const hasRecipeUsage = (recipeUsage || []).length > 0;
+    const hasMovementHistory = (movementHistory || []).length > 0;
+
+    if (hasRecipeUsage || hasMovementHistory) {
+      const { error: archiveError } = await supabase
+        .from("products")
+        .update({ is_active: false })
+        .eq("id", productId);
+
+      if (archiveError) {
+        toast.error(archiveError.message);
+        return;
+      }
+
+      setProductList((current) => current.filter((item) => item.id !== productId));
+      setMovementList((current) =>
+        current.filter((movement) => movement.product_id !== productId),
+      );
+
+      if (movementProductId === productId) {
+        setMovementProductId("");
+      }
+
+      if (reportProductId === productId) {
+        setReportProductId("");
+      }
+
+      if (editId === productId) {
+        resetForm();
+      }
+
+      toast.success(
+        "Product archived successfully. Recipe usage and inventory history were preserved.",
       );
       return;
     }
