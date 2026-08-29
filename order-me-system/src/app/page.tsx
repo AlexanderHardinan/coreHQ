@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 
 import LocationSelector from "@/app/location-selector";
+import SwitchLocationButton from "@/app/switch-location-button";
 
 import {
   isSessionTokenValid,
@@ -60,17 +61,21 @@ export default async function Home() {
 
           <div className="flex flex-wrap items-center gap-2">
             {activeLocation ? (
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700">
-                <MapPin
-                  size={15}
-                  aria-hidden="true"
-                />
+              <>
+                <div className="inline-flex w-fit items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700">
+                  <MapPin
+                    size={15}
+                    aria-hidden="true"
+                  />
 
-                Current Location:
-                <span className="text-zinc-950">
-                  {activeLocation.name}
-                </span>
-              </div>
+                  Current Location:
+                  <span className="text-zinc-950">
+                    {activeLocation.name}
+                  </span>
+                </div>
+
+                <SwitchLocationButton />
+              </>
             ) : null}
 
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-600">
