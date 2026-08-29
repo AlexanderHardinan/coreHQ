@@ -1,5 +1,3 @@
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import {
   Activity,
   ClipboardList,
@@ -12,53 +10,16 @@ import {
 import AppShell from "@/components/app-shell";
 
 import {
-  isSessionTokenValid,
-  ORDER_ME_SESSION_COOKIE,
-} from "@/lib/auth/session";
-
-import {
-  ORDER_ME_LOCATION_COOKIE,
-  verifyLocationToken,
-} from "@/lib/location/session";
+  requireOperationalSession,
+} from "@/lib/auth/require-operational-session";
 
 export default async function DashboardPage() {
-  const cookieStore = await cookies();
-
   // =======================================================
-  // VERIFY APPLICATION SESSION
+  // VERIFY OPERATIONAL SESSION
   // =======================================================
-
-  const sessionToken =
-    cookieStore.get(
-      ORDER_ME_SESSION_COOKIE
-    )?.value;
-
-  const hasValidSession =
-    isSessionTokenValid(
-      sessionToken
-    );
-
-  if (!hasValidSession) {
-    redirect("/login");
-  }
-
-  // =======================================================
-  // VERIFY ACTIVE LOCATION
-  // =======================================================
-
-  const locationToken =
-    cookieStore.get(
-      ORDER_ME_LOCATION_COOKIE
-    )?.value;
 
   const activeLocation =
-    verifyLocationToken(
-      locationToken
-    );
-
-  if (!activeLocation) {
-    redirect("/");
-  }
+    await requireOperationalSession();
 
   // =======================================================
   // DASHBOARD
