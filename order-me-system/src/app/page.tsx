@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 
 import LocationSelector from "@/app/location-selector";
+import LogoutButton from "@/app/logout-button";
 import SwitchLocationButton from "@/app/switch-location-button";
 
 import {
@@ -59,7 +60,7 @@ export default async function Home() {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-start gap-2 sm:items-center">
             {activeLocation ? (
               <>
                 <div className="inline-flex w-fit items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700">
@@ -69,6 +70,7 @@ export default async function Home() {
                   />
 
                   Current Location:
+
                   <span className="text-zinc-950">
                     {activeLocation.name}
                   </span>
@@ -86,6 +88,8 @@ export default async function Home() {
 
               Secure Session
             </div>
+
+            <LogoutButton />
           </div>
         </header>
 
