@@ -21,6 +21,11 @@ export type SelectLocationActionResult = {
   locationName?: "Forza" | "Fusion";
 };
 
+export type ClearLocationActionResult = {
+  success: boolean;
+  message: string;
+};
+
 export async function selectLocationAction(
   _previousState: SelectLocationActionResult | null,
   formData: FormData
@@ -132,6 +137,68 @@ export async function selectLocationAction(
       success: false,
       message:
         "Unable to select location. Please try again.",
+    };
+  }
+}
+
+export async function clearLocationAction(): Promise<ClearLocationActionResult> {
+  try {
+    const cookieStore = await cookies();
+
+    // =====================================================
+    // VERIFY MAIN APPLICATION SESSION
+    // =====================================================
+
+    const sessionToken =
+      cookieStore.get(
+        ORDER_ME_SESSION_COOKIE
+      )?.value;
+
+    if (
+      !isSessionTokenValid(
+        sessionToken
+      )
+    ) {
+      cookieStore.delete(
+        ORDER_ME_LOCATION_COOKIE
+      );
+
+      return {
+        success: false,
+        message:
+          "Your session has expired. Please sign in again.",
+      };
+    }
+
+    // =====================================================
+    // CLEAR ACTIVE LOCATION ONLY
+    // =====================================================
+    //
+    // The main login session remains valid.
+    // Only the operational location context is removed.
+    //
+
+    cookieStore.delete(
+      ORDER_ME_LOCATION_COOKIE
+    );
+
+    return {
+      success: true,
+      message:
+        "Location cleared.",
+    };
+  } catch (error) {
+    console.error(
+      "Order Me location clear failed:",
+      error instanceof Error
+        ? error.message
+        : "Unknown location clear error"
+    );
+
+    return {
+      success: false,
+      message:
+        "Unable to switch location. Please try again.",
     };
   }
 }
