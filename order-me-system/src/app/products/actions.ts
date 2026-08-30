@@ -24,7 +24,9 @@ export type ProductPackagingUom =
   | "bottle"
   | "box"
   | "pack"
-  | "can";
+  | "can"
+  | "kilo"
+  | "liter";
 
 export type ProductRecord = {
   id: string;
@@ -61,6 +63,17 @@ type CategoryDatabaseRow = {
   id: string;
   name: string;
   is_active: boolean;
+};
+
+type ProductNameDatabaseRow = {
+  id: string;
+  name: string;
+};
+
+type DatabaseErrorLike = {
+  code?: string;
+  message?: string;
+  details?: string;
 };
 
 export type ProductActionResult = {
@@ -127,6 +140,8 @@ const PACKAGING_UOMS =
     "box",
     "pack",
     "can",
+    "kilo",
+    "liter",
   ]);
 
 // =========================================================
@@ -479,6 +494,117 @@ function isCheckViolation(
   return (
     code === "23514"
   );
+}
+
+function isProductNameUniqueViolation(
+  error: DatabaseErrorLike
+): boolean {
+  if (
+    !isUniqueViolation(
+      error.code
+    )
+  ) {
+    return false;
+  }
+
+  const errorText =
+    `${
+      error.message ??
+      ""
+    } ${
+      error.details ??
+      ""
+    }`
+      .toLowerCase();
+
+  return errorText.includes(
+    "products_location_name_unique_ci"
+  );
+}
+
+// =========================================================
+// PRODUCT NAME DUPLICATE VALIDATION
+// =========================================================
+
+function escapeLikePattern(
+  value: string
+): string {
+  return value
+    .replace(
+      /\\/g,
+      "\\\\"
+    )
+    .replace(
+      /%/g,
+      "\\%"
+    )
+    .replace(
+      /_/g,
+      "\\_"
+    );
+}
+
+async function getDuplicateProductByName(
+  supabase: SupabaseClient,
+  locationId: string,
+  productName: string,
+  excludeProductId?:
+    | string
+    | null
+): Promise<ProductNameDatabaseRow | null> {
+  let query =
+    supabase
+      .from("products")
+      .select(
+        `
+          id,
+          name
+        `
+      )
+      .eq(
+        "location_id",
+        locationId
+      )
+      .ilike(
+        "name",
+        escapeLikePattern(
+          productName
+        )
+      );
+
+  if (
+    excludeProductId
+  ) {
+    query =
+      query.neq(
+        "id",
+        excludeProductId
+      );
+  }
+
+  const {
+    data,
+    error,
+  } = await query
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      "Order Me duplicate product validation failed:",
+      error.message
+    );
+
+    throw new Error(
+      "Unable to validate product name."
+    );
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return data as ProductNameDatabaseRow;
 }
 
 // =========================================================
@@ -1083,12 +1209,33 @@ export async function createProductAction(
       return {
         success: false,
         message:
-          "Select a valid Packaging UOM: bottle, box, pack, or can.",
+          "Select a valid Packaging UOM: bottle, box, pack, or can, kilo, or liter.",
       };
     }
 
     const supabase =
       createAdminClient();
+
+    // =====================================================
+    // PREVENT DUPLICATE PRODUCT NAME
+    // =====================================================
+
+    const duplicateProduct =
+      await getDuplicateProductByName(
+        supabase,
+        location.id,
+        productName
+      );
+
+    if (
+      duplicateProduct
+    ) {
+      return {
+        success: false,
+        message:
+          `"${productName}" already exists in ${location.name}. Duplicate products are not allowed.`,
+      };
+    }
 
     // =====================================================
     // VERIFY CATEGORY BELONGS TO ACTIVE LOCATION
@@ -1169,6 +1316,18 @@ export async function createProductAction(
       .single();
 
     if (error) {
+      if (
+        isProductNameUniqueViolation(
+          error
+        )
+      ) {
+        return {
+          success: false,
+          message:
+            `"${productName}" already exists in ${location.name}. Duplicate products are not allowed.`,
+        };
+      }
+
       if (
         isUniqueViolation(
           error.code
@@ -1404,7 +1563,7 @@ export async function updateProductAction(
       return {
         success: false,
         message:
-          "Select a valid Packaging UOM: bottle, box, pack, or can.",
+          "Select a valid Packaging UOM: bottle, box, pack, or can, kilo, or liter.",
       };
     }
 
@@ -1458,6 +1617,28 @@ export async function updateProductAction(
         success: false,
         message:
           "Product was not found for the current location.",
+      };
+    }
+
+    // =====================================================
+    // PREVENT DUPLICATE PRODUCT NAME
+    // =====================================================
+
+    const duplicateProduct =
+      await getDuplicateProductByName(
+        supabase,
+        location.id,
+        productName,
+        productId
+      );
+
+    if (
+      duplicateProduct
+    ) {
+      return {
+        success: false,
+        message:
+          `"${productName}" already exists in ${location.name}. Duplicate products are not allowed.`,
       };
     }
 
@@ -1539,6 +1720,18 @@ export async function updateProductAction(
       .single();
 
     if (error) {
+      if (
+        isProductNameUniqueViolation(
+          error
+        )
+      ) {
+        return {
+          success: false,
+          message:
+            `"${productName}" already exists in ${location.name}. Duplicate products are not allowed.`,
+        };
+      }
+
       if (
         isForeignKeyViolation(
           error.code
