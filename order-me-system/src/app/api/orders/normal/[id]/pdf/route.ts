@@ -277,30 +277,197 @@ function pdfSafeText(
     | null
     | undefined
 ): string {
-  return String(
-    value ??
-    ""
-  )
-    .replace(
-      /[\u2018\u2019]/g,
-      "'"
-    )
-    .replace(
-      /[\u201C\u201D]/g,
-      '"'
-    )
-    .replace(
-      /[\u2013\u2014]/g,
-      "-"
-    )
-    .replace(
-      /\u2026/g,
-      "..."
-    )
-    .replace(
-      /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,
+  const normalized =
+    String(
+      value ??
       ""
-    );
+    )
+      .replace(
+        /[\u2018\u2019]/g,
+        "'"
+      )
+      .replace(
+        /[\u201C\u201D]/g,
+        '"'
+      )
+      .replace(
+        /[\u2013\u2014]/g,
+        "-"
+      )
+      .replace(
+        /\u2026/g,
+        "..."
+      )
+      .replace(
+        /\u00a0/g,
+        " "
+      )
+      .replace(
+        /\u20ac/g,
+        "EUR"
+      )
+      .replace(
+        /\u00d7/g,
+        "x"
+      )
+      .replace(
+        /\u00b0/g,
+        " deg"
+      )
+      .normalize(
+        "NFKD"
+      )
+      .replace(
+        /[\u0300-\u036f]/g,
+        ""
+      )
+      .replace(
+        /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,
+        ""
+      );
+
+  const cyrillicToLatin:
+    Record<string, string> = {
+      А: "A",
+      Б: "B",
+      В: "V",
+      Г: "G",
+      Д: "D",
+      Ѓ: "Gj",
+      Е: "E",
+      Ж: "Zh",
+      З: "Z",
+      Ѕ: "Dz",
+      И: "I",
+      Ј: "J",
+      К: "K",
+      Л: "L",
+      Љ: "Lj",
+      М: "M",
+      Н: "N",
+      Њ: "Nj",
+      О: "O",
+      П: "P",
+      Р: "R",
+      С: "S",
+      Т: "T",
+      Ќ: "Kj",
+      У: "U",
+      Ф: "F",
+      Х: "H",
+      Ц: "C",
+      Ч: "Ch",
+      Џ: "Dzh",
+      Ш: "Sh",
+      Ђ: "Dj",
+      Ћ: "C",
+      Ї: "Yi",
+      І: "I",
+      Є: "Ye",
+      Ґ: "G",
+      Ё: "Yo",
+      Й: "Y",
+      Щ: "Shch",
+      Ъ: "",
+      Ы: "Y",
+      Ь: "",
+      Э: "E",
+      Ю: "Yu",
+      Я: "Ya",
+
+      а: "a",
+      б: "b",
+      в: "v",
+      г: "g",
+      д: "d",
+      ѓ: "gj",
+      е: "e",
+      ж: "zh",
+      з: "z",
+      ѕ: "dz",
+      и: "i",
+      ј: "j",
+      к: "k",
+      л: "l",
+      љ: "lj",
+      м: "m",
+      н: "n",
+      њ: "nj",
+      о: "o",
+      п: "p",
+      р: "r",
+      с: "s",
+      т: "t",
+      ќ: "kj",
+      у: "u",
+      ф: "f",
+      х: "h",
+      ц: "c",
+      ч: "ch",
+      џ: "dzh",
+      ш: "sh",
+      ђ: "dj",
+      ћ: "c",
+      ї: "yi",
+      і: "i",
+      є: "ye",
+      ґ: "g",
+      ё: "yo",
+      й: "y",
+      щ: "shch",
+      ъ: "",
+      ы: "y",
+      ь: "",
+      э: "e",
+      ю: "yu",
+      я: "ya",
+    };
+
+  let safeText =
+    "";
+
+  for (
+    const character of
+    normalized
+  ) {
+    const transliterated =
+      cyrillicToLatin[
+        character
+      ];
+
+    if (
+      transliterated !==
+      undefined
+    ) {
+      safeText +=
+        transliterated;
+
+      continue;
+    }
+
+    const codePoint =
+      character.codePointAt(
+        0
+      ) ??
+      0;
+
+    if (
+      codePoint >=
+        32 &&
+      codePoint <=
+        126
+    ) {
+      safeText +=
+        character;
+
+      continue;
+    }
+
+    safeText +=
+      "?";
+  }
+
+  return safeText;
 }
 
 // =========================================================
