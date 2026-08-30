@@ -26,7 +26,8 @@ export type ProductPackagingUom =
   | "pack"
   | "can"
   | "kilo"
-  | "liter";
+  | "liter"
+  | "tray";
 
 export type ProductRecord = {
   id: string;
@@ -142,6 +143,7 @@ const PACKAGING_UOMS =
     "can",
     "kilo",
     "liter",
+    "tray",
   ]);
 
 // =========================================================
@@ -1209,7 +1211,7 @@ export async function createProductAction(
       return {
         success: false,
         message:
-          "Select a valid Packaging UOM: bottle, box, pack, or can, kilo, or liter.",
+          "Select a valid Packaging UOM: bottle, box, pack, can, kilo, liter, or tray.",
       };
     }
 
@@ -1563,7 +1565,7 @@ export async function updateProductAction(
       return {
         success: false,
         message:
-          "Select a valid Packaging UOM: bottle, box, pack, or can, kilo, or liter.",
+          "Select a valid Packaging UOM: bottle, box, pack, can, kilo, liter, or tray.",
       };
     }
 

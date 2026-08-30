@@ -110,6 +110,10 @@ const PACKAGING_UOMS: {
     value: "liter",
     label: "liter",
   },
+  {
+    value: "tray",
+    label: "tray",
+  },
 ];
 
 // =========================================================
@@ -926,7 +930,8 @@ export default function ProductForm({
             <p className="mt-2 text-xs text-zinc-400">
               Allowed packaging:
               bottle, box, pack,
-              can, kilo, liter.
+              can, kilo, liter,
+              tray.
             </p>
           </div>
         </div>
