@@ -23,6 +23,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Download,
   Eye,
   Loader2,
   Pencil,
@@ -1326,7 +1327,7 @@ export default function NormalOrdersManager({
             ============================================= */}
 
             <div className="hidden overflow-x-auto lg:block">
-              <table className="w-full min-w-[1150px] border-collapse">
+              <table className="w-full min-w-[1200px] border-collapse">
                 <thead className="bg-zinc-50">
                   <tr className="border-b border-zinc-200">
                     <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
@@ -1528,6 +1529,17 @@ export default function NormalOrdersManager({
                                     size={15}
                                   />
                                 </Link>
+
+                                <a
+                                  href={`/api/orders/normal/${order.id}/pdf`}
+                                  className="grid h-9 w-9 place-items-center rounded-xl text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-950"
+                                  aria-label={`Export ${order.order_number} as PDF`}
+                                  title="Export PDF"
+                                >
+                                  <Download
+                                    size={16}
+                                  />
+                                </a>
 
                                 <button
                                   type="button"
@@ -1754,6 +1766,17 @@ export default function NormalOrdersManager({
 
                                 Edit
                               </Link>
+
+                              <a
+                                href={`/api/orders/normal/${order.id}/pdf`}
+                                className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-700"
+                              >
+                                <Download
+                                  size={14}
+                                />
+
+                                PDF
+                              </a>
 
                               <button
                                 type="button"
