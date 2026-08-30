@@ -87,6 +87,30 @@ type ProductCatalogRecord =
       | "current-order";
   };
 
+type ProductSearchPickerProps = {
+  rowKey: string;
+
+  selectedProduct:
+    ProductCatalogRecord | undefined;
+
+  productCatalog:
+    ProductCatalogRecord[];
+
+  selectedProductIds:
+    Set<string>;
+
+  disabled: boolean;
+
+  onSelect: (
+    productId: string
+  ) => void;
+
+  onResults: (
+    products:
+      NormalOrderProductOption[]
+  ) => void;
+};
+
 // =========================================================
 // CONSTANTS
 // =========================================================
@@ -179,7 +203,9 @@ function createBlankItem(
 ): NormalOrderFormItem {
   return {
     rowKey:
-      `new-${Date.now()}-${index}`,
+      `new-${Date.now()}-${index}-${Math.random()
+        .toString(36)
+        .slice(2)}`,
 
     productId:
       "",
@@ -264,16 +290,6 @@ function createInitialState(
 
 // =========================================================
 // INITIAL PRODUCT CATALOG
-// =========================================================
-//
-// Existing order items may not appear in the first Product
-// search result page.
-//
-// Their historical snapshot data is therefore added to the
-// local UI catalog so Edit mode never loses the Product that
-// is already displayed on the saved order.
-//
-// Live search results replace these records when available.
 // =========================================================
 
 function createInitialProductCatalog(
@@ -455,6 +471,624 @@ function isValidNonNegativeDecimal(
 }
 
 // =========================================================
+// PRODUCT SEARCH PICKER
+// =========================================================
+//
+// Each Normal Order row has its own Product search.
+//
+// This prevents the user from having to scroll through a
+// potentially very large Product database.
+//
+// Search flow:
+//
+// User types
+//      ↓
+// Local results appear immediately
+//      ↓
+// 350ms debounce
+//      ↓
+// Secure server Product search
+//      ↓
+// Results merged into Product catalog
+//      ↓
+// User selects Product
+//
+// The saved Product ID remains authoritative.
+// SKU / Category / UOM are display helpers only.
+// =========================================================
+
+function ProductSearchPicker({
+  rowKey,
+  selectedProduct,
+  productCatalog,
+  selectedProductIds,
+  disabled,
+  onSelect,
+  onResults,
+}: ProductSearchPickerProps) {
+  const [
+    query,
+    setQuery,
+  ] =
+    useState(
+      ""
+    );
+
+  const [
+    isOpen,
+    setIsOpen,
+  ] =
+    useState(
+      false
+    );
+
+  const [
+    isSearching,
+    setIsSearching,
+  ] =
+    useState(
+      false
+    );
+
+  const [
+    searchError,
+    setSearchError,
+  ] =
+    useState<
+      string | null
+    >(
+      null
+    );
+
+  const requestRef =
+    useRef(
+      0
+    );
+
+  // =======================================================
+  // SERVER SEARCH
+  // =======================================================
+
+  useEffect(() => {
+    if (
+      !isOpen
+    ) {
+      return;
+    }
+
+    const normalized =
+      query
+        .trim()
+        .replace(
+          /\s+/g,
+          " "
+        );
+
+    if (
+      !normalized
+    ) {
+      setIsSearching(
+        false
+      );
+
+      setSearchError(
+        null
+      );
+
+      return;
+    }
+
+    const requestId =
+      requestRef.current +
+      1;
+
+    requestRef.current =
+      requestId;
+
+    const timeout =
+      window.setTimeout(
+        async () => {
+          setIsSearching(
+            true
+          );
+
+          setSearchError(
+            null
+          );
+
+          try {
+            const results =
+              await getNormalOrderProductOptions(
+                normalized
+              );
+
+            if (
+              requestRef.current !==
+              requestId
+            ) {
+              return;
+            }
+
+            onResults(
+              results
+            );
+          } catch {
+            if (
+              requestRef.current ===
+              requestId
+            ) {
+              setSearchError(
+                "Unable to search Products."
+              );
+            }
+          } finally {
+            if (
+              requestRef.current ===
+              requestId
+            ) {
+              setIsSearching(
+                false
+              );
+            }
+          }
+        },
+        350
+      );
+
+    return () => {
+      window.clearTimeout(
+        timeout
+      );
+    };
+  }, [
+    isOpen,
+    onResults,
+    query,
+  ]);
+
+  // =======================================================
+  // FILTER AVAILABLE RESULTS
+  // =======================================================
+
+  const results =
+    useMemo(
+      () => {
+        const normalized =
+          query
+            .trim()
+            .toLowerCase();
+
+        const filtered =
+          normalized
+            ? productCatalog.filter(
+                (
+                  product
+                ) =>
+                  product.name
+                    .toLowerCase()
+                    .includes(
+                      normalized
+                    ) ||
+                  product.sku
+                    .toLowerCase()
+                    .includes(
+                      normalized
+                    ) ||
+                  product.category_name
+                    .toLowerCase()
+                    .includes(
+                      normalized
+                    )
+              )
+            : productCatalog;
+
+        return filtered.slice(
+          0,
+          50
+        );
+      },
+      [
+        productCatalog,
+        query,
+      ]
+    );
+
+  // =======================================================
+  // DISPLAY VALUE
+  // =======================================================
+
+  const displayValue =
+    isOpen
+      ? query
+      : selectedProduct
+        ? `${selectedProduct.sku} — ${selectedProduct.name}`
+        : "";
+
+  // =======================================================
+  // SELECT PRODUCT
+  // =======================================================
+
+  function selectProduct(
+    product:
+      ProductCatalogRecord
+  ) {
+    const usedElsewhere =
+      selectedProductIds.has(
+        product.id
+      ) &&
+      selectedProduct?.id !==
+        product.id;
+
+    if (
+      usedElsewhere
+    ) {
+      return;
+    }
+
+    onSelect(
+      product.id
+    );
+
+    setQuery(
+      ""
+    );
+
+    setIsOpen(
+      false
+    );
+
+    setSearchError(
+      null
+    );
+  }
+
+  // =======================================================
+  // CLEAR PRODUCT
+  // =======================================================
+
+  function clearProduct() {
+    onSelect(
+      ""
+    );
+
+    setQuery(
+      ""
+    );
+
+    setIsOpen(
+      true
+    );
+  }
+
+  return (
+    <div className="relative">
+      {/* ===================================================
+          SEARCH INPUT
+      =================================================== */}
+
+      <div className="relative">
+        {isSearching ? (
+          <Loader2
+            size={16}
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 animate-spin text-zinc-400"
+          />
+        ) : (
+          <Search
+            size={16}
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400"
+          />
+        )}
+
+        <input
+          id={`normal-order-product-${rowKey}`}
+          type="search"
+          value={
+            displayValue
+          }
+          disabled={
+            disabled
+          }
+          autoComplete="off"
+          placeholder="Search SKU or Product..."
+          onFocus={() => {
+            setIsOpen(
+              true
+            );
+
+            if (
+              selectedProduct
+            ) {
+              setQuery(
+                ""
+              );
+            }
+          }}
+          onChange={(
+            event
+          ) => {
+            setQuery(
+              event.target.value
+            );
+
+            setIsOpen(
+              true
+            );
+          }}
+          onKeyDown={(
+            event
+          ) => {
+            if (
+              event.key ===
+              "Escape"
+            ) {
+              setIsOpen(
+                false
+              );
+
+              setQuery(
+                ""
+              );
+
+              return;
+            }
+
+            if (
+              event.key ===
+                "Enter" &&
+              isOpen
+            ) {
+              event.preventDefault();
+
+              const firstAvailable =
+                results.find(
+                  (
+                    product
+                  ) =>
+                    !selectedProductIds.has(
+                      product.id
+                    ) ||
+                    selectedProduct?.id ===
+                      product.id
+                );
+
+              if (
+                firstAvailable
+              ) {
+                selectProduct(
+                  firstAvailable
+                );
+              }
+            }
+          }}
+          onBlur={() => {
+            window.setTimeout(
+              () => {
+                setIsOpen(
+                  false
+                );
+
+                setQuery(
+                  ""
+                );
+              },
+              150
+            );
+          }}
+          className="h-11 w-full rounded-xl border border-zinc-200 bg-white pl-10 pr-10 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-4 focus:ring-zinc-100 disabled:cursor-not-allowed disabled:bg-zinc-50"
+        />
+
+        {selectedProduct ||
+        query ? (
+          <button
+            type="button"
+            onMouseDown={(
+              event
+            ) => {
+              event.preventDefault();
+            }}
+            onClick={
+              clearProduct
+            }
+            disabled={
+              disabled
+            }
+            className="absolute right-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40"
+            aria-label="Clear selected Product"
+          >
+            <X
+              size={14}
+            />
+          </button>
+        ) : null}
+      </div>
+
+      {/* ===================================================
+          SEARCH RESULTS
+      =================================================== */}
+
+      {isOpen &&
+      !disabled ? (
+        <div className="mt-2 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg">
+          {/* =================================================
+              SEARCH STATUS
+          ================================================= */}
+
+          <div className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50 px-3 py-2">
+            <span className="text-[11px] font-semibold text-zinc-500">
+              {query.trim()
+                ? "Search Results"
+                : "Available Products"}
+            </span>
+
+            <span className="text-[10px] font-medium text-zinc-400">
+              Max 50 shown
+            </span>
+          </div>
+
+          {/* =================================================
+              ERROR
+          ================================================= */}
+
+          {searchError ? (
+            <div className="px-3 py-3 text-xs font-medium text-red-600">
+              {searchError}
+            </div>
+          ) : null}
+
+          {/* =================================================
+              RESULTS
+          ================================================= */}
+
+          {results.length >
+          0 ? (
+            <div className="max-h-72 overflow-y-auto">
+              {results.map(
+                (
+                  product
+                ) => {
+                  const usedElsewhere =
+                    selectedProductIds.has(
+                      product.id
+                    ) &&
+                    selectedProduct?.id !==
+                      product.id;
+
+                  const currentlySelected =
+                    selectedProduct?.id ===
+                    product.id;
+
+                  return (
+                    <button
+                      key={
+                        product.id
+                      }
+                      type="button"
+                      disabled={
+                        usedElsewhere
+                      }
+                      onMouseDown={(
+                        event
+                      ) => {
+                        event.preventDefault();
+                      }}
+                      onClick={() =>
+                        selectProduct(
+                          product
+                        )
+                      }
+                      className={`flex w-full items-start gap-3 border-b border-zinc-100 px-3 py-3 text-left transition last:border-b-0 ${
+                        currentlySelected
+                          ? "bg-amber-50"
+                          : "hover:bg-zinc-50"
+                      } ${
+                        usedElsewhere
+                          ? "cursor-not-allowed opacity-40"
+                          : ""
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-zinc-500">
+                            {
+                              product.sku
+                            }
+                          </span>
+
+                          {currentlySelected ? (
+                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">
+                              Selected
+                            </span>
+                          ) : null}
+
+                          {usedElsewhere ? (
+                            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-zinc-500">
+                              Already Added
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <p className="mt-1 text-sm font-semibold text-zinc-950">
+                          {
+                            product.name
+                          }
+                        </p>
+
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+                          <span>
+                            {
+                              product.category_name
+                            }
+                          </span>
+
+                          <span>
+                            •
+                          </span>
+
+                          <span className="font-semibold uppercase">
+                            {
+                              product.uom
+                            }
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                }
+              )}
+            </div>
+          ) : (
+            <div className="px-4 py-8 text-center">
+              {isSearching ? (
+                <>
+                  <Loader2
+                    size={20}
+                    className="mx-auto animate-spin text-zinc-400"
+                  />
+
+                  <p className="mt-3 text-xs font-semibold text-zinc-500">
+                    Searching Products...
+                  </p>
+                </>
+              ) : (
+                <>
+                  <PackageSearch
+                    size={20}
+                    className="mx-auto text-zinc-400"
+                  />
+
+                  <p className="mt-3 text-xs font-semibold text-zinc-700">
+                    No Products found
+                  </p>
+
+                  <p className="mt-1 text-[11px] text-zinc-400">
+                    Try another SKU or Product name.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {/* ===================================================
+          SELECTED SKU
+      =================================================== */}
+
+      {selectedProduct &&
+      !isOpen ? (
+        <p className="mt-2 font-mono text-xs font-semibold text-zinc-500">
+          {
+            selectedProduct.sku
+          }
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+// =========================================================
 // COMPONENT
 // =========================================================
 
@@ -535,6 +1169,25 @@ export default function NormalOrderForm({
     );
 
   // =======================================================
+  // MERGE PRODUCT RESULTS
+  // =======================================================
+
+  function handleProductResults(
+    products:
+      NormalOrderProductOption[]
+  ) {
+    setProductCatalog(
+      (
+        current
+      ) =>
+        mergeProductOptions(
+          current,
+          products
+        )
+    );
+  }
+
+  // =======================================================
   // PROP PRODUCT SYNC
   // =======================================================
 
@@ -553,7 +1206,7 @@ export default function NormalOrderForm({
   ]);
 
   // =======================================================
-  // PRODUCT SEARCH
+  // GLOBAL PRODUCT DATABASE SEARCH
   // =======================================================
 
   useEffect(() => {
@@ -565,7 +1218,9 @@ export default function NormalOrderForm({
           " "
         );
 
-    if (!normalizedSearch) {
+    if (
+      !normalizedSearch
+    ) {
       setProductSearchError(
         null
       );
@@ -608,14 +1263,8 @@ export default function NormalOrderForm({
               return;
             }
 
-            setProductCatalog(
-              (
-                current
-              ) =>
-                mergeProductOptions(
-                  current,
-                  results
-                )
+            handleProductResults(
+              results
             );
           } catch {
             if (
@@ -680,49 +1329,6 @@ export default function NormalOrderForm({
     );
 
   // =======================================================
-  // FILTERED PRODUCTS
-  // =======================================================
-
-  const filteredProducts =
-    useMemo(
-      () => {
-        const search =
-          productSearch
-            .trim()
-            .toLowerCase();
-
-        if (!search) {
-          return productCatalog;
-        }
-
-        return productCatalog.filter(
-          (
-            product
-          ) =>
-            product.name
-              .toLowerCase()
-              .includes(
-                search
-              ) ||
-            product.sku
-              .toLowerCase()
-              .includes(
-                search
-              ) ||
-            product.category_name
-              .toLowerCase()
-              .includes(
-                search
-              )
-        );
-      },
-      [
-        productCatalog,
-        productSearch,
-      ]
-    );
-
-  // =======================================================
   // SELECTED PRODUCT IDS
   // =======================================================
 
@@ -761,13 +1367,15 @@ export default function NormalOrderForm({
       | "status",
   >(
     field: K,
-    value: NormalOrderFormState[K]
+    value:
+      NormalOrderFormState[K]
   ) {
     setForm(
       (
         current
       ) => ({
         ...current,
+
         [field]:
           value,
       })
@@ -780,7 +1388,8 @@ export default function NormalOrderForm({
 
   function updateItem(
     rowKey: string,
-    changes: Partial<NormalOrderFormItem>
+    changes:
+      Partial<NormalOrderFormItem>
   ) {
     setForm(
       (
@@ -813,7 +1422,9 @@ export default function NormalOrderForm({
     rowKey: string,
     productId: string
   ) {
-    if (!productId) {
+    if (
+      !productId
+    ) {
       updateItem(
         rowKey,
         {
@@ -836,7 +1447,9 @@ export default function NormalOrderForm({
             productId
       );
 
-    if (duplicate) {
+    if (
+      duplicate
+    ) {
       const product =
         productMap.get(
           productId
@@ -857,7 +1470,9 @@ export default function NormalOrderForm({
         productId
       );
 
-    if (!product) {
+    if (
+      !product
+    ) {
       toast.error(
         "Product Unavailable",
         "The selected Product could not be loaded."
@@ -962,7 +1577,9 @@ export default function NormalOrderForm({
           " "
         );
 
-    if (!orderedBy) {
+    if (
+      !orderedBy
+    ) {
       return "Enter the person responsible in Ordered By.";
     }
 
@@ -1042,7 +1659,9 @@ export default function NormalOrderForm({
   ) {
     event.preventDefault();
 
-    if (isSaving) {
+    if (
+      isSaving
+    ) {
       return;
     }
 
@@ -1211,10 +1830,6 @@ export default function NormalOrderForm({
         </div>
 
         <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-3">
-          {/* ===============================================
-              ORDER NUMBER — EDIT ONLY
-          =============================================== */}
-
           {isEditMode &&
           order ? (
             <div className="lg:col-span-3">
@@ -1249,10 +1864,6 @@ export default function NormalOrderForm({
               </p>
             </div>
           ) : null}
-
-          {/* ===============================================
-              ORDER DATE
-          =============================================== */}
 
           <div>
             <label
@@ -1292,10 +1903,6 @@ export default function NormalOrderForm({
               />
             </div>
           </div>
-
-          {/* ===============================================
-              ORDERED BY
-          =============================================== */}
 
           <div>
             <label
@@ -1338,10 +1945,6 @@ export default function NormalOrderForm({
               />
             </div>
           </div>
-
-          {/* ===============================================
-              STATUS
-          =============================================== */}
 
           <div>
             <label
@@ -1406,10 +2009,6 @@ export default function NormalOrderForm({
       =================================================== */}
 
       <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-        {/* =================================================
-            PRODUCT TABLE HEADER
-        ================================================= */}
-
         <div className="border-b border-zinc-200 p-5 sm:p-6">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div className="flex items-start gap-3">
@@ -1426,14 +2025,14 @@ export default function NormalOrderForm({
                 </h2>
 
                 <p className="mt-1 text-sm leading-6 text-zinc-500">
-                  Add Products and enter the current On Hand
-                  and Order Request quantities.
+                  Search and add Products, then enter the current
+                  On Hand and Order Request quantities.
                 </p>
               </div>
             </div>
 
             {/* =============================================
-                PRODUCT SEARCH
+                GLOBAL PRODUCT DATABASE SEARCH
             ============================================= */}
 
             <div className="w-full xl:max-w-md">
@@ -1476,7 +2075,7 @@ export default function NormalOrderForm({
                     isSaving
                   }
                   autoComplete="off"
-                  placeholder="Search SKU, Product or Category..."
+                  placeholder="Search SKU or Product..."
                   className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-10 pr-10 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:ring-4 focus:ring-zinc-100 disabled:bg-zinc-50"
                 />
 
@@ -1511,10 +2110,6 @@ export default function NormalOrderForm({
             </div>
           </div>
         </div>
-
-        {/* =================================================
-            NO PRODUCTS
-        ================================================= */}
 
         {!hasProducts ? (
           <div className="border-b border-amber-200 bg-amber-50 p-5 sm:p-6">
@@ -1551,21 +2146,6 @@ export default function NormalOrderForm({
                   item.productId
                 );
 
-              const visibleProducts =
-                selectedProduct &&
-                !filteredProducts.some(
-                  (
-                    product
-                  ) =>
-                    product.id ===
-                    selectedProduct.id
-                )
-                  ? [
-                      selectedProduct,
-                      ...filteredProducts,
-                    ]
-                  : filteredProducts;
-
               return (
                 <div
                   key={
@@ -1573,10 +2153,6 @@ export default function NormalOrderForm({
                   }
                   className="p-5 sm:p-6"
                 >
-                  {/* =======================================
-                      ROW HEADER
-                  ======================================= */}
-
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <p className="text-xs font-bold uppercase tracking-[0.12em] text-zinc-500">
                       Product{" "}
@@ -1604,13 +2180,9 @@ export default function NormalOrderForm({
                     </button>
                   </div>
 
-                  {/* =======================================
-                      PRODUCT / CATEGORY / UOM
-                  ======================================= */}
-
-                  <div className="grid gap-4 xl:grid-cols-[minmax(260px,1.7fr)_minmax(170px,1fr)_100px_minmax(150px,0.8fr)_minmax(170px,0.9fr)]">
+                  <div className="grid gap-4 xl:grid-cols-[minmax(300px,1.8fr)_minmax(170px,1fr)_100px_minmax(150px,0.8fr)_minmax(170px,0.9fr)]">
                     {/* =====================================
-                        PRODUCT
+                        SEARCHABLE PRODUCT
                     ===================================== */}
 
                     <div>
@@ -1621,80 +2193,35 @@ export default function NormalOrderForm({
                         Product
                       </label>
 
-                      <div className="relative">
-                        <select
-                          id={`normal-order-product-${item.rowKey}`}
-                          value={
-                            item.productId
-                          }
-                          onChange={(
-                            event
-                          ) =>
-                            handleProductSelect(
-                              item.rowKey,
-                              event.target.value
-                            )
-                          }
-                          disabled={
-                            isSaving ||
-                            !hasProducts
-                          }
-                          className="h-11 w-full appearance-none rounded-xl border border-zinc-200 bg-white px-4 pr-10 text-sm text-zinc-950 outline-none transition focus:border-zinc-400 focus:ring-4 focus:ring-zinc-100 disabled:cursor-not-allowed disabled:bg-zinc-50"
-                        >
-                          <option value="">
-                            Select Product
-                          </option>
-
-                          {visibleProducts.map(
-                            (
-                              product
-                            ) => {
-                              const usedElsewhere =
-                                selectedProductIds.has(
-                                  product.id
-                                ) &&
-                                item.productId !==
-                                  product.id;
-
-                              return (
-                                <option
-                                  key={
-                                    product.id
-                                  }
-                                  value={
-                                    product.id
-                                  }
-                                  disabled={
-                                    usedElsewhere
-                                  }
-                                >
-                                  {
-                                    product.sku
-                                  }
-                                  {" — "}
-                                  {
-                                    product.name
-                                  }
-                                </option>
-                              );
-                            }
-                          )}
-                        </select>
-
-                        <ChevronDown
-                          size={16}
-                          aria-hidden="true"
-                          className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400"
-                        />
-                      </div>
-
-                      {selectedProduct ? (
-                        <p className="mt-2 font-mono text-xs font-semibold text-zinc-500">
-                          {
-                            selectedProduct.sku
-                          }
-                        </p>
-                      ) : null}
+                      <ProductSearchPicker
+                        rowKey={
+                          item.rowKey
+                        }
+                        selectedProduct={
+                          selectedProduct
+                        }
+                        productCatalog={
+                          productCatalog
+                        }
+                        selectedProductIds={
+                          selectedProductIds
+                        }
+                        disabled={
+                          isSaving ||
+                          !hasProducts
+                        }
+                        onSelect={(
+                          productId
+                        ) =>
+                          handleProductSelect(
+                            item.rowKey,
+                            productId
+                          )
+                        }
+                        onResults={
+                          handleProductResults
+                        }
+                      />
                     </div>
 
                     {/* =====================================
