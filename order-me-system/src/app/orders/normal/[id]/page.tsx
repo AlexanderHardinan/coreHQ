@@ -8,6 +8,7 @@ import {
   CalendarDays,
   ClipboardList,
   Clock3,
+  Download,
   MapPin,
   Package,
   Pencil,
@@ -356,6 +357,18 @@ export default async function NormalOrderViewPage({
 
                   Back
                 </Link>
+
+                <a
+                  href={`/api/orders/normal/${order.id}/pdf`}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
+                >
+                  <Download
+                    size={16}
+                    aria-hidden="true"
+                  />
+
+                  Export PDF
+                </a>
 
                 <Link
                   href={`/orders/normal/${order.id}/edit`}
@@ -770,6 +783,18 @@ export default async function NormalOrderViewPage({
 
             Back to Normal Orders
           </Link>
+
+          <a
+            href={`/api/orders/normal/${order.id}/pdf`}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
+          >
+            <Download
+              size={16}
+              aria-hidden="true"
+            />
+
+            Export PDF
+          </a>
 
           <Link
             href={`/orders/normal/${order.id}/edit`}
