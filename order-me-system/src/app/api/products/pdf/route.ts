@@ -1,6 +1,7 @@
+import fontkit from "@pdf-lib/fontkit";
+
 import {
   PDFDocument,
-  StandardFonts,
   rgb,
   type PDFFont,
   type PDFPage,
@@ -18,11 +19,9 @@ import {
 // RUNTIME
 // =========================================================
 
-export const runtime =
-  "nodejs";
+export const runtime = "nodejs";
 
-export const dynamic =
-  "force-dynamic";
+export const dynamic = "force-dynamic";
 
 // =========================================================
 // TYPES
@@ -86,60 +85,50 @@ type PdfColumn = {
     | "packagingUom";
   label: string;
   width: number;
-  align?:
-    | "left"
-    | "right";
+  align?: "left" | "right";
 };
 
 // =========================================================
 // CONSTANTS
 // =========================================================
 
-const PAGE_WIDTH =
-  841.89;
+const PAGE_WIDTH = 841.89;
 
-const PAGE_HEIGHT =
-  595.28;
+const PAGE_HEIGHT = 595.28;
 
-const PAGE_MARGIN_X =
-  34;
+const PAGE_MARGIN_X = 34;
 
-const PAGE_MARGIN_TOP =
-  32;
+const PAGE_MARGIN_TOP = 32;
 
-const PAGE_MARGIN_BOTTOM =
-  34;
+const PAGE_MARGIN_BOTTOM = 34;
 
 const CONTENT_WIDTH =
   PAGE_WIDTH -
   PAGE_MARGIN_X * 2;
 
-const HEADER_HEIGHT =
-  94;
+const HEADER_HEIGHT = 94;
 
-const TABLE_HEADER_HEIGHT =
-  26;
+const TABLE_HEADER_HEIGHT = 26;
 
-const TABLE_ROW_MIN_HEIGHT =
-  25;
+const TABLE_ROW_MIN_HEIGHT = 25;
 
-const CELL_PADDING_X =
-  6;
+const CELL_PADDING_X = 6;
 
-const CELL_PADDING_Y =
-  6;
+const CELL_PADDING_Y = 6;
 
-const TABLE_FONT_SIZE =
-  7.5;
+const TABLE_FONT_SIZE = 7.5;
 
-const TABLE_LINE_HEIGHT =
-  9;
+const TABLE_LINE_HEIGHT = 9;
 
-const QUERY_BATCH_SIZE =
-  1000;
+const QUERY_BATCH_SIZE = 1000;
 
-const MAX_SEARCH_LENGTH =
-  100;
+const MAX_SEARCH_LENGTH = 100;
+
+const UNICODE_FONT_REGULAR_PATH =
+  "/fonts/NotoSans-Regular.ttf";
+
+const UNICODE_FONT_BOLD_PATH =
+  "/fonts/NotoSans-Bold.ttf";
 
 const DEFAULT_SORT_BY:
   ProductSortBy =
@@ -300,214 +289,113 @@ function escapePostgrestQuotedValue(
 }
 
 // =========================================================
-// PDF SAFE TEXT
+// PDF TEXT
 // =========================================================
 //
-// Standard Helvetica uses WinAnsi encoding.
+// Preserve Unicode text exactly.
 //
-// Convert unsupported Unicode into safe Latin/ASCII output
-// instead of allowing one Product name/category to crash the
-// complete PDF generation.
+// No Cyrillic-to-Latin conversion.
+// No accent stripping.
+// No language translation.
+//
+// Only invalid control characters are removed.
 // =========================================================
 
-function pdfSafeText(
+function pdfText(
   value:
     | string
     | number
     | null
     | undefined
 ): string {
-  const normalized =
-    String(
-      value ??
-      ""
+  return String(
+    value ??
+    ""
+  )
+    .replace(
+      /\r\n?/g,
+      "\n"
     )
-      .replace(
-        /[\u2018\u2019]/g,
-        "'"
-      )
-      .replace(
-        /[\u201C\u201D]/g,
-        '"'
-      )
-      .replace(
-        /[\u2013\u2014]/g,
-        "-"
-      )
-      .replace(
-        /\u2026/g,
-        "..."
-      )
-      .replace(
-        /\u00a0/g,
-        " "
-      )
-      .replace(
-        /\u20ac/g,
-        "EUR"
-      )
-      .replace(
-        /\u00d7/g,
-        "x"
-      )
-      .replace(
-        /\u00b0/g,
-        " deg"
-      )
-      .normalize(
-        "NFKD"
-      )
-      .replace(
-        /[\u0300-\u036f]/g,
-        ""
-      )
-      .replace(
-        /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,
-        ""
-      );
+    .replace(
+      /\t/g,
+      " "
+    )
+    .replace(
+      /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g,
+      ""
+    );
+}
 
-  const cyrillicToLatin:
-    Record<string, string> = {
-      А: "A",
-      Б: "B",
-      В: "V",
-      Г: "G",
-      Д: "D",
-      Ѓ: "Gj",
-      Е: "E",
-      Ж: "Zh",
-      З: "Z",
-      Ѕ: "Dz",
-      И: "I",
-      Ј: "J",
-      К: "K",
-      Л: "L",
-      Љ: "Lj",
-      М: "M",
-      Н: "N",
-      Њ: "Nj",
-      О: "O",
-      П: "P",
-      Р: "R",
-      С: "S",
-      Т: "T",
-      Ќ: "Kj",
-      У: "U",
-      Ф: "F",
-      Х: "H",
-      Ц: "C",
-      Ч: "Ch",
-      Џ: "Dzh",
-      Ш: "Sh",
-      Ђ: "Dj",
-      Ћ: "C",
-      Ї: "Yi",
-      І: "I",
-      Є: "Ye",
-      Ґ: "G",
-      Ё: "Yo",
-      Й: "Y",
-      Щ: "Shch",
-      Ъ: "",
-      Ы: "Y",
-      Ь: "",
-      Э: "E",
-      Ю: "Yu",
-      Я: "Ya",
+// =========================================================
+// UNICODE FONT LOADER
+// =========================================================
 
-      а: "a",
-      б: "b",
-      в: "v",
-      г: "g",
-      д: "d",
-      ѓ: "gj",
-      е: "e",
-      ж: "zh",
-      з: "z",
-      ѕ: "dz",
-      и: "i",
-      ј: "j",
-      к: "k",
-      л: "l",
-      љ: "lj",
-      м: "m",
-      н: "n",
-      њ: "nj",
-      о: "o",
-      п: "p",
-      р: "r",
-      с: "s",
-      т: "t",
-      ќ: "kj",
-      у: "u",
-      ф: "f",
-      х: "h",
-      ц: "c",
-      ч: "ch",
-      џ: "dzh",
-      ш: "sh",
-      ђ: "dj",
-      ћ: "c",
-      ї: "yi",
-      і: "i",
-      є: "ye",
-      ґ: "g",
-      ё: "yo",
-      й: "y",
-      щ: "shch",
-      ъ: "",
-      ы: "y",
-      ь: "",
-      э: "e",
-      ю: "yu",
-      я: "ya",
-    };
+async function loadUnicodeFontBytes(
+  requestUrl: string
+): Promise<{
+  regular: ArrayBuffer;
+  bold: ArrayBuffer;
+}> {
+  const regularUrl =
+    new URL(
+      UNICODE_FONT_REGULAR_PATH,
+      requestUrl
+    );
 
-  let safeText =
-    "";
+  const boldUrl =
+    new URL(
+      UNICODE_FONT_BOLD_PATH,
+      requestUrl
+    );
 
-  for (
-    const character of
-    normalized
+  const [
+    regularResponse,
+    boldResponse,
+  ] =
+    await Promise.all([
+      fetch(
+        regularUrl,
+        {
+          cache: "force-cache",
+        }
+      ),
+      fetch(
+        boldUrl,
+        {
+          cache: "force-cache",
+        }
+      ),
+    ]);
+
+  if (
+    !regularResponse.ok
   ) {
-    const transliterated =
-      cyrillicToLatin[
-        character
-      ];
-
-    if (
-      transliterated !==
-      undefined
-    ) {
-      safeText +=
-        transliterated;
-
-      continue;
-    }
-
-    const codePoint =
-      character.codePointAt(
-        0
-      ) ??
-      0;
-
-    if (
-      codePoint >=
-        32 &&
-      codePoint <=
-        126
-    ) {
-      safeText +=
-        character;
-
-      continue;
-    }
-
-    safeText +=
-      "?";
+    throw new Error(
+      `Unable to load Unicode regular font (${regularResponse.status}).`
+    );
   }
 
-  return safeText;
+  if (
+    !boldResponse.ok
+  ) {
+    throw new Error(
+      `Unable to load Unicode bold font (${boldResponse.status}).`
+    );
+  }
+
+  const [
+    regular,
+    bold,
+  ] =
+    await Promise.all([
+      regularResponse.arrayBuffer(),
+      boldResponse.arrayBuffer(),
+    ]);
+
+  return {
+    regular,
+    bold,
+  };
 }
 
 // =========================================================
@@ -534,8 +422,7 @@ function formatQuantity(
   return new Intl.NumberFormat(
     "en-US",
     {
-      maximumFractionDigits:
-        4,
+      maximumFractionDigits: 4,
     }
   ).format(
     numericValue
@@ -597,7 +484,7 @@ function wrapText(
   maxWidth: number
 ): string[] {
   const safeText =
-    pdfSafeText(
+    pdfText(
       text
     );
 
@@ -615,8 +502,7 @@ function wrapText(
   const lines:
     string[] = [];
 
-  let currentLine =
-    "";
+  let currentLine = "";
 
   for (
     const word of
@@ -664,8 +550,7 @@ function wrapText(
       continue;
     }
 
-    let chunk =
-      "";
+    let chunk = "";
 
     for (
       const character of
@@ -726,7 +611,8 @@ async function loadAllProducts(
   search: string,
   categoryId: string,
   sortBy: ProductSortBy,
-  sortDirection: ProductSortDirection
+  sortDirection:
+    ProductSortDirection
 ): Promise<ProductDatabaseRow[]> {
   const supabase =
     createAdminClient();
@@ -735,8 +621,7 @@ async function loadAllProducts(
     ProductDatabaseRow[] =
     [];
 
-  let from =
-    0;
+  let from = 0;
 
   while (true) {
     let query =
@@ -797,19 +682,20 @@ async function loadAllProducts(
     const {
       data,
       error,
-    } = await query
-      .order(
-        sortBy,
-        {
-          ascending:
-            sortDirection ===
-            "asc",
-        }
-      )
-      .range(
-        from,
-        to
-      );
+    } =
+      await query
+        .order(
+          sortBy,
+          {
+            ascending:
+              sortDirection ===
+              "asc",
+          }
+        )
+        .range(
+          from,
+          to
+        );
 
     if (
       error
@@ -848,27 +734,30 @@ async function loadAllProducts(
 
 async function loadCategories(
   locationId: string
-): Promise<Map<string, string>> {
+): Promise<
+  Map<string, string>
+> {
   const supabase =
     createAdminClient();
 
   const {
     data,
     error,
-  } = await supabase
-    .from(
-      "categories"
-    )
-    .select(
-      `
-        id,
-        name
-      `
-    )
-    .eq(
-      "location_id",
-      locationId
-    );
+  } =
+    await supabase
+      .from(
+        "categories"
+      )
+      .select(
+        `
+          id,
+          name
+        `
+      )
+      .eq(
+        "location_id",
+        locationId
+      );
 
   if (
     error
@@ -1001,8 +890,7 @@ function calculateRowHeight(
   row: ProductPdfRow,
   font: PDFFont
 ): number {
-  let maxLines =
-    1;
+  let maxLines = 1;
 
   for (
     const column of
@@ -1048,7 +936,7 @@ function drawRightAlignedText(
   y: number
 ) {
   const safeText =
-    pdfSafeText(
+    pdfText(
       text
     );
 
@@ -1094,8 +982,7 @@ function drawPageHeader(
   totalProducts: number,
   search: string,
   categoryName: string,
-  continuation:
-    boolean
+  continuation: boolean
 ): number {
   const titleY =
     PAGE_HEIGHT -
@@ -1110,8 +997,7 @@ function drawPageHeader(
       y:
         titleY,
 
-      size:
-        8,
+      size: 8,
 
       font:
         fonts.bold,
@@ -1137,8 +1023,7 @@ function drawPageHeader(
         titleY -
         24,
 
-      size:
-        19,
+      size: 19,
 
       font:
         fonts.bold,
@@ -1153,7 +1038,7 @@ function drawPageHeader(
   );
 
   const safeLocation =
-    pdfSafeText(
+    pdfText(
       `${locationName} (${locationCode})`
     );
 
@@ -1167,8 +1052,7 @@ function drawPageHeader(
         titleY -
         43,
 
-      size:
-        8.5,
+      size: 8.5,
 
       font:
         fonts.regular,
@@ -1228,7 +1112,7 @@ function drawPageHeader(
     0
   ) {
     const filterText =
-      pdfSafeText(
+      pdfText(
         filterParts.join(
           " | "
         )
@@ -1244,8 +1128,7 @@ function drawPageHeader(
           titleY -
           62,
 
-        size:
-          7.5,
+        size: 7.5,
 
         font:
           fonts.regular,
@@ -1267,6 +1150,7 @@ function drawPageHeader(
     start: {
       x:
         PAGE_MARGIN_X,
+
       y:
         titleY -
         HEADER_HEIGHT +
@@ -1277,14 +1161,14 @@ function drawPageHeader(
       x:
         PAGE_WIDTH -
         PAGE_MARGIN_X,
+
       y:
         titleY -
         HEADER_HEIGHT +
         18,
     },
 
-    thickness:
-      0.7,
+    thickness: 0.7,
 
     color:
       rgb(
@@ -1339,7 +1223,7 @@ function drawTableHeader(
     TABLE_COLUMNS
   ) {
     const label =
-      pdfSafeText(
+      pdfText(
         column.label
       );
 
@@ -1370,8 +1254,7 @@ function drawTableHeader(
           y -
           17,
 
-        size:
-          7,
+        size: 7,
 
         font:
           fonts.bold,
@@ -1393,6 +1276,7 @@ function drawTableHeader(
     start: {
       x:
         PAGE_MARGIN_X,
+
       y:
         y -
         TABLE_HEADER_HEIGHT,
@@ -1402,13 +1286,13 @@ function drawTableHeader(
       x:
         PAGE_WIDTH -
         PAGE_MARGIN_X,
+
       y:
         y -
         TABLE_HEADER_HEIGHT,
     },
 
-    thickness:
-      0.6,
+    thickness: 0.6,
 
     color:
       rgb(
@@ -1487,12 +1371,10 @@ function drawTableRow(
       );
 
     for (
-      let lineIndex =
-        0;
+      let lineIndex = 0;
       lineIndex <
       lines.length;
-      lineIndex +=
-        1
+      lineIndex += 1
     ) {
       const line =
         lines[
@@ -1553,6 +1435,7 @@ function drawTableRow(
     start: {
       x:
         PAGE_MARGIN_X,
+
       y:
         y -
         rowHeight,
@@ -1562,13 +1445,13 @@ function drawTableRow(
       x:
         PAGE_WIDTH -
         PAGE_MARGIN_X,
+
       y:
         y -
         rowHeight,
     },
 
-    thickness:
-      0.35,
+    thickness: 0.35,
 
     color:
       rgb(
@@ -1604,11 +1487,9 @@ function drawEmptyState(
     width:
       CONTENT_WIDTH,
 
-    height:
-      70,
+    height: 70,
 
-    borderWidth:
-      0.7,
+    borderWidth: 0.7,
 
     borderColor:
       rgb(
@@ -1629,7 +1510,7 @@ function drawEmptyState(
     "No products match the selected Product List filters.";
 
   const safeMessage =
-    pdfSafeText(
+    pdfText(
       message
     );
 
@@ -1653,8 +1534,7 @@ function drawEmptyState(
         y -
         40,
 
-      size:
-        9,
+      size: 9,
 
       font:
         fonts.regular,
@@ -1686,13 +1566,13 @@ function drawFooters(
       page,
       index
     ) => {
-      const footerY =
-        18;
+      const footerY = 18;
 
       page.drawLine({
         start: {
           x:
             PAGE_MARGIN_X,
+
           y:
             footerY +
             10,
@@ -1702,13 +1582,13 @@ function drawFooters(
           x:
             PAGE_WIDTH -
             PAGE_MARGIN_X,
+
           y:
             footerY +
             10,
         },
 
-        thickness:
-          0.4,
+        thickness: 0.4,
 
         color:
           rgb(
@@ -1727,8 +1607,7 @@ function drawFooters(
           y:
             footerY,
 
-          size:
-            6.5,
+          size: 6.5,
 
           font:
             fonts.regular,
@@ -1765,13 +1644,14 @@ async function generateProductListPdf(
   locationName: string,
   locationCode: string,
   search: string,
-  categoryName: string
+  categoryName: string,
+  fontBaseUrl: string
 ): Promise<Uint8Array> {
   const pdfDocument =
     await PDFDocument.create();
 
   pdfDocument.setTitle(
-    pdfSafeText(
+    pdfText(
       `Product List - ${locationName}`
     )
   );
@@ -1788,16 +1668,33 @@ async function generateProductListPdf(
     "Order Me System by Forza"
   );
 
+  // =======================================================
+  // REGISTER CUSTOM UNICODE FONT SUPPORT
+  // =======================================================
+
+  pdfDocument.registerFontkit(
+    fontkit
+  );
+
+  // =======================================================
+  // LOAD NOTO SANS
+  // =======================================================
+
+  const unicodeFontBytes =
+    await loadUnicodeFontBytes(
+      fontBaseUrl
+    );
+
   const fonts:
     PdfFonts = {
     regular:
       await pdfDocument.embedFont(
-        StandardFonts.Helvetica
+        unicodeFontBytes.regular
       ),
 
     bold:
       await pdfDocument.embedFont(
-        StandardFonts.HelveticaBold
+        unicodeFontBytes.bold
       ),
   };
 
@@ -1872,12 +1769,10 @@ async function generateProductListPdf(
   }
 
   for (
-    let index =
-      0;
+    let index = 0;
     index <
     rows.length;
-    index +=
-      1
+    index += 1
   ) {
     const row =
       rows[index];
@@ -1957,7 +1852,7 @@ function createSafeFileName(
   locationCode: string
 ): string {
   const safeLocation =
-    pdfSafeText(
+    String(
       locationCode
     )
       .replace(
@@ -2080,7 +1975,8 @@ export async function GET(
         location.name,
         location.code,
         search,
-        categoryName
+        categoryName,
+        request.url
       );
 
     const responseBody =
