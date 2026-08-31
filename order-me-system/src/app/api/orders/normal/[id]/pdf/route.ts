@@ -1,6 +1,7 @@
+import fontkit from "@pdf-lib/fontkit";
+
 import {
   PDFDocument,
-  StandardFonts,
   rgb,
   type PDFFont,
   type PDFPage,
@@ -98,6 +99,16 @@ const BODY_FONT_SIZE =
 
 const BODY_LINE_HEIGHT =
   10.5;
+
+// =========================================================
+// UNICODE FONT
+// =========================================================
+
+const UNICODE_FONT_REGULAR_PATH =
+  "/fonts/NotoSans-Regular.ttf";
+
+const UNICODE_FONT_BOLD_PATH =
+  "/fonts/NotoSans-Bold.ttf";
 
 // =========================================================
 // COLORS
@@ -267,207 +278,116 @@ const TABLE_WIDTH =
   );
 
 // =========================================================
-// PDF SAFE TEXT
+// PDF TEXT
+// =========================================================
+//
+// Preserve Unicode characters exactly.
+//
+// No Cyrillic transliteration.
+// No accent stripping.
+// No language translation.
+//
+// Only invalid control characters are removed.
 // =========================================================
 
-function pdfSafeText(
+function pdfText(
   value:
     | string
     | number
     | null
     | undefined
 ): string {
-  const normalized =
-    String(
-      value ??
-      ""
+  return String(
+    value ??
+    ""
+  )
+    .replace(
+      /\r\n?/g,
+      "\n"
     )
-      .replace(
-        /[\u2018\u2019]/g,
-        "'"
-      )
-      .replace(
-        /[\u201C\u201D]/g,
-        '"'
-      )
-      .replace(
-        /[\u2013\u2014]/g,
-        "-"
-      )
-      .replace(
-        /\u2026/g,
-        "..."
-      )
-      .replace(
-        /\u00a0/g,
-        " "
-      )
-      .replace(
-        /\u20ac/g,
-        "EUR"
-      )
-      .replace(
-        /\u00d7/g,
-        "x"
-      )
-      .replace(
-        /\u00b0/g,
-        " deg"
-      )
-      .normalize(
-        "NFKD"
-      )
-      .replace(
-        /[\u0300-\u036f]/g,
-        ""
-      )
-      .replace(
-        /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,
-        ""
-      );
+    .replace(
+      /\t/g,
+      " "
+    )
+    .replace(
+      /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g,
+      ""
+    );
+}
 
-  const cyrillicToLatin:
-    Record<string, string> = {
-      А: "A",
-      Б: "B",
-      В: "V",
-      Г: "G",
-      Д: "D",
-      Ѓ: "Gj",
-      Е: "E",
-      Ж: "Zh",
-      З: "Z",
-      Ѕ: "Dz",
-      И: "I",
-      Ј: "J",
-      К: "K",
-      Л: "L",
-      Љ: "Lj",
-      М: "M",
-      Н: "N",
-      Њ: "Nj",
-      О: "O",
-      П: "P",
-      Р: "R",
-      С: "S",
-      Т: "T",
-      Ќ: "Kj",
-      У: "U",
-      Ф: "F",
-      Х: "H",
-      Ц: "C",
-      Ч: "Ch",
-      Џ: "Dzh",
-      Ш: "Sh",
-      Ђ: "Dj",
-      Ћ: "C",
-      Ї: "Yi",
-      І: "I",
-      Є: "Ye",
-      Ґ: "G",
-      Ё: "Yo",
-      Й: "Y",
-      Щ: "Shch",
-      Ъ: "",
-      Ы: "Y",
-      Ь: "",
-      Э: "E",
-      Ю: "Yu",
-      Я: "Ya",
+// =========================================================
+// UNICODE FONT LOADER
+// =========================================================
 
-      а: "a",
-      б: "b",
-      в: "v",
-      г: "g",
-      д: "d",
-      ѓ: "gj",
-      е: "e",
-      ж: "zh",
-      з: "z",
-      ѕ: "dz",
-      и: "i",
-      ј: "j",
-      к: "k",
-      л: "l",
-      љ: "lj",
-      м: "m",
-      н: "n",
-      њ: "nj",
-      о: "o",
-      п: "p",
-      р: "r",
-      с: "s",
-      т: "t",
-      ќ: "kj",
-      у: "u",
-      ф: "f",
-      х: "h",
-      ц: "c",
-      ч: "ch",
-      џ: "dzh",
-      ш: "sh",
-      ђ: "dj",
-      ћ: "c",
-      ї: "yi",
-      і: "i",
-      є: "ye",
-      ґ: "g",
-      ё: "yo",
-      й: "y",
-      щ: "shch",
-      ъ: "",
-      ы: "y",
-      ь: "",
-      э: "e",
-      ю: "yu",
-      я: "ya",
-    };
+async function loadUnicodeFontBytes(
+  requestUrl: string
+): Promise<{
+  regular: ArrayBuffer;
+  bold: ArrayBuffer;
+}> {
+  const regularUrl =
+    new URL(
+      UNICODE_FONT_REGULAR_PATH,
+      requestUrl
+    );
 
-  let safeText =
-    "";
+  const boldUrl =
+    new URL(
+      UNICODE_FONT_BOLD_PATH,
+      requestUrl
+    );
 
-  for (
-    const character of
-    normalized
+  const [
+    regularResponse,
+    boldResponse,
+  ] =
+    await Promise.all([
+      fetch(
+        regularUrl,
+        {
+          cache:
+            "force-cache",
+        }
+      ),
+
+      fetch(
+        boldUrl,
+        {
+          cache:
+            "force-cache",
+        }
+      ),
+    ]);
+
+  if (
+    !regularResponse.ok
   ) {
-    const transliterated =
-      cyrillicToLatin[
-        character
-      ];
-
-    if (
-      transliterated !==
-      undefined
-    ) {
-      safeText +=
-        transliterated;
-
-      continue;
-    }
-
-    const codePoint =
-      character.codePointAt(
-        0
-      ) ??
-      0;
-
-    if (
-      codePoint >=
-        32 &&
-      codePoint <=
-        126
-    ) {
-      safeText +=
-        character;
-
-      continue;
-    }
-
-    safeText +=
-      "?";
+    throw new Error(
+      `Unable to load Unicode regular font (${regularResponse.status}).`
+    );
   }
 
-  return safeText;
+  if (
+    !boldResponse.ok
+  ) {
+    throw new Error(
+      `Unable to load Unicode bold font (${boldResponse.status}).`
+    );
+  }
+
+  const [
+    regular,
+    bold,
+  ] =
+    await Promise.all([
+      regularResponse.arrayBuffer(),
+      boldResponse.arrayBuffer(),
+    ]);
+
+  return {
+    regular,
+    bold,
+  };
 }
 
 // =========================================================
@@ -591,7 +511,7 @@ function wrapText(
   maxWidth: number
 ): string[] {
   const normalized =
-    pdfSafeText(
+    pdfText(
       text
     )
       .trim()
@@ -749,7 +669,7 @@ function drawAlignedText(
     COLOR_DARK
 ) {
   const safeText =
-    pdfSafeText(
+    pdfText(
       text
     );
 
@@ -969,7 +889,7 @@ function drawOrderHeader(
     );
 
     page.drawText(
-      pdfSafeText(
+      pdfText(
         value
       ),
       {
@@ -1091,7 +1011,7 @@ function drawContinuationHeader(
   );
 
   const orderText =
-    `Order Number: ${pdfSafeText(
+    `Order Number: ${pdfText(
       orderNumber
     )}`;
 
@@ -1568,7 +1488,8 @@ function drawFooters(
 async function generateNormalOrderPdf(
   order: NormalOrderRecord,
   locationName: string,
-  locationCode: string
+  locationCode: string,
+  fontBaseUrl: string
 ): Promise<Uint8Array> {
   const pdfDocument =
     await PDFDocument.create();
@@ -1593,15 +1514,33 @@ async function generateNormalOrderPdf(
     "Order Me System by Forza"
   );
 
-  const fonts: PdfFonts = {
+  // =======================================================
+  // REGISTER UNICODE FONTKIT
+  // =======================================================
+
+  pdfDocument.registerFontkit(
+    fontkit
+  );
+
+  // =======================================================
+  // LOAD NOTO SANS
+  // =======================================================
+
+  const unicodeFontBytes =
+    await loadUnicodeFontBytes(
+      fontBaseUrl
+    );
+
+  const fonts:
+    PdfFonts = {
     regular:
       await pdfDocument.embedFont(
-        StandardFonts.Helvetica
+        unicodeFontBytes.regular
       ),
 
     bold:
       await pdfDocument.embedFont(
-        StandardFonts.HelveticaBold
+        unicodeFontBytes.bold
       ),
   };
 
@@ -1768,7 +1707,7 @@ function createPdfResponseBody(
 // =========================================================
 
 export async function GET(
-  _request: Request,
+  request: Request,
   {
     params,
   }: NormalOrderPdfRouteProps
@@ -1824,7 +1763,8 @@ export async function GET(
       await generateNormalOrderPdf(
         order,
         location.name,
-        location.code
+        location.code,
+        request.url
       );
 
     // =====================================================
