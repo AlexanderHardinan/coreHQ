@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  FileDown,
   Loader2,
   Package,
   PackagePlus,
@@ -595,6 +596,66 @@ export default function ProductsManager({
     );
 
   // =======================================================
+  // PDF EXPORT URL
+  // =======================================================
+  //
+  // Export preserves the current Product List search,
+  // category filter, sort field, and sort direction.
+  //
+  // Pagination is deliberately excluded so the PDF route
+  // can export the complete filtered Product List.
+  // =======================================================
+
+  const pdfExportUrl =
+    useMemo(
+      () => {
+        const params =
+          new URLSearchParams();
+
+        if (
+          initialSearch
+        ) {
+          params.set(
+            "q",
+            initialSearch
+          );
+        }
+
+        if (
+          initialCategoryId
+        ) {
+          params.set(
+            "category",
+            initialCategoryId
+          );
+        }
+
+        params.set(
+          "sort",
+          initialSortBy
+        );
+
+        params.set(
+          "direction",
+          initialSortDirection
+        );
+
+        const queryString =
+          params.toString();
+
+        return queryString
+          ? `/api/products/pdf?${queryString}`
+          : "/api/products/pdf";
+      },
+      [
+        initialSearch,
+        initialCategoryId,
+        initialSortBy,
+        initialSortDirection,
+      ]
+    );
+
+  // =======================================================
   // UI
   // =======================================================
 
@@ -666,20 +727,52 @@ export default function ProductsManager({
             </div>
 
             {/* =============================================
-                ADD PRODUCT
+                PRODUCT ACTIONS
             ============================================= */}
 
-            <Link
-              href="/products/new"
-              className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800"
-            >
-              <PackagePlus
-                size={17}
-                aria-hidden="true"
-              />
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+              <a
+                href={
+                  pdfExportUrl
+                }
+                aria-disabled={
+                  total === 0
+                }
+                onClick={(
+                  event
+                ) => {
+                  if (
+                    total === 0
+                  ) {
+                    event.preventDefault();
+                  }
+                }}
+                className={`inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 ${
+                  total === 0
+                    ? "pointer-events-none cursor-not-allowed opacity-40"
+                    : ""
+                }`}
+              >
+                <FileDown
+                  size={17}
+                  aria-hidden="true"
+                />
 
-              Add Product
-            </Link>
+                Export PDF
+              </a>
+
+              <Link
+                href="/products/new"
+                className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800"
+              >
+                <PackagePlus
+                  size={17}
+                  aria-hidden="true"
+                />
+
+                Add Product
+              </Link>
+            </div>
           </div>
 
           {/* ===============================================
