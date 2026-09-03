@@ -45,7 +45,6 @@ type TableColumn = {
     | "sku"
     | "product"
     | "category"
-    | "onHand"
     | "requested"
     | "uom";
 
@@ -221,20 +220,6 @@ const TABLE_COLUMNS:
 
       width:
         145,
-    },
-
-    {
-      key:
-        "onHand",
-
-      label:
-        "On Hand Qty",
-
-      width:
-        92,
-
-      align:
-        "right",
     },
 
     {
@@ -1171,11 +1156,6 @@ function getItemCellValue(
 
     case "category":
       return item.category_name_snapshot;
-
-    case "onHand":
-      return formatQuantity(
-        item.on_hand_qty
-      );
 
     case "requested":
       return formatQuantity(
