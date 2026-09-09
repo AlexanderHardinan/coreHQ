@@ -21,6 +21,7 @@ import {
   PanelLeftOpen,
   ShieldCheck,
   ShoppingCart,
+  Trash2,
   X,
 } from "lucide-react";
 
@@ -95,6 +96,11 @@ const navigation: NavigationItem[] = [
         icon: <CookingPot size={16} />,
       },
     ],
+  },
+  {
+    label: "Waste Data",
+    href: "/waste",
+    icon: <Trash2 size={18} />,
   },
 ];
 
