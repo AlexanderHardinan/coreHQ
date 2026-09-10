@@ -33,11 +33,8 @@ export const dynamic =
 // =========================================================
 
 type PdfFonts = {
-  regular:
-    PDFFont;
-
-  bold:
-    PDFFont;
+  regular: PDFFont;
+  bold: PDFFont;
 };
 
 type PdfColumn = {
@@ -50,11 +47,9 @@ type PdfColumn = {
     | "uom"
     | "reason";
 
-  label:
-    string;
+  label: string;
 
-  width:
-    number;
+  width: number;
 
   align?:
     | "left"
@@ -63,29 +58,31 @@ type PdfColumn = {
 };
 
 type WasteReportFilters = {
-  search:
-    string;
+  search: string;
 
   reason:
     | WasteReason
     | "all";
 
-  dateFrom:
-    string;
+  dateFrom: string;
 
-  dateTo:
-    string;
+  dateTo: string;
 };
 
 type QuantityTotals = {
-  ml:
-    number;
+  ml: number;
+  gram: number;
+  pc: number;
+};
 
-  gram:
-    number;
+type WasteChartPoint = {
+  wasteDate: string;
 
-  pc:
-    number;
+  ml: number;
+
+  gram: number;
+
+  pc: number;
 };
 
 // =========================================================
@@ -134,6 +131,28 @@ const BODY_LINE_HEIGHT =
 
 const MAX_SEARCH_LENGTH =
   100;
+
+// =========================================================
+// PERFORMANCE CHART
+// =========================================================
+
+const CHART_HEIGHT =
+  172;
+
+const CHART_PADDING_X =
+  18;
+
+const CHART_PLOT_LEFT =
+  52;
+
+const CHART_PLOT_RIGHT =
+  18;
+
+const CHART_PLOT_TOP =
+  50;
+
+const CHART_PLOT_BOTTOM =
+  34;
 
 // =========================================================
 // UNICODE FONTS
@@ -210,6 +229,48 @@ const COLOR_WHITE =
     1,
     1,
     1
+  );
+
+const COLOR_CHART_BACKGROUND =
+  rgb(
+    0.992,
+    0.992,
+    0.995
+  );
+
+const COLOR_CHART_GRID =
+  rgb(
+    0.9,
+    0.9,
+    0.92
+  );
+
+const COLOR_CHART_SHADOW =
+  rgb(
+    0.82,
+    0.82,
+    0.84
+  );
+
+const COLOR_ML =
+  rgb(
+    0.851,
+    0.467,
+    0.024
+  );
+
+const COLOR_GRAM =
+  rgb(
+    0.094,
+    0.094,
+    0.106
+  );
+
+const COLOR_PC =
+  rgb(
+    0.443,
+    0.443,
+    0.478
   );
 
 // =========================================================
@@ -320,11 +381,6 @@ const TABLE_X =
 // =========================================================
 // PDF TEXT
 // =========================================================
-//
-// Preserve Unicode.
-//
-// Only invalid PDF control characters are removed.
-// =========================================================
 
 function pdfText(
   value:
@@ -356,14 +412,10 @@ function pdfText(
 // =========================================================
 
 async function loadUnicodeFontBytes(
-  requestUrl:
-    string
+  requestUrl: string
 ): Promise<{
-  regular:
-    ArrayBuffer;
-
-  bold:
-    ArrayBuffer;
+  regular: ArrayBuffer;
+  bold: ArrayBuffer;
 }> {
   const regularUrl =
     new URL(
@@ -565,8 +617,7 @@ function normalizeReason(
 // =========================================================
 
 function getReportFilters(
-  url:
-    URL
+  url: URL
 ): WasteReportFilters {
   const search =
     normalizeSearch(
@@ -624,8 +675,7 @@ function getReportFilters(
 // =========================================================
 
 function formatQuantity(
-  value:
-    number
+  value: number
 ): string {
   if (
     !Number.isFinite(
@@ -652,8 +702,7 @@ function formatQuantity(
 // =========================================================
 
 function formatDate(
-  value:
-    string
+  value: string
 ): string {
   const match =
     value.match(
@@ -707,12 +756,66 @@ function formatDate(
 }
 
 // =========================================================
+// SHORT DATE
+// =========================================================
+
+function formatShortDate(
+  value: string
+): string {
+  const match =
+    value.match(
+      /^(\d{4})-(\d{2})-(\d{2})$/
+    );
+
+  if (!match) {
+    return value;
+  }
+
+  const date =
+    new Date(
+      Date.UTC(
+        Number(
+          match[1]
+        ),
+        Number(
+          match[2]
+        ) -
+          1,
+        Number(
+          match[3]
+        )
+      )
+    );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(
+    "en",
+    {
+      month:
+        "short",
+
+      day:
+        "numeric",
+
+      timeZone:
+        "UTC",
+    }
+  ).format(date);
+}
+
+// =========================================================
 // GENERATED DATE
 // =========================================================
 
 function formatGeneratedDate(
-  date:
-    Date
+  date: Date
 ): string {
   return new Intl.DateTimeFormat(
     "en",
@@ -773,11 +876,8 @@ function getReasonLabel(
 // =========================================================
 
 function getDateRangeLabel(
-  dateFrom:
-    string,
-
-  dateTo:
-    string
+  dateFrom: string,
+  dateTo: string
 ): string {
   if (
     dateFrom &&
@@ -850,13 +950,92 @@ function calculateQuantityTotals(
 }
 
 // =========================================================
+// PERFORMANCE DATA
+// =========================================================
+//
+// Build chart data from the exact rows exported to PDF.
+//
+// This guarantees:
+//
+// Date filter
+// Search filter
+// Reason filter
+//
+// all apply equally to the chart and report table.
+// =========================================================
+
+function createPerformanceData(
+  rows:
+    WasteRecord[]
+): WasteChartPoint[] {
+  const map =
+    new Map<
+      string,
+      WasteChartPoint
+    >();
+
+  for (
+    const row of
+    rows
+  ) {
+    let point =
+      map.get(
+        row.waste_date
+      );
+
+    if (!point) {
+      point = {
+        wasteDate:
+          row.waste_date,
+
+        ml:
+          0,
+
+        gram:
+          0,
+
+        pc:
+          0,
+      };
+
+      map.set(
+        row.waste_date,
+        point
+      );
+    }
+
+    const qty =
+      Number.isFinite(
+        row.qty
+      )
+        ? row.qty
+        : 0;
+
+    point[
+      row.uom_snapshot
+    ] +=
+      qty;
+  }
+
+  return Array.from(
+    map.values()
+  ).sort(
+    (
+      first,
+      second
+    ) =>
+      first.wasteDate.localeCompare(
+        second.wasteDate
+      )
+  );
+}
+
+// =========================================================
 // FILTER TEXT
 // =========================================================
 
 function compactText(
-  value:
-    string,
-
+  value: string,
   maxLength =
     60
 ): string {
@@ -938,17 +1117,10 @@ function getCellValue(
 // =========================================================
 
 function wrapText(
-  text:
-    string,
-
-  font:
-    PDFFont,
-
-  fontSize:
-    number,
-
-  maxWidth:
-    number
+  text: string,
+  font: PDFFont,
+  fontSize: number,
+  maxWidth: number
 ): string[] {
   const normalized =
     pdfText(
@@ -979,8 +1151,7 @@ function wrapText(
     "";
 
   function pushLongWord(
-    word:
-      string
+    word: string
   ): string {
     let segment =
       "";
@@ -1237,7 +1408,7 @@ function drawAlignedText(
 }
 
 // =========================================================
-// LABEL / VALUE
+// META FIELD
 // =========================================================
 
 function drawMetaField(
@@ -1358,10 +1529,6 @@ function drawReportHeader(
     PAGE_HEIGHT -
     TOP_MARGIN;
 
-  // =======================================================
-  // BRAND
-  // =======================================================
-
   page.drawText(
     "ORDER ME SYSTEM BY FORZA",
     {
@@ -1381,10 +1548,6 @@ function drawReportHeader(
         COLOR_BRAND,
     }
   );
-
-  // =======================================================
-  // TITLE
-  // =======================================================
 
   page.drawText(
     "WASTE REPORT",
@@ -1427,10 +1590,6 @@ function drawReportHeader(
         COLOR_MUTED,
     }
   );
-
-  // =======================================================
-  // LOCATION
-  // =======================================================
 
   const locationText =
     `${locationName} (${locationCode})`;
@@ -1490,10 +1649,6 @@ function drawReportHeader(
     }
   );
 
-  // =======================================================
-  // DIVIDER
-  // =======================================================
-
   const dividerY =
     top -
     62;
@@ -1522,10 +1677,6 @@ function drawReportHeader(
     color:
       COLOR_BORDER,
   });
-
-  // =======================================================
-  // META FIELDS
-  // =======================================================
 
   const metaTop =
     dividerY -
@@ -1644,6 +1795,708 @@ function drawReportHeader(
 
   return secondRowY -
     42;
+}
+
+// =========================================================
+// PERFORMANCE LEGEND
+// =========================================================
+
+function drawChartLegendItem(
+  page:
+    PDFPage,
+
+  fonts:
+    PdfFonts,
+
+  x:
+    number,
+
+  y:
+    number,
+
+  label:
+    string,
+
+  color:
+    ReturnType<typeof rgb>
+): number {
+  page.drawCircle({
+    x:
+      x +
+      3,
+
+    y:
+      y +
+      3,
+
+    size:
+      3,
+
+    color,
+  });
+
+  page.drawText(
+    label,
+    {
+      x:
+        x +
+        11,
+
+      y,
+
+      size:
+        7.5,
+
+      font:
+        fonts.bold,
+
+      color:
+        COLOR_MUTED,
+    }
+  );
+
+  return (
+    11 +
+    fonts.bold.widthOfTextAtSize(
+      label,
+      7.5
+    ) +
+    18
+  );
+}
+
+// =========================================================
+// PERFORMANCE CHART
+// =========================================================
+
+function drawPerformanceChart(
+  page:
+    PDFPage,
+
+  fonts:
+    PdfFonts,
+
+  data:
+    WasteChartPoint[],
+
+  startY:
+    number
+): number {
+  const chartX =
+    TABLE_X;
+
+  const chartWidth =
+    TABLE_WIDTH;
+
+  const chartBottom =
+    startY -
+    CHART_HEIGHT;
+
+  page.drawRectangle({
+    x:
+      chartX,
+
+    y:
+      chartBottom,
+
+    width:
+      chartWidth,
+
+    height:
+      CHART_HEIGHT,
+
+    color:
+      COLOR_CHART_BACKGROUND,
+
+    borderColor:
+      COLOR_BORDER,
+
+    borderWidth:
+      0.7,
+  });
+
+  page.drawText(
+    "WASTE PERFORMANCE",
+    {
+      x:
+        chartX +
+        CHART_PADDING_X,
+
+      y:
+        startY -
+        21,
+
+      size:
+        9,
+
+      font:
+        fonts.bold,
+
+      color:
+        COLOR_BLACK,
+    }
+  );
+
+  page.drawText(
+    "Performance trend based on the currently exported Waste records",
+    {
+      x:
+        chartX +
+        CHART_PADDING_X,
+
+      y:
+        startY -
+        34,
+
+      size:
+        7,
+
+      font:
+        fonts.regular,
+
+      color:
+        COLOR_MUTED,
+    }
+  );
+
+  // =======================================================
+  // LEGEND
+  // =======================================================
+
+  let legendX =
+    chartX +
+    chartWidth -
+    166;
+
+  const legendY =
+    startY -
+    22;
+
+  legendX +=
+    drawChartLegendItem(
+      page,
+      fonts,
+      legendX,
+      legendY,
+      "ml",
+      COLOR_ML
+    );
+
+  legendX +=
+    drawChartLegendItem(
+      page,
+      fonts,
+      legendX,
+      legendY,
+      "gram",
+      COLOR_GRAM
+    );
+
+  drawChartLegendItem(
+    page,
+    fonts,
+    legendX,
+    legendY,
+    "pc",
+    COLOR_PC
+  );
+
+  // =======================================================
+  // EMPTY STATE
+  // =======================================================
+
+  if (
+    data.length ===
+    0
+  ) {
+    const emptyText =
+      "No Waste Performance data is available for the selected filters.";
+
+    const emptyWidth =
+      fonts.regular.widthOfTextAtSize(
+        emptyText,
+        8.5
+      );
+
+    page.drawText(
+      emptyText,
+      {
+        x:
+          chartX +
+          (
+            chartWidth -
+            emptyWidth
+          ) /
+            2,
+
+        y:
+          chartBottom +
+          65,
+
+        size:
+          8.5,
+
+        font:
+          fonts.regular,
+
+        color:
+          COLOR_MUTED,
+      }
+    );
+
+    return chartBottom -
+      14;
+  }
+
+  // =======================================================
+  // PLOT GEOMETRY
+  // =======================================================
+
+  const plotX =
+    chartX +
+    CHART_PLOT_LEFT;
+
+  const plotRight =
+    chartX +
+    chartWidth -
+    CHART_PLOT_RIGHT;
+
+  const plotWidth =
+    plotRight -
+    plotX;
+
+  const plotTop =
+    startY -
+    CHART_PLOT_TOP;
+
+  const plotBottom =
+    chartBottom +
+    CHART_PLOT_BOTTOM;
+
+  const plotHeight =
+    plotTop -
+    plotBottom;
+
+  const maximum =
+    Math.max(
+      1,
+      ...data.flatMap(
+        (
+          point
+        ) => [
+          point.ml,
+          point.gram,
+          point.pc,
+        ]
+      )
+    );
+
+  // =======================================================
+  // GRID + Y LABELS
+  // =======================================================
+
+  for (
+    let index =
+      0;
+    index <=
+    4;
+    index +=
+      1
+  ) {
+    const ratio =
+      index /
+      4;
+
+    const y =
+      plotBottom +
+      ratio *
+        plotHeight;
+
+    const value =
+      maximum *
+      ratio;
+
+    page.drawLine({
+      start: {
+        x:
+          plotX,
+
+        y,
+      },
+
+      end: {
+        x:
+          plotRight,
+
+        y,
+      },
+
+      thickness:
+        index ===
+        0
+          ? 0.8
+          : 0.35,
+
+      color:
+        COLOR_CHART_GRID,
+    });
+
+    const valueText =
+      formatQuantity(
+        value
+      );
+
+    const valueWidth =
+      fonts.regular.widthOfTextAtSize(
+        valueText,
+        6.5
+      );
+
+    page.drawText(
+      valueText,
+      {
+        x:
+          plotX -
+          7 -
+          valueWidth,
+
+        y:
+          y -
+          2,
+
+        size:
+          6.5,
+
+        font:
+          fonts.regular,
+
+        color:
+          COLOR_LIGHT_MUTED,
+      }
+    );
+  }
+
+  // =======================================================
+  // X POSITIONS
+  // =======================================================
+
+  const getX =
+    (
+      index:
+        number
+    ) => {
+      if (
+        data.length <=
+        1
+      ) {
+        return plotX +
+          plotWidth /
+            2;
+      }
+
+      return plotX +
+        (
+          index /
+          (
+            data.length -
+            1
+          )
+        ) *
+          plotWidth;
+    };
+
+  const getY =
+    (
+      value:
+        number
+    ) =>
+      plotBottom +
+      (
+        value /
+        maximum
+      ) *
+        plotHeight;
+
+  // =======================================================
+  // DATE LABELS
+  // =======================================================
+
+  const dateIndexes =
+    data.length <=
+      6
+      ? data.map(
+          (
+            _,
+            index
+          ) =>
+            index
+        )
+      : Array.from(
+          new Set([
+            0,
+            Math.round(
+              (
+                data.length -
+                1
+              ) *
+                0.2
+            ),
+            Math.round(
+              (
+                data.length -
+                1
+              ) *
+                0.4
+            ),
+            Math.round(
+              (
+                data.length -
+                1
+              ) *
+                0.6
+            ),
+            Math.round(
+              (
+                data.length -
+                1
+              ) *
+                0.8
+            ),
+            data.length -
+              1,
+          ])
+        );
+
+  for (
+    const index of
+    dateIndexes
+  ) {
+    const label =
+      formatShortDate(
+        data[
+          index
+        ].wasteDate
+      );
+
+    const labelWidth =
+      fonts.regular.widthOfTextAtSize(
+        label,
+        6.5
+      );
+
+    page.drawText(
+      label,
+      {
+        x:
+          getX(
+            index
+          ) -
+          labelWidth /
+            2,
+
+        y:
+          chartBottom +
+          15,
+
+        size:
+          6.5,
+
+        font:
+          fonts.regular,
+
+        color:
+          COLOR_MUTED,
+      }
+    );
+  }
+
+  // =======================================================
+  // DRAW LINE SERIES
+  // =======================================================
+
+  const drawSeries =
+    (
+      key:
+        "ml" |
+        "gram" |
+        "pc",
+
+      color:
+        ReturnType<typeof rgb>
+    ) => {
+      for (
+        let index =
+          0;
+        index <
+        data.length;
+        index +=
+          1
+      ) {
+        const point =
+          data[
+            index
+          ];
+
+        const x =
+          getX(
+            index
+          );
+
+        const y =
+          getY(
+            point[
+              key
+            ]
+          );
+
+        if (
+          index >
+          0
+        ) {
+          const previous =
+            data[
+              index -
+              1
+            ];
+
+          const previousX =
+            getX(
+              index -
+              1
+            );
+
+          const previousY =
+            getY(
+              previous[
+                key
+              ]
+            );
+
+          // -----------------------------------------------
+          // DEPTH / SHADOW
+          // -----------------------------------------------
+
+          page.drawLine({
+            start: {
+              x:
+                previousX,
+
+              y:
+                previousY -
+                2.4,
+            },
+
+            end: {
+              x,
+
+              y:
+                y -
+                2.4,
+            },
+
+            thickness:
+              3.8,
+
+            color:
+              COLOR_CHART_SHADOW,
+
+            opacity:
+              0.35,
+          });
+
+          // -----------------------------------------------
+          // MAIN LINE
+          // -----------------------------------------------
+
+          page.drawLine({
+            start: {
+              x:
+                previousX,
+
+              y:
+                previousY,
+            },
+
+            end: {
+              x,
+
+              y,
+            },
+
+            thickness:
+              2.2,
+
+            color,
+          });
+        }
+
+        // -------------------------------------------------
+        // POINT
+        // -------------------------------------------------
+
+        page.drawCircle({
+          x,
+
+          y,
+
+          size:
+            3.2,
+
+          color:
+            COLOR_WHITE,
+
+          borderColor:
+            color,
+
+          borderWidth:
+            1.5,
+        });
+      }
+    };
+
+  drawSeries(
+    "ml",
+    COLOR_ML
+  );
+
+  drawSeries(
+    "gram",
+    COLOR_GRAM
+  );
+
+  drawSeries(
+    "pc",
+    COLOR_PC
+  );
+
+  // =======================================================
+  // CHART NOTE
+  // =======================================================
+
+  page.drawText(
+    "ml, gram and pc are displayed as separate performance series and are never added together.",
+    {
+      x:
+        chartX +
+        CHART_PADDING_X,
+
+      y:
+        chartBottom +
+        4,
+
+      size:
+        6.2,
+
+      font:
+        fonts.regular,
+
+      color:
+        COLOR_LIGHT_MUTED,
+    }
+  );
+
+  return chartBottom -
+    14;
 }
 
 // =========================================================
@@ -2261,11 +3114,16 @@ async function generateWastePdf(
   };
 
   // =======================================================
-  // SUMMARY
+  // REPORT DATA
   // =======================================================
 
   const quantityTotals =
     calculateQuantityTotals(
+      rows
+    );
+
+  const performanceData =
+    createPerformanceData(
       rows
     );
 
@@ -2293,6 +3151,42 @@ async function generateWastePdf(
       quantityTotals,
       generatedAt
     );
+
+  // =======================================================
+  // PERFORMANCE CHART
+  // =======================================================
+
+  y =
+    drawPerformanceChart(
+      page,
+      fonts,
+      performanceData,
+      y
+    );
+
+  // =======================================================
+  // TABLE
+  // =======================================================
+
+  if (
+    y -
+      TABLE_HEADER_HEIGHT <
+    CONTENT_BOTTOM
+  ) {
+    page =
+      pdfDocument.addPage([
+        PAGE_WIDTH,
+        PAGE_HEIGHT,
+      ]);
+
+    y =
+      drawContinuationHeader(
+        page,
+        fonts,
+        locationName,
+        locationCode
+      );
+  }
 
   y =
     drawTableHeader(
@@ -2388,9 +3282,6 @@ async function generateWastePdf(
 
 // =========================================================
 // RESPONSE BODY
-// =========================================================
-//
-// Keeps Next.js / TypeScript BodyInit compatibility.
 // =========================================================
 
 function createPdfResponseBody(
