@@ -36,6 +36,7 @@ import {
 
 import {
   deleteWasteEntryAction,
+  type WasteActiveReason,
   type WasteListOptions,
   type WastePerformanceRecord,
   type WasteReason,
@@ -169,7 +170,7 @@ const SORT_OPTIONS: {
 
 const WASTE_REASONS: {
   value:
-    | WasteReason
+    | WasteActiveReason
     | "all";
   label: string;
 }[] = [
@@ -181,27 +182,63 @@ const WASTE_REASONS: {
   },
   {
     value:
-      "spoiled",
+      "spoilage",
     label:
-      "Spoiled",
+      "SPOILAGE — РАСИПУВАЊЕ",
   },
   {
     value:
       "expired",
     label:
-      "Expired",
+      "EXPIRED — ИСТЕЧЕН РОК",
   },
   {
     value:
-      "bad_quality",
+      "preparation_waste",
     label:
-      "Bad quality",
+      "PREPARATION WASTE — ОТПАД ОД ПОДГОТОВКА",
   },
   {
     value:
-      "guest_complaint",
+      "excessive_trimming",
     label:
-      "Guest Complaint",
+      "EXCESSIVE TRIMMING — ПРЕКУМЕРНО ОТСЕКУВАЊЕ",
+  },
+  {
+    value:
+      "overproduction",
+    label:
+      "OVERPRODUCTION — ПРЕКУМЕРНО ПРОИЗВОДСТВО",
+  },
+  {
+    value:
+      "cooking_error",
+    label:
+      "COOKING ERROR — ГРЕШКА ПРИ ГОТВЕЊЕ",
+  },
+  {
+    value:
+      "wrong_order",
+    label:
+      "WRONG ORDER — ПОГРЕШНА НАРАЧКА",
+  },
+  {
+    value:
+      "damage",
+    label:
+      "DAMAGE — ОШТЕТУВАЊЕ",
+  },
+  {
+    value:
+      "plate_waste",
+    label:
+      "PLATE WASTE — ОТПАД ОД ЧИНИЈА",
+  },
+  {
+    value:
+      "staff_meal",
+    label:
+      "STAFF MEAL — ОБРОК ЗА ВРАБОТЕНИ",
   },
 ];
 
@@ -345,18 +382,47 @@ function getReasonLabel(
   switch (
     reason
   ) {
+    case "spoilage":
+      return "SPOILAGE — РАСИПУВАЊЕ";
+
     case "expired":
-      return "Expired";
+      return "EXPIRED — ИСТЕЧЕН РОК";
 
-    case "bad_quality":
-      return "Bad quality";
+    case "preparation_waste":
+      return "PREPARATION WASTE — ОТПАД ОД ПОДГОТОВКА";
 
-    case "guest_complaint":
-      return "Guest Complaint";
+    case "excessive_trimming":
+      return "EXCESSIVE TRIMMING — ПРЕКУМЕРНО ОТСЕКУВАЊЕ";
+
+    case "overproduction":
+      return "OVERPRODUCTION — ПРЕКУМЕРНО ПРОИЗВОДСТВО";
+
+    case "cooking_error":
+      return "COOKING ERROR — ГРЕШКА ПРИ ГОТВЕЊЕ";
+
+    case "wrong_order":
+      return "WRONG ORDER — ПОГРЕШНА НАРАЧКА";
+
+    case "damage":
+      return "DAMAGE — ОШТЕТУВАЊЕ";
+
+    case "plate_waste":
+      return "PLATE WASTE — ОТПАД ОД ЧИНИЈА";
+
+    case "staff_meal":
+      return "STAFF MEAL — ОБРОК ЗА ВРАБОТЕНИ";
 
     case "spoiled":
+      return "SPOILAGE — РАСИПУВАЊЕ";
+
+    case "bad_quality":
+      return "Bad quality (Legacy)";
+
+    case "guest_complaint":
+      return "Guest Complaint (Legacy)";
+
     default:
-      return "Spoiled";
+      return reason;
   }
 }
 
@@ -1483,7 +1549,7 @@ export default function WasteDataManager({
 
   function handleReasonChange(
     value:
-      | WasteReason
+      | WasteActiveReason
       | "all"
   ) {
     updateQuery({
@@ -1928,7 +1994,7 @@ export default function WasteDataManager({
               ) =>
                 handleReasonChange(
                   event.target.value as
-                    | WasteReason
+                    | WasteActiveReason
                     | "all"
                 )
               }

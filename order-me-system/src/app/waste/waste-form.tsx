@@ -32,8 +32,8 @@ import {
   createWasteEntryAction,
   getWasteProductOptions,
   updateWasteEntryAction,
+  type WasteActiveReason,
   type WasteProductOption,
-  type WasteReason,
   type WasteRecord,
 } from "@/app/waste/actions";
 
@@ -71,7 +71,8 @@ type WasteFormState = {
     string;
 
   reason:
-    WasteReason;
+    | WasteActiveReason
+    | "";
 };
 
 // =========================================================
@@ -80,40 +81,99 @@ type WasteFormState = {
 
 const REASON_OPTIONS: {
   value:
-    WasteReason;
+    WasteActiveReason;
 
   label:
     string;
 }[] = [
   {
     value:
-      "spoiled",
+      "spoilage",
 
     label:
-      "Spoiled",
+      "SPOILAGE — РАСИПУВАЊЕ",
   },
   {
     value:
       "expired",
 
     label:
-      "Expired",
+      "EXPIRED — ИСТЕЧЕН РОК",
   },
   {
     value:
-      "bad_quality",
+      "preparation_waste",
 
     label:
-      "Bad quality",
+      "PREPARATION WASTE — ОТПАД ОД ПОДГОТОВКА",
   },
   {
     value:
-      "guest_complaint",
+      "excessive_trimming",
 
     label:
-      "Guest Complaint",
+      "EXCESSIVE TRIMMING — ПРЕКУМЕРНО ОТСЕКУВАЊЕ",
+  },
+  {
+    value:
+      "overproduction",
+
+    label:
+      "OVERPRODUCTION — ПРЕКУМЕРНО ПРОИЗВОДСТВО",
+  },
+  {
+    value:
+      "cooking_error",
+
+    label:
+      "COOKING ERROR — ГРЕШКА ПРИ ГОТВЕЊЕ",
+  },
+  {
+    value:
+      "wrong_order",
+
+    label:
+      "WRONG ORDER — ПОГРЕШНА НАРАЧКА",
+  },
+  {
+    value:
+      "damage",
+
+    label:
+      "DAMAGE — ОШТЕТУВАЊЕ",
+  },
+  {
+    value:
+      "plate_waste",
+
+    label:
+      "PLATE WASTE — ОТПАД ОД ЧИНИЈА",
+  },
+  {
+    value:
+      "staff_meal",
+
+    label:
+      "STAFF MEAL — ОБРОК ЗА ВРАБОТЕНИ",
   },
 ];
+
+// =========================================================
+// ACTIVE REASON CHECK
+// =========================================================
+
+function isActiveWasteReason(
+  value:
+    WasteRecord["reason"]
+): value is WasteActiveReason {
+  return REASON_OPTIONS.some(
+    (
+      option
+    ) =>
+      option.value ===
+      value
+  );
+}
 
 // =========================================================
 // LOCAL DATE
@@ -194,7 +254,7 @@ function createInitialState(
         "",
 
       reason:
-        "spoiled",
+        "spoilage",
     };
   }
 
@@ -211,7 +271,11 @@ function createInitialState(
       ),
 
     reason:
-      waste.reason,
+      isActiveWasteReason(
+        waste.reason
+      )
+        ? waste.reason
+        : "",
   };
 }
 
@@ -1096,7 +1160,9 @@ export default function WasteForm({
                 ) =>
                   updateField(
                     "reason",
-                    event.target.value as WasteReason
+                    event.target.value as
+                      | WasteActiveReason
+                      | ""
                   )
                 }
                 disabled={
@@ -1104,6 +1170,13 @@ export default function WasteForm({
                 }
                 className="h-12 w-full appearance-none rounded-xl border border-zinc-200 bg-white pl-11 pr-10 text-sm font-medium text-zinc-900 outline-none transition focus:border-zinc-400 disabled:cursor-not-allowed disabled:bg-zinc-50"
               >
+                <option
+                  value=""
+                  disabled
+                >
+                  Select reason / Изберете причина
+                </option>
+
                 {REASON_OPTIONS.map(
                   (
                     option

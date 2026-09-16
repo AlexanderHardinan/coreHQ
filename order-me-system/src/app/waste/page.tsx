@@ -6,7 +6,7 @@ import {
 import {
   getWasteEntries,
   getWastePerformance,
-  type WasteReason,
+  type WasteActiveReason,
 } from "@/app/waste/actions";
 
 import WasteDataManager from "@/app/waste/waste-data-manager";
@@ -152,22 +152,40 @@ function getPageSize(
 function getReason(
   value: string
 ):
-  | WasteReason
+  | WasteActiveReason
   | "all" {
   switch (
     value
   ) {
-    case "spoiled":
-      return "spoiled";
+    case "spoilage":
+      return "spoilage";
 
     case "expired":
       return "expired";
 
-    case "bad_quality":
-      return "bad_quality";
+    case "preparation_waste":
+      return "preparation_waste";
 
-    case "guest_complaint":
-      return "guest_complaint";
+    case "excessive_trimming":
+      return "excessive_trimming";
+
+    case "overproduction":
+      return "overproduction";
+
+    case "cooking_error":
+      return "cooking_error";
+
+    case "wrong_order":
+      return "wrong_order";
+
+    case "damage":
+      return "damage";
+
+    case "plate_waste":
+      return "plate_waste";
+
+    case "staff_meal":
+      return "staff_meal";
 
     case "all":
     default:

@@ -14,11 +14,26 @@ import {
 // TYPES
 // =========================================================
 
-export type WasteReason =
-  | "spoiled"
+export type WasteActiveReason =
+  | "spoilage"
   | "expired"
+  | "preparation_waste"
+  | "excessive_trimming"
+  | "overproduction"
+  | "cooking_error"
+  | "wrong_order"
+  | "damage"
+  | "plate_waste"
+  | "staff_meal";
+
+export type WasteLegacyReason =
+  | "spoiled"
   | "bad_quality"
   | "guest_complaint";
+
+export type WasteReason =
+  | WasteActiveReason
+  | WasteLegacyReason;
 
 export type WasteUom =
   | "ml"
@@ -224,10 +239,23 @@ const MAX_NUMERIC_SCALED =
     "999999999999999999"
   );
 
-const WASTE_REASONS =
-  new Set<WasteReason>([
-    "spoiled",
+const ACTIVE_WASTE_REASONS =
+  new Set<WasteActiveReason>([
+    "spoilage",
     "expired",
+    "preparation_waste",
+    "excessive_trimming",
+    "overproduction",
+    "cooking_error",
+    "wrong_order",
+    "damage",
+    "plate_waste",
+    "staff_meal",
+  ]);
+
+const LEGACY_WASTE_REASONS =
+  new Set<WasteLegacyReason>([
+    "spoiled",
     "bad_quality",
     "guest_complaint",
   ]);
@@ -465,9 +493,9 @@ function normalizeDateRange(
 // REASON
 // =========================================================
 
-function normalizeWasteReason(
+function normalizeWasteReasonToken(
   value: unknown
-): WasteReason | null {
+): string | null {
   if (
     typeof value !==
     "string"
@@ -480,19 +508,70 @@ function normalizeWasteReason(
       .trim()
       .toLowerCase()
       .replace(
-        /\s+/g,
+        /[\s-]+/g,
         "_"
-      ) as WasteReason;
+      );
+
+  return normalized ||
+    null;
+}
+
+function normalizeActiveWasteReason(
+  value: unknown
+): WasteActiveReason | null {
+  const normalized =
+    normalizeWasteReasonToken(
+      value
+    );
 
   if (
-    !WASTE_REASONS.has(
-      normalized
+    !normalized
+  ) {
+    return null;
+  }
+
+  if (
+    !ACTIVE_WASTE_REASONS.has(
+      normalized as WasteActiveReason
     )
   ) {
     return null;
   }
 
-  return normalized;
+  return normalized as WasteActiveReason;
+}
+
+function normalizeStoredWasteReason(
+  value: unknown
+): WasteReason | null {
+  const normalized =
+    normalizeWasteReasonToken(
+      value
+    );
+
+  if (
+    !normalized
+  ) {
+    return null;
+  }
+
+  if (
+    ACTIVE_WASTE_REASONS.has(
+      normalized as WasteActiveReason
+    )
+  ) {
+    return normalized as WasteActiveReason;
+  }
+
+  if (
+    LEGACY_WASTE_REASONS.has(
+      normalized as WasteLegacyReason
+    )
+  ) {
+    return normalized as WasteLegacyReason;
+  }
+
+  return null;
 }
 
 // =========================================================
@@ -686,6 +765,19 @@ function normalizePageSize(
 function mapWasteRow(
   row: WasteDatabaseRow
 ): WasteRecord {
+  const reason =
+    normalizeStoredWasteReason(
+      row.reason
+    );
+
+  if (
+    !reason
+  ) {
+    throw new Error(
+      "Waste entry contains an unsupported Waste reason."
+    );
+  }
+
   return {
     id:
       row.id,
@@ -719,11 +811,7 @@ function mapWasteRow(
       ) ??
       "pc",
 
-    reason:
-      normalizeWasteReason(
-        row.reason
-      ) ??
-      "spoiled",
+    reason,
 
     created_at:
       row.created_at,
@@ -1109,7 +1197,7 @@ export async function getWasteEntries(
     options.reason &&
     options.reason !==
       "all"
-      ? normalizeWasteReason(
+      ? normalizeStoredWasteReason(
           options.reason
         )
       : null;
@@ -1547,7 +1635,7 @@ export async function getWasteReportRows(
     options.reason &&
     options.reason !==
       "all"
-      ? normalizeWasteReason(
+      ? normalizeStoredWasteReason(
           options.reason
         )
       : null;
@@ -1774,7 +1862,7 @@ export async function createWasteEntryAction(
     }
 
     const reason =
-      normalizeWasteReason(
+      normalizeActiveWasteReason(
         formData.get(
           "reason"
         )
@@ -1997,7 +2085,7 @@ export async function updateWasteEntryAction(
     }
 
     const reason =
-      normalizeWasteReason(
+      normalizeActiveWasteReason(
         formData.get(
           "reason"
         )

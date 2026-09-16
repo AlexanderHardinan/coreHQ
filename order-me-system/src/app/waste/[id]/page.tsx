@@ -181,18 +181,47 @@ function getReasonLabel(
   switch (
     reason
   ) {
+    case "spoilage":
+      return "SPOILAGE — РАСИПУВАЊЕ";
+
     case "expired":
-      return "Expired";
+      return "EXPIRED — ИСТЕЧЕН РОК";
 
-    case "bad_quality":
-      return "Bad quality";
+    case "preparation_waste":
+      return "PREPARATION WASTE — ОТПАД ОД ПОДГОТОВКА";
 
-    case "guest_complaint":
-      return "Guest Complaint";
+    case "excessive_trimming":
+      return "EXCESSIVE TRIMMING — ПРЕКУМЕРНО ОТСЕКУВАЊЕ";
+
+    case "overproduction":
+      return "OVERPRODUCTION — ПРЕКУМЕРНО ПРОИЗВОДСТВО";
+
+    case "cooking_error":
+      return "COOKING ERROR — ГРЕШКА ПРИ ГОТВЕЊЕ";
+
+    case "wrong_order":
+      return "WRONG ORDER — ПОГРЕШНА НАРАЧКА";
+
+    case "damage":
+      return "DAMAGE — ОШТЕТУВАЊЕ";
+
+    case "plate_waste":
+      return "PLATE WASTE — ОТПАД ОД ЧИНИЈА";
+
+    case "staff_meal":
+      return "STAFF MEAL — ОБРОК ЗА ВРАБОТЕНИ";
 
     case "spoiled":
+      return "SPOILAGE — РАСИПУВАЊЕ";
+
+    case "bad_quality":
+      return "Bad quality (Legacy)";
+
+    case "guest_complaint":
+      return "Guest Complaint (Legacy)";
+
     default:
-      return "Spoiled";
+      return reason;
   }
 }
 
