@@ -125,7 +125,6 @@ type RecipeCalculation = {
   ingredients:
     CalculationIngredient[];
 
-  isHistorical: boolean;
   isActive: boolean;
 
   ready: boolean;
@@ -635,7 +634,6 @@ export default function ProductionOrderForm({
   mode,
   recipeOptions,
   order,
-  historicalRecipeItems = [],
 }: ProductionOrderFormProps) {
   const router =
     useRouter();
@@ -788,42 +786,6 @@ export default function ProductionOrderForm({
       ]
     );
 
-  const historicalIngredientsByRecipe =
-    useMemo(
-      () => {
-        const map =
-          new Map<
-            string,
-            ProductionOrderHistoricalRecipeIngredient[]
-          >();
-
-        for (
-          const item of
-          historicalRecipeItems
-        ) {
-          const existing =
-            map.get(
-              item.recipe_id
-            ) ??
-            [];
-
-          existing.push(
-            item
-          );
-
-          map.set(
-            item.recipe_id,
-            existing
-          );
-        }
-
-        return map;
-      },
-      [
-        historicalRecipeItems,
-      ]
-    );
-
   const existingOnHandMap =
     useMemo(
       () =>
@@ -940,120 +902,22 @@ export default function ProductionOrderForm({
           (
             selected
           ) => {
-            const historicalRecipe =
-              existingRecipeMap.get(
-                selected.recipeId
-              );
-
             const masterRecipe =
               recipeOptionMap.get(
                 selected.recipeId
               );
 
             // ===============================================
-            // EXISTING HISTORICAL RECIPE
+            // CURRENT MASTER RECIPE
             // ===============================================
-
-            if (
-              historicalRecipe
-            ) {
-              const historicalIngredients =
-                historicalIngredientsByRecipe.get(
-                  selected.recipeId
-                ) ??
-                [];
-
-              const multiplierUnits10 =
-                calculateMultiplierUnits10(
-                  selected.requiredYieldQty,
-                  historicalRecipe.base_yield_qty_snapshot
-                );
-
-              return {
-                recipeId:
-                  selected.recipeId,
-
-                recipeName:
-                  historicalRecipe.recipe_name_snapshot,
-
-                batchQty:
-                  normalizeDatabaseDecimal(
-                    historicalRecipe.batch_qty_snapshot
-                  ),
-
-                baseYieldQty:
-                  normalizeDatabaseDecimal(
-                    historicalRecipe.base_yield_qty_snapshot
-                  ),
-
-                yieldUom:
-                  historicalRecipe.yield_uom_snapshot,
-
-                requiredYieldQty:
-                  selected.requiredYieldQty,
-
-                multiplierUnits10,
-
-                multiplierDisplay:
-                  multiplierUnits10 ===
-                  null
-                    ? "—"
-                    : formatScaledInteger(
-                        multiplierUnits10,
-                        10
-                      ),
-
-                ingredients:
-                  historicalIngredients.map(
-                    (
-                      item
-                    ) => ({
-                      productId:
-                        item.product_id,
-
-                      sku:
-                        item.sku_snapshot,
-
-                      productName:
-                        item.product_name_snapshot,
-
-                      categoryName:
-                        item.category_name_snapshot,
-
-                      uom:
-                        item.uom,
-
-                      baseQty:
-                        item.base_qty_snapshot,
-                    })
-                  ),
-
-                isHistorical:
-                  true,
-
-                isActive:
-                  masterRecipe?.is_active ??
-                  false,
-
-                ready:
-                  historicalIngredients.length >
-                    0 &&
-                  multiplierUnits10 !==
-                    null,
-
-                error:
-                  historicalIngredients.length ===
-                  0
-                    ? "Historical ingredient snapshots are required to edit this saved recipe safely."
-                    : multiplierUnits10 ===
-                        null
-                      ? "Enter a valid Required Yield greater than zero."
-                      : null,
-              };
-            }
-
-            // ===============================================
-            // NEW MASTER RECIPE
+            //
+            // Create and Edit mode intentionally use the same
+            // authoritative Production Recipe master data.
+            //
+            // Existing Production Orders retain their saved
+            // Required Yield and On Hand quantities, but Base
+            // Yield, ingredient composition, Product metadata,
+            // and Product UOM come from the current master.
             // ===============================================
 
             if (
@@ -1086,9 +950,6 @@ export default function ProductionOrderForm({
 
                 ingredients:
                   [],
-
-                isHistorical:
-                  false,
 
                 isActive:
                   false,
@@ -1166,9 +1027,6 @@ export default function ProductionOrderForm({
                   })
                 ),
 
-              isHistorical:
-                false,
-
               isActive:
                 masterRecipe.is_active,
 
@@ -1191,9 +1049,7 @@ export default function ProductionOrderForm({
         ),
       [
         selectedRecipes,
-        existingRecipeMap,
         recipeOptionMap,
-        historicalIngredientsByRecipe,
       ]
     );
 
@@ -1523,14 +1379,14 @@ export default function ProductionOrderForm({
         recipeToAdd
       );
 
-    const historical =
+    const existingOrderRecipe =
       existingRecipeMap.get(
         recipeToAdd
       );
 
     if (
       !option &&
-      !historical
+      !existingOrderRecipe
     ) {
       toast.error(
         "Recipe Unavailable",
@@ -1543,7 +1399,7 @@ export default function ProductionOrderForm({
     if (
       option &&
       !option.is_active &&
-      !historical
+      !existingOrderRecipe
     ) {
       toast.warning(
         "Inactive Recipe",
@@ -1554,9 +1410,9 @@ export default function ProductionOrderForm({
     }
 
     const requiredYield =
-      historical
+      existingOrderRecipe
         ? normalizeDatabaseDecimal(
-            historical.required_yield_qty
+            existingOrderRecipe.required_yield_qty
           )
         : normalizeDatabaseDecimal(
             option?.yield_qty ??
@@ -2279,7 +2135,7 @@ export default function ProductionOrderForm({
                     >
                       {recipe.name}
                       {!recipe.is_active
-                        ? " (Historical)"
+                        ? " (Inactive)"
                         : ""}
                     </option>
                   )
@@ -2370,14 +2226,7 @@ export default function ProductionOrderForm({
                             }
                           </h3>
 
-                          {recipe.isHistorical ? (
-                            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-700">
-                              Historical Snapshot
-                            </span>
-                          ) : null}
-
-                          {!recipe.isActive &&
-                          recipe.isHistorical ? (
+                          {!recipe.isActive ? (
                             <span className="rounded-full bg-zinc-200 px-2.5 py-1 text-[11px] font-bold text-zinc-600">
                               Master Recipe Inactive
                             </span>

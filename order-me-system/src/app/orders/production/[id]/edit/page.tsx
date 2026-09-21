@@ -10,7 +10,6 @@ import {
 
 import {
   getProductionOrderById,
-  getProductionOrderHistoricalRecipeItems,
   getProductionOrderRecipeOptions,
 } from "@/app/orders/production/actions";
 
@@ -74,8 +73,8 @@ export default async function EditProductionOrderPage({
   // Existing Production Orders may contain a Production
   // Recipe that has since been made inactive.
   //
-  // Those existing historical selections must remain
-  // available while editing the saved order.
+  // Those existing selections must remain available while
+  // editing the saved order.
   // =======================================================
 
   const existingRecipeIds =
@@ -85,38 +84,34 @@ export default async function EditProductionOrderPage({
     );
 
   // =======================================================
-  // LOAD EDIT DEPENDENCIES
+  // LOAD CURRENT PRODUCTION RECIPE MASTER DATA
   // =======================================================
   //
-  // recipeOptions:
+  // Edit mode intentionally uses the current Production
+  // Recipe master for calculation.
   //
-  // Current active Production Recipes for the trusted
-  // location, plus any historical recipes already attached
-  // to this saved order.
+  // This includes:
   //
-  // historicalRecipeItems:
+  // Current Recipe Name
+  // Current Batch Qty
+  // Current Base Yield
+  // Current Yield UOM
+  // Current Ingredient Composition
+  // Current Product metadata
+  // Current Product UOM
   //
-  // Ingredient composition originally captured when this
-  // Production Order was saved.
+  // Existing Required Yield and On Hand quantities remain
+  // stored on the Production Order and are preserved by the
+  // form using their existing Recipe ID / Product ID.
   //
-  // Existing Production Order recipes must use these
-  // historical snapshots during editing rather than today's
-  // potentially modified master recipe composition.
+  // Existing inactive recipes already attached to the order
+  // remain included through existingRecipeIds.
   // =======================================================
 
-  const [
-    recipeOptions,
-    historicalRecipeItems,
-  ] =
-    await Promise.all([
-      getProductionOrderRecipeOptions(
-        existingRecipeIds
-      ),
-
-      getProductionOrderHistoricalRecipeItems(
-        order.id
-      ),
-    ]);
+  const recipeOptions =
+    await getProductionOrderRecipeOptions(
+      existingRecipeIds
+    );
 
   // =======================================================
   // PAGE
@@ -220,9 +215,6 @@ export default async function EditProductionOrderPage({
           }
           order={
             order
-          }
-          historicalRecipeItems={
-            historicalRecipeItems
           }
         />
       </div>
