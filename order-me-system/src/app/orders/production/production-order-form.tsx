@@ -89,7 +89,7 @@ type ProductionOrderFormState = {
 
 type SelectedRecipe = {
   recipeId: string;
-  requiredYieldQty: string;
+  multiplier: string;
 };
 
 type CalculationIngredient = {
@@ -333,49 +333,30 @@ function roundPositiveDivision(
     denominator;
 }
 
-function calculateMultiplierUnits10(
-  requiredYield:
-    string,
-  baseYield:
-    string
+function decimalToUnits10(
+  value: string
 ): bigint | null {
-  const required =
+  const parsed =
     parseDecimal(
-      requiredYield
-    );
-
-  const base =
-    parseDecimal(
-      baseYield
+      value
     );
 
   if (
-    !required ||
-    !base ||
-    required.units <=
+    !parsed ||
+    parsed.units <=
       BIGINT_ZERO ||
-    base.units <=
-      BIGINT_ZERO
+    parsed.scale >
+      10
   ) {
     return null;
   }
 
-  const numerator =
-    required.units *
+  return (
+    parsed.units *
     powerOfTen(
-      base.scale
-    ) *
-    POW10_10;
-
-  const denominator =
-    base.units *
-    powerOfTen(
-      required.scale
-    );
-
-  return roundPositiveDivision(
-    numerator,
-    denominator
+      10 -
+        parsed.scale
+    )
   );
 }
 
@@ -550,6 +531,32 @@ function isValidPositiveDecimal(
   );
 }
 
+function isValidPositiveMultiplier(
+  value: string
+): boolean {
+  const normalized =
+    value.trim();
+
+  if (
+    !/^\d{1,14}(?:\.\d{1,10})?$/.test(
+      normalized
+    )
+  ) {
+    return false;
+  }
+
+  const parsed =
+    parseDecimal(
+      normalized
+    );
+
+  return Boolean(
+    parsed &&
+      parsed.units >
+        BIGINT_ZERO
+  );
+}
+
 function isValidNonNegativeDecimal(
   value: string
 ): boolean {
@@ -618,9 +625,9 @@ function createInitialSelectedRecipes(
       recipeId:
         recipe.recipe_id,
 
-      requiredYieldQty:
+      multiplier:
         normalizeDatabaseDecimal(
-          recipe.required_yield_qty
+          recipe.yield_multiplier
         ),
     })
   );
@@ -915,9 +922,9 @@ export default function ProductionOrderForm({
             // authoritative Production Recipe master data.
             //
             // Existing Production Orders retain their saved
-            // Required Yield and On Hand quantities, but Base
-            // Yield, ingredient composition, Product metadata,
-            // and Product UOM come from the current master.
+            // Yield Multiplier and On Hand quantities, while Base
+            // Yield, Required Yield, ingredient composition, Product
+            // metadata, and Product UOM come from current master data.
             // ===============================================
 
             if (
@@ -940,12 +947,13 @@ export default function ProductionOrderForm({
                   "gram",
 
                 requiredYieldQty:
-                  selected.requiredYieldQty,
+                  "—",
 
                 multiplierUnits10:
                   null,
 
                 multiplierDisplay:
+                  selected.multiplier ||
                   "—",
 
                 ingredients:
@@ -963,10 +971,29 @@ export default function ProductionOrderForm({
             }
 
             const multiplierUnits10 =
-              calculateMultiplierUnits10(
-                selected.requiredYieldQty,
-                masterRecipe.yield_qty
+              decimalToUnits10(
+                selected.multiplier
               );
+
+            const requiredYieldUnits4 =
+              multiplierUnits10 ===
+                null
+                ? null
+                : calculateRequiredUnits4(
+                    masterRecipe.yield_qty,
+                    multiplierUnits10
+                  );
+
+            const requiredYieldQty =
+              requiredYieldUnits4 ===
+                null ||
+              requiredYieldUnits4 <=
+                BIGINT_ZERO
+                ? "—"
+                : formatScaledInteger(
+                    requiredYieldUnits4,
+                    4
+                  );
 
             return {
               recipeId:
@@ -988,8 +1015,7 @@ export default function ProductionOrderForm({
               yieldUom:
                 masterRecipe.yield_uom,
 
-              requiredYieldQty:
-                selected.requiredYieldQty,
+              requiredYieldQty,
 
               multiplierUnits10,
 
@@ -997,9 +1023,8 @@ export default function ProductionOrderForm({
                 multiplierUnits10 ===
                 null
                   ? "—"
-                  : formatScaledInteger(
-                      multiplierUnits10,
-                      10
+                  : normalizeDatabaseDecimal(
+                      selected.multiplier
                     ),
 
               ingredients:
@@ -1034,7 +1059,14 @@ export default function ProductionOrderForm({
                 masterRecipe.ingredients.length >
                   0 &&
                 multiplierUnits10 !==
-                  null,
+                  null &&
+                requiredYieldUnits4 !==
+                  null &&
+                requiredYieldUnits4 >
+                  BIGINT_ZERO &&
+                isValidPositiveDecimal(
+                  requiredYieldQty
+                ),
 
               error:
                 masterRecipe.ingredients.length ===
@@ -1042,8 +1074,17 @@ export default function ProductionOrderForm({
                   ? "This production recipe has no ingredients."
                   : multiplierUnits10 ===
                       null
-                    ? "Enter a valid Required Yield greater than zero."
-                    : null,
+                    ? "Enter a valid Yield Multiplier greater than zero."
+                    : requiredYieldUnits4 ===
+                          null ||
+                        requiredYieldUnits4 <=
+                          BIGINT_ZERO
+                      ? "The Required Yield could not be calculated from this multiplier."
+                      : !isValidPositiveDecimal(
+                            requiredYieldQty
+                          )
+                        ? "The calculated Required Yield exceeds the allowed range."
+                        : null,
             };
           }
         ),
@@ -1106,7 +1147,7 @@ export default function ProductionOrderForm({
                 BIGINT_ZERO
             ) {
               error =
-                `${recipe.recipeName} produces an ingredient quantity that rounds to zero. Increase the Required Yield.`;
+                `${recipe.recipeName} produces an ingredient quantity that rounds to zero. Increase the Yield Multiplier.`;
 
               continue;
             }
@@ -1409,15 +1450,12 @@ export default function ProductionOrderForm({
       return;
     }
 
-    const requiredYield =
+    const multiplier =
       existingOrderRecipe
         ? normalizeDatabaseDecimal(
-            existingOrderRecipe.required_yield_qty
+            existingOrderRecipe.yield_multiplier
           )
-        : normalizeDatabaseDecimal(
-            option?.yield_qty ??
-              ""
-          );
+        : "1";
 
     setSelectedRecipes(
       (
@@ -1428,8 +1466,7 @@ export default function ProductionOrderForm({
           recipeId:
             recipeToAdd,
 
-          requiredYieldQty:
-            requiredYield,
+          multiplier,
         },
       ]
     );
@@ -1471,10 +1508,10 @@ export default function ProductionOrderForm({
   }
 
   // =======================================================
-  // REQUIRED YIELD
+  // YIELD MULTIPLIER
   // =======================================================
 
-  function updateRequiredYield(
+  function updateMultiplier(
     recipeId: string,
     value: string
   ) {
@@ -1490,7 +1527,7 @@ export default function ProductionOrderForm({
             recipeId
               ? {
                   ...recipe,
-                  requiredYieldQty:
+                  multiplier:
                     value,
                 }
               : recipe
@@ -1604,11 +1641,11 @@ export default function ProductionOrderForm({
       selectedRecipes
     ) {
       if (
-        !isValidPositiveDecimal(
-          recipe.requiredYieldQty
+        !isValidPositiveMultiplier(
+          recipe.multiplier
         )
       ) {
-        return "Every production recipe requires a valid Required Yield greater than zero with up to 4 decimal places.";
+        return "Every production recipe requires a valid Yield Multiplier greater than zero with up to 10 decimal places.";
       }
     }
 
@@ -1741,7 +1778,7 @@ export default function ProductionOrderForm({
         formData.set(
           "recipes",
           JSON.stringify(
-            selectedRecipes.map(
+            recipeCalculations.map(
               (
                 recipe
               ) => ({
@@ -2284,29 +2321,34 @@ export default function ProductionOrderForm({
 
                       <div>
                         <label
-                          htmlFor={`required-yield-${recipe.recipeId}`}
+                          htmlFor={`yield-multiplier-${recipe.recipeId}`}
                           className="mb-2 block text-xs font-bold uppercase tracking-wide text-zinc-500"
                         >
-                          Required Yield
+                          Yield Multiplier
                         </label>
 
                         <div className="flex">
                           <input
-                            id={`required-yield-${recipe.recipeId}`}
+                            id={`yield-multiplier-${recipe.recipeId}`}
                             type="number"
-                            min="0.0001"
+                            min="0.0000000001"
                             max={
                               MAX_DECIMAL_VALUE
                             }
-                            step="0.0001"
+                            step="0.0000000001"
                             inputMode="decimal"
                             value={
-                              recipe.requiredYieldQty
+                              selectedRecipes.find(
+                                (selected) =>
+                                  selected.recipeId ===
+                                  recipe.recipeId
+                              )?.multiplier ??
+                              ""
                             }
                             onChange={(
                               event
                             ) =>
-                              updateRequiredYield(
+                              updateMultiplier(
                                 recipe.recipeId,
                                 event.target
                                   .value
@@ -2315,14 +2357,12 @@ export default function ProductionOrderForm({
                             disabled={
                               isPending
                             }
-                            placeholder="0"
+                            placeholder="1"
                             className="h-11 min-w-0 flex-1 rounded-l-xl border border-r-0 border-zinc-200 bg-white px-4 text-sm text-zinc-950 outline-none transition focus:border-zinc-400 focus:ring-4 focus:ring-zinc-100 disabled:cursor-not-allowed disabled:bg-zinc-50"
                           />
 
                           <div className="flex h-11 items-center rounded-r-xl border border-zinc-200 bg-zinc-50 px-3 text-xs font-bold text-zinc-500">
-                            {
-                              recipe.yieldUom
-                            }
+                            ×
                           </div>
                         </div>
                       </div>
@@ -2336,15 +2376,19 @@ export default function ProductionOrderForm({
                           />
 
                           <p className="text-xs font-bold uppercase tracking-wide text-zinc-400">
-                            Yield Multiplier
+                            Required Yield
                           </p>
                         </div>
 
                         <p className="mt-2 text-lg font-bold">
                           {
-                            recipe.multiplierDisplay
-                          }
-                          ×
+                            recipe.requiredYieldQty
+                          }{" "}
+                          <span className="text-sm font-semibold text-zinc-400">
+                            {
+                              recipe.yieldUom
+                            }
+                          </span>
                         </p>
                       </div>
                     </div>
@@ -2601,11 +2645,12 @@ export default function ProductionOrderForm({
             </p>
 
             <p className="mt-1 text-sm leading-6 text-zinc-500">
-              The values shown above are an operational preview.
-              When saved, PostgreSQL recalculates the recipe
-              multiplier, ingredient requirement, consolidation,
-              and final requested quantity from the authoritative
-              production-order database.
+              The Yield Multiplier drives the production calculation.
+              Required Yield and ingredient quantities are calculated
+              automatically from the current Production Recipe master.
+              When saved, PostgreSQL persists the derived Required Yield
+              and recalculates the authoritative ingredient requirement,
+              consolidation, and final requested quantity.
             </p>
           </div>
         </div>
