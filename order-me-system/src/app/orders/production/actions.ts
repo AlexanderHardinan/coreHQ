@@ -1205,7 +1205,9 @@ export async function getProductionOrderRecipeOptions(
           "Unknown Category",
 
         qty:
-          ingredient.qty,
+          String(
+            ingredient.qty
+          ),
 
         uom,
 
@@ -1257,10 +1259,14 @@ export async function getProductionOrderRecipeOptions(
             recipe.name,
 
           batch_qty:
-            recipe.batch_qty,
+            String(
+              recipe.batch_qty
+            ),
 
           yield_qty:
-            recipe.yield_qty,
+            String(
+              recipe.yield_qty
+            ),
 
           yield_uom:
             yieldUom,
