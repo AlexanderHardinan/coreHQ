@@ -45,6 +45,9 @@ type TableColumn = {
     | "sku"
     | "product"
     | "category"
+    | "productSize"
+    | "packaging"
+    | "guide"
     | "requested"
     | "uom";
 
@@ -183,7 +186,7 @@ const TABLE_COLUMNS:
         "#",
 
       width:
-        30,
+        26,
 
       align:
         "center",
@@ -197,7 +200,7 @@ const TABLE_COLUMNS:
         "SKU",
 
       width:
-        100,
+        72,
     },
 
     {
@@ -208,7 +211,7 @@ const TABLE_COLUMNS:
         "Product",
 
       width:
-        180,
+        134,
     },
 
     {
@@ -219,7 +222,46 @@ const TABLE_COLUMNS:
         "Category",
 
       width:
-        145,
+        94,
+    },
+
+    {
+      key:
+        "productSize",
+
+      label:
+        "Product Size",
+
+      width:
+        70,
+
+      align:
+        "center",
+    },
+
+    {
+      key:
+        "packaging",
+
+      label:
+        "Packaging",
+
+      width:
+        80,
+
+      align:
+        "center",
+    },
+
+    {
+      key:
+        "guide",
+
+      label:
+        "Ordering Guide",
+
+      width:
+        142,
     },
 
     {
@@ -230,7 +272,7 @@ const TABLE_COLUMNS:
         "Order Request Qty",
 
       width:
-        108,
+        100,
 
       align:
         "right",
@@ -244,7 +286,7 @@ const TABLE_COLUMNS:
         "UOM",
 
       width:
-        55,
+        48,
 
       align:
         "center",
@@ -1156,6 +1198,23 @@ function getItemCellValue(
 
     case "category":
       return item.category_name_snapshot;
+
+    case "productSize":
+      return `${formatQuantity(
+        item.amount_qty_snapshot
+      )} ${item.uom}`;
+
+    case "packaging":
+      return `${formatQuantity(
+        item.packaging_size_amount_snapshot
+      )} / ${item.packaging_uom_snapshot}`;
+
+    case "guide":
+      return `1 ${item.packaging_uom_snapshot} = ${formatQuantity(
+        item.packaging_size_amount_snapshot
+      )} x ${formatQuantity(
+        item.amount_qty_snapshot
+      )} ${item.uom}`;
 
     case "requested":
       return formatQuantity(

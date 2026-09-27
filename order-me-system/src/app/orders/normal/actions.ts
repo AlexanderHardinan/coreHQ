@@ -25,6 +25,15 @@ export type NormalOrderUom =
   | "pc"
   | "gram";
 
+export type NormalOrderPackagingUom =
+  | "bottle"
+  | "box"
+  | "pack"
+  | "can"
+  | "kilo"
+  | "liter"
+  | "tray";
+
 export type NormalOrderItemInput = {
   productId: string;
   onHandQty: string;
@@ -37,7 +46,13 @@ export type NormalOrderProductOption = {
   name: string;
   category_id: string;
   category_name: string;
+
+  amount_qty?: number;
   uom: NormalOrderUom;
+
+  packaging_size_amount?: number;
+  packaging_uom?: NormalOrderPackagingUom;
+
   is_active: boolean;
 };
 
@@ -55,6 +70,10 @@ export type NormalOrderItemRecord = {
   sku_snapshot: string;
   product_name_snapshot: string;
   category_name_snapshot: string;
+
+  amount_qty_snapshot: number;
+  packaging_size_amount_snapshot: number;
+  packaging_uom_snapshot: NormalOrderPackagingUom;
 
   sort_order: number;
 
@@ -173,6 +192,16 @@ type NormalOrderItemDatabaseRow = {
   product_name_snapshot: string;
   category_name_snapshot: string;
 
+  amount_qty_snapshot:
+    | number
+    | string;
+
+  packaging_size_amount_snapshot:
+    | number
+    | string;
+
+  packaging_uom_snapshot: string;
+
   sort_order: number;
 
   created_at: string;
@@ -184,7 +213,19 @@ type ProductDatabaseRow = {
   sku: string;
   name: string;
   category_id: string;
+
+  amount_qty:
+    | number
+    | string;
+
   uom: string;
+
+  packaging_size_amount:
+    | number
+    | string;
+
+  packaging_uom: string;
+
   is_active: boolean;
 };
 
@@ -230,6 +271,17 @@ const ORDER_UOMS =
     "ml",
     "pc",
     "gram",
+  ]);
+
+const PACKAGING_UOMS =
+  new Set<NormalOrderPackagingUom>([
+    "bottle",
+    "box",
+    "pack",
+    "can",
+    "kilo",
+    "liter",
+    "tray",
   ]);
 
 // =========================================================
@@ -436,6 +488,51 @@ function normalizeUom(
     )
   ) {
     return null;
+  }
+
+  return normalized;
+}
+
+function normalizePackagingUom(
+  value: unknown
+): NormalOrderPackagingUom | null {
+  if (
+    typeof value !==
+    "string"
+  ) {
+    return null;
+  }
+
+  const normalized =
+    value
+      .trim()
+      .toLowerCase() as NormalOrderPackagingUom;
+
+  if (
+    !PACKAGING_UOMS.has(
+      normalized
+    )
+  ) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function requirePackagingUom(
+  value: unknown
+): NormalOrderPackagingUom {
+  const normalized =
+    normalizePackagingUom(
+      value
+    );
+
+  if (
+    !normalized
+  ) {
+    throw new Error(
+      "Normal Order item has an invalid Packaging UOM snapshot."
+    );
   }
 
   return normalized;
@@ -944,7 +1041,10 @@ export async function getNormalOrderProductOptions(
           sku,
           name,
           category_id,
+          amount_qty,
           uom,
+          packaging_size_amount,
+          packaging_uom,
           is_active
         `
       )
@@ -1092,11 +1192,27 @@ export async function getNormalOrderProductOptions(
         ) ??
         "Uncategorized",
 
+      amount_qty:
+        toSafeNumber(
+          product.amount_qty
+        ),
+
       uom:
         normalizeUom(
           product.uom
         ) ??
         "pc",
+
+      packaging_size_amount:
+        toSafeNumber(
+          product.packaging_size_amount
+        ),
+
+      packaging_uom:
+        normalizePackagingUom(
+          product.packaging_uom
+        ) ??
+        undefined,
 
       is_active:
         product.is_active,
@@ -1703,6 +1819,9 @@ export async function getNormalOrderById(
         sku_snapshot,
         product_name_snapshot,
         category_name_snapshot,
+        amount_qty_snapshot,
+        packaging_size_amount_snapshot,
+        packaging_uom_snapshot,
         sort_order,
         created_at,
         updated_at
@@ -1782,6 +1901,21 @@ export async function getNormalOrderById(
 
         category_name_snapshot:
           item.category_name_snapshot,
+
+        amount_qty_snapshot:
+          toSafeNumber(
+            item.amount_qty_snapshot
+          ),
+
+        packaging_size_amount_snapshot:
+          toSafeNumber(
+            item.packaging_size_amount_snapshot
+          ),
+
+        packaging_uom_snapshot:
+          requirePackagingUom(
+            item.packaging_uom_snapshot
+          ),
 
         sort_order:
           item.sort_order,
@@ -1865,7 +1999,10 @@ async function validateNormalOrderProducts(
         sku,
         name,
         category_id,
+        amount_qty,
         uom,
+        packaging_size_amount,
+        packaging_uom,
         is_active
       `
     )

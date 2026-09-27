@@ -195,6 +195,83 @@ function quantityToInput(
 }
 
 // =========================================================
+// PRODUCT PACKAGING GUIDE
+// =========================================================
+
+function formatCatalogQuantity(
+  value:
+    | number
+    | null
+    | undefined
+): string {
+  if (
+    value === null ||
+    value === undefined ||
+    !Number.isFinite(
+      value
+    )
+  ) {
+    return "—";
+  }
+
+  return Number(
+    value.toFixed(4)
+  ).toString();
+}
+
+function getProductPackagingGuide(
+  product:
+    | ProductCatalogRecord
+    | undefined
+): {
+  productSize: string;
+  packaging: string;
+  guide: string;
+} | null {
+  if (
+    !product ||
+    typeof product.amount_qty !==
+      "number" ||
+    !Number.isFinite(
+      product.amount_qty
+    ) ||
+    product.amount_qty <=
+      0 ||
+    typeof product.packaging_size_amount !==
+      "number" ||
+    !Number.isFinite(
+      product.packaging_size_amount
+    ) ||
+    product.packaging_size_amount <=
+      0 ||
+    !product.packaging_uom
+  ) {
+    return null;
+  }
+
+  const amountQty =
+    formatCatalogQuantity(
+      product.amount_qty
+    );
+
+  const packagingSize =
+    formatCatalogQuantity(
+      product.packaging_size_amount
+    );
+
+  return {
+    productSize:
+      `${amountQty} ${product.uom}`,
+
+    packaging:
+      `${packagingSize} / ${product.packaging_uom}`,
+
+    guide:
+      `1 ${product.packaging_uom} = ${packagingSize} × ${amountQty} ${product.uom}`,
+  };
+}
+
+// =========================================================
 // BLANK ROW
 // =========================================================
 
@@ -313,6 +390,7 @@ function createInitialProductCatalog(
       product.id,
       {
         ...product,
+
         source:
           "live",
       }
@@ -415,6 +493,7 @@ function mergeProductOptions(
       product.id,
       {
         ...product,
+
         source:
           "live",
       }
@@ -959,6 +1038,11 @@ function ProductSearchPicker({
                     selectedProduct?.id ===
                     product.id;
 
+                  const packagingDetails =
+                    getProductPackagingGuide(
+                      product
+                    );
+
                   return (
                     <button
                       key={
@@ -1032,6 +1116,18 @@ function ProductSearchPicker({
                             }
                           </span>
                         </div>
+
+                        {packagingDetails ? (
+                          <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-semibold text-zinc-600">
+                            <span className="rounded-md bg-zinc-100 px-2 py-1">
+                              Size: {packagingDetails.productSize}
+                            </span>
+
+                            <span className="rounded-md bg-amber-50 px-2 py-1 text-amber-800">
+                              Pack: {packagingDetails.packaging}
+                            </span>
+                          </div>
+                        ) : null}
                       </div>
                     </button>
                   );
@@ -2146,6 +2242,11 @@ export default function NormalOrderForm({
                   item.productId
                 );
 
+              const packagingDetails =
+                getProductPackagingGuide(
+                  selectedProduct
+                );
+
               return (
                 <div
                   key={
@@ -2354,6 +2455,42 @@ export default function NormalOrderForm({
                       />
                     </div>
                   </div>
+
+                  {packagingDetails ? (
+                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">
+                            Product Size
+                          </p>
+
+                          <p className="mt-1 text-sm font-bold text-zinc-900">
+                            {packagingDetails.productSize}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">
+                            Packaging
+                          </p>
+
+                          <p className="mt-1 text-sm font-bold text-zinc-900">
+                            {packagingDetails.packaging}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">
+                            Ordering Guide
+                          </p>
+
+                          <p className="mt-1 text-sm font-bold text-zinc-900">
+                            {packagingDetails.guide}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               );
             }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+
 import {
   notFound,
 } from "next/navigation";
@@ -515,7 +516,7 @@ export default async function NormalOrderViewPage({
               ============================================= */}
 
               <div className="hidden overflow-x-auto lg:block">
-                <table className="w-full min-w-[1050px] border-collapse">
+                <table className="w-full min-w-[1450px] border-collapse">
                   <thead className="bg-zinc-50">
                     <tr className="border-b border-zinc-200">
                       <th className="w-16 px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
@@ -532,6 +533,18 @@ export default async function NormalOrderViewPage({
 
                       <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
                         Category
+                      </th>
+
+                      <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
+                        Product Size
+                      </th>
+
+                      <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
+                        Packaging
+                      </th>
+
+                      <th className="min-w-[250px] px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
+                        Ordering Guide
                       </th>
 
                       <th className="px-5 py-3 text-right text-xs font-bold uppercase tracking-wide text-zinc-500">
@@ -585,6 +598,37 @@ export default async function NormalOrderViewPage({
                               {
                                 item.category_name_snapshot
                               }
+                            </p>
+                          </td>
+
+                          <td className="whitespace-nowrap px-5 py-4">
+                            <p className="text-sm font-bold text-zinc-800">
+                              {formatQuantity(
+                                item.amount_qty_snapshot
+                              )}{" "}
+                              {item.uom}
+                            </p>
+                          </td>
+
+                          <td className="whitespace-nowrap px-5 py-4">
+                            <p className="text-sm font-bold text-zinc-800">
+                              {formatQuantity(
+                                item.packaging_size_amount_snapshot
+                              )}{" / "}
+                              {item.packaging_uom_snapshot}
+                            </p>
+                          </td>
+
+                          <td className="px-5 py-4">
+                            <p className="text-sm font-semibold text-amber-800">
+                              1 {item.packaging_uom_snapshot} ={" "}
+                              {formatQuantity(
+                                item.packaging_size_amount_snapshot
+                              )}{" × "}
+                              {formatQuantity(
+                                item.amount_qty_snapshot
+                              )}{" "}
+                              {item.uom}
                             </p>
                           </td>
 
@@ -648,7 +692,7 @@ export default async function NormalOrderViewPage({
                             </p>
                           </div>
 
-                          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
                             <div>
                               <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
                                 Category
@@ -658,6 +702,32 @@ export default async function NormalOrderViewPage({
                                 {
                                   item.category_name_snapshot
                                 }
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
+                                Product Size
+                              </p>
+
+                              <p className="mt-1 text-sm font-bold text-zinc-800">
+                                {formatQuantity(
+                                  item.amount_qty_snapshot
+                                )}{" "}
+                                {item.uom}
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
+                                Packaging
+                              </p>
+
+                              <p className="mt-1 text-sm font-bold text-zinc-800">
+                                {formatQuantity(
+                                  item.packaging_size_amount_snapshot
+                                )}{" / "}
+                                {item.packaging_uom_snapshot}
                               </p>
                             </div>
 
@@ -696,6 +766,23 @@ export default async function NormalOrderViewPage({
                                 }
                               </p>
                             </div>
+                          </div>
+
+                          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">
+                              Ordering Guide
+                            </p>
+
+                            <p className="mt-1 text-sm font-bold text-zinc-900">
+                              1 {item.packaging_uom_snapshot} ={" "}
+                              {formatQuantity(
+                                item.packaging_size_amount_snapshot
+                              )}{" × "}
+                              {formatQuantity(
+                                item.amount_qty_snapshot
+                              )}{" "}
+                              {item.uom}
+                            </p>
                           </div>
                         </div>
                       </div>
