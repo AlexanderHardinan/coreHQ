@@ -1222,7 +1222,7 @@ function getItemCellValue(
       );
 
     case "uom":
-      return item.uom;
+      return item.packaging_uom_snapshot;
 
     default:
       return "";
