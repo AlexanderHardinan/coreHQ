@@ -42,6 +42,7 @@ export type NormalOrderItemInput = {
 
 export type NormalOrderCreateItemInput =
   NormalOrderItemInput & {
+    amountQty: string;
     packagingSizeAmount: string;
     packagingUom: NormalOrderPackagingUom;
   };
@@ -967,6 +968,7 @@ function parseNormalOrderCreateItems(
         productId?: unknown;
         onHandQty?: unknown;
         requestedQty?: unknown;
+        amountQty?: unknown;
         packagingSizeAmount?: unknown;
         packagingUom?: unknown;
       };
@@ -989,6 +991,11 @@ function parseNormalOrderCreateItems(
         candidate.requestedQty
       );
 
+    const amountQty =
+      normalizePositiveDecimal(
+        candidate.amountQty
+      );
+
     const packagingSizeAmount =
       normalizePositiveDecimal(
         candidate.packagingSizeAmount
@@ -1004,6 +1011,8 @@ function parseNormalOrderCreateItems(
       onHandQty ===
         null ||
       requestedQty ===
+        null ||
+      amountQty ===
         null ||
       packagingSizeAmount ===
         null ||
@@ -1028,6 +1037,7 @@ function parseNormalOrderCreateItems(
       productId,
       onHandQty,
       requestedQty,
+      amountQty,
       packagingSizeAmount,
       packagingUom,
     });
@@ -1153,6 +1163,17 @@ function mapNormalOrderDatabaseError(
     )
   ) {
     return "Add at least one Product to the Normal Order.";
+  }
+
+  if (
+    normalized.includes(
+      "product size"
+    ) ||
+    normalized.includes(
+      "amount qty"
+    )
+  ) {
+    return "Enter a valid Product Size greater than zero.";
   }
 
   if (
@@ -2371,7 +2392,7 @@ export async function createNormalOrderAction(
           false,
 
         message:
-          "Add at least one valid Product. Each row requires Product, On Hand Qty, Order Request Qty, Packaging Size, and Packaging UOM.",
+          "Add at least one valid Product. Each row requires Product, On Hand Qty, Order Request Qty, Product Size, Packaging Size, and Packaging UOM.",
       };
     }
 
@@ -2403,6 +2424,9 @@ export async function createNormalOrderAction(
 
           requested_qty:
             item.requestedQty,
+
+          amount_qty:
+            item.amountQty,
 
           packaging_size_amount:
             item.packagingSizeAmount,

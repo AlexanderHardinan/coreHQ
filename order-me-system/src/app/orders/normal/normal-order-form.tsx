@@ -70,6 +70,8 @@ type NormalOrderFormItem = {
 
   requestedQty: string;
 
+  amountQty: string;
+
   packagingSizeAmount: string;
 
   packagingUom:
@@ -316,6 +318,7 @@ function getEditableProductPackagingGuide(
   product:
     | ProductCatalogRecord
     | undefined,
+  amountQtyValue: string,
   packagingSizeAmount: string,
   packagingUom:
     | NormalOrderPackagingUom
@@ -327,14 +330,22 @@ function getEditableProductPackagingGuide(
 } | null {
   if (
     !product ||
-    typeof product.amount_qty !==
-      "number" ||
-    !Number.isFinite(
-      product.amount_qty
-    ) ||
-    product.amount_qty <=
-      0 ||
     !packagingUom
+  ) {
+    return null;
+  }
+
+  const amountQty =
+    Number(
+      amountQtyValue
+    );
+
+  if (
+    !Number.isFinite(
+      amountQty
+    ) ||
+    amountQty <=
+      0
   ) {
     return null;
   }
@@ -354,9 +365,9 @@ function getEditableProductPackagingGuide(
     return null;
   }
 
-  const amountQty =
+  const formattedAmountQty =
     formatCatalogQuantity(
-      product.amount_qty
+      amountQty
     );
 
   const formattedPackagingSize =
@@ -366,13 +377,13 @@ function getEditableProductPackagingGuide(
 
   return {
     productSize:
-      `${amountQty} ${product.uom}`,
+      `${formattedAmountQty} ${product.uom}`,
 
     packaging:
       `${formattedPackagingSize} / ${packagingUom}`,
 
     guide:
-      `1 ${packagingUom} = ${formattedPackagingSize} × ${amountQty} ${product.uom}`,
+      `1 ${packagingUom} = ${formattedPackagingSize} × ${formattedAmountQty} ${product.uom}`,
   };
 }
 
@@ -396,6 +407,9 @@ function createBlankItem(
       "0",
 
     requestedQty:
+      "0",
+
+    amountQty:
       "0",
 
     packagingSizeAmount:
@@ -465,6 +479,11 @@ function createInitialState(
               requestedQty:
                 quantityToInput(
                   item.requested_qty
+                ),
+
+              amountQty:
+                quantityToInput(
+                  item.amount_qty_snapshot
                 ),
 
               packagingSizeAmount:
@@ -1674,6 +1693,9 @@ export default function NormalOrderForm({
           ...(isEditMode
             ? {}
             : {
+                amountQty:
+                  "0",
+
                 packagingSizeAmount:
                   "0",
 
@@ -1740,6 +1762,11 @@ export default function NormalOrderForm({
         ...(isEditMode
           ? {}
           : {
+              amountQty:
+                quantityToInput(
+                  product.amount_qty
+                ),
+
               packagingSizeAmount:
                 quantityToInput(
                   product.packaging_size_amount
@@ -1911,6 +1938,15 @@ export default function NormalOrderForm({
       if (
         !isEditMode &&
         !isValidPositiveDecimal(
+          item.amountQty
+        )
+      ) {
+        return `Enter a valid Product Size greater than zero for row ${index + 1}.`;
+      }
+
+      if (
+        !isEditMode &&
+        !isValidPositiveDecimal(
           item.packagingSizeAmount
         )
       ) {
@@ -2032,6 +2068,9 @@ export default function NormalOrderForm({
 
                       requestedQty:
                         item.requestedQty.trim(),
+
+                      amountQty:
+                        item.amountQty.trim(),
 
                       packagingSizeAmount:
                         item.packagingSizeAmount.trim(),
@@ -2450,6 +2489,7 @@ export default function NormalOrderForm({
                     )
                   : getEditableProductPackagingGuide(
                       selectedProduct,
+                      item.amountQty,
                       item.packagingSizeAmount,
                       item.packagingUom
                     );
@@ -2722,24 +2762,38 @@ export default function NormalOrderForm({
                             Product Size
                           </label>
 
-                          <input
-                            id={`normal-order-product-size-${item.rowKey}`}
-                            type="text"
-                            readOnly
-                            tabIndex={-1}
-                            value={
-                              typeof selectedProduct.amount_qty ===
-                                "number" &&
-                              Number.isFinite(
-                                selectedProduct.amount_qty
-                              )
-                                ? `${formatCatalogQuantity(
-                                    selectedProduct.amount_qty
-                                  )} ${selectedProduct.uom}`
-                                : "—"
-                            }
-                            className="h-11 w-full cursor-default rounded-xl border border-amber-200 bg-white/70 px-4 text-sm font-bold text-zinc-700 outline-none"
-                          />
+                          <div className="relative">
+                            <input
+                              id={`normal-order-product-size-${item.rowKey}`}
+                              type="number"
+                              min="0.0001"
+                              max="99999999999999.9999"
+                              step="0.0001"
+                              inputMode="decimal"
+                              value={
+                                item.amountQty
+                              }
+                              onChange={(
+                                event
+                              ) =>
+                                updateItem(
+                                  item.rowKey,
+                                  {
+                                    amountQty:
+                                      event.target.value,
+                                  }
+                                )
+                              }
+                              disabled={
+                                isSaving
+                              }
+                              className="h-11 w-full rounded-xl border border-amber-200 bg-white px-4 pr-20 text-sm font-semibold text-zinc-950 outline-none transition focus:border-amber-400 focus:ring-4 focus:ring-amber-100 disabled:bg-zinc-50"
+                            />
+
+                            <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold uppercase text-amber-700">
+                              {selectedProduct.uom}
+                            </span>
+                          </div>
                         </div>
 
                         <div>
