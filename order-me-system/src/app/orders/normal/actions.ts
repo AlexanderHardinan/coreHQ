@@ -43,6 +43,7 @@ export type NormalOrderItemInput = {
 export type NormalOrderCreateItemInput =
   NormalOrderItemInput & {
     amountQty: string;
+    uom: NormalOrderUom;
     packagingSizeAmount: string;
     packagingUom: NormalOrderPackagingUom;
   };
@@ -908,7 +909,7 @@ function parseNormalOrderItems(
 // PARSE CREATE ORDER ITEMS
 // =========================================================
 //
-// Create mode accepts editable Product packaging details.
+// Create mode accepts editable Product size, UOM, and packaging details.
 // Update mode continues using parseNormalOrderItems() so the
 // existing Normal Order edit contract remains unchanged.
 // =========================================================
@@ -969,6 +970,7 @@ function parseNormalOrderCreateItems(
         onHandQty?: unknown;
         requestedQty?: unknown;
         amountQty?: unknown;
+        uom?: unknown;
         packagingSizeAmount?: unknown;
         packagingUom?: unknown;
       };
@@ -996,6 +998,11 @@ function parseNormalOrderCreateItems(
         candidate.amountQty
       );
 
+    const uom =
+      normalizeUom(
+        candidate.uom
+      );
+
     const packagingSizeAmount =
       normalizePositiveDecimal(
         candidate.packagingSizeAmount
@@ -1014,6 +1021,7 @@ function parseNormalOrderCreateItems(
         null ||
       amountQty ===
         null ||
+      !uom ||
       packagingSizeAmount ===
         null ||
       !packagingUom
@@ -1038,6 +1046,7 @@ function parseNormalOrderCreateItems(
       onHandQty,
       requestedQty,
       amountQty,
+      uom,
       packagingSizeAmount,
       packagingUom,
     });
@@ -1174,6 +1183,17 @@ function mapNormalOrderDatabaseError(
     )
   ) {
     return "Enter a valid Product Size greater than zero.";
+  }
+
+  if (
+    normalized.includes(
+      "product uom"
+    ) ||
+    normalized.includes(
+      "invalid uom"
+    )
+  ) {
+    return "Select a valid Product UOM.";
   }
 
   if (
@@ -2392,7 +2412,7 @@ export async function createNormalOrderAction(
           false,
 
         message:
-          "Add at least one valid Product. Each row requires Product, On Hand Qty, Order Request Qty, Product Size, Packaging Size, and Packaging UOM.",
+          "Add at least one valid Product. Each row requires Product, On Hand Qty, Order Request Qty, Product Size, Product UOM, Packaging Size, and Packaging UOM.",
       };
     }
 
@@ -2427,6 +2447,9 @@ export async function createNormalOrderAction(
 
           amount_qty:
             item.amountQty,
+
+          uom:
+            item.uom,
 
           packaging_size_amount:
             item.packagingSizeAmount,

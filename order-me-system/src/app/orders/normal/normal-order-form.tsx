@@ -38,6 +38,7 @@ import {
   type NormalOrderProductOption,
   type NormalOrderRecord,
   type NormalOrderStatus,
+  type NormalOrderUom,
 } from "@/app/orders/normal/actions";
 
 import {
@@ -71,6 +72,10 @@ type NormalOrderFormItem = {
   requestedQty: string;
 
   amountQty: string;
+
+  uom:
+    | NormalOrderUom
+    | "";
 
   packagingSizeAmount: string;
 
@@ -143,6 +148,24 @@ const STATUS_OPTIONS: {
   {
     value: "cancelled",
     label: "Cancelled",
+  },
+];
+
+const UOM_OPTIONS: {
+  value: NormalOrderUom;
+  label: string;
+}[] = [
+  {
+    value: "ml",
+    label: "ML",
+  },
+  {
+    value: "pc",
+    label: "PC",
+  },
+  {
+    value: "gram",
+    label: "Gram",
   },
 ];
 
@@ -319,6 +342,9 @@ function getEditableProductPackagingGuide(
     | ProductCatalogRecord
     | undefined,
   amountQtyValue: string,
+  uom:
+    | NormalOrderUom
+    | "",
   packagingSizeAmount: string,
   packagingUom:
     | NormalOrderPackagingUom
@@ -330,6 +356,7 @@ function getEditableProductPackagingGuide(
 } | null {
   if (
     !product ||
+    !uom ||
     !packagingUom
   ) {
     return null;
@@ -377,13 +404,13 @@ function getEditableProductPackagingGuide(
 
   return {
     productSize:
-      `${formattedAmountQty} ${product.uom}`,
+      `${formattedAmountQty} ${uom}`,
 
     packaging:
       `${formattedPackagingSize} / ${packagingUom}`,
 
     guide:
-      `1 ${packagingUom} = ${formattedPackagingSize} × ${formattedAmountQty} ${product.uom}`,
+      `1 ${packagingUom} = ${formattedPackagingSize} × ${formattedAmountQty} ${uom}`,
   };
 }
 
@@ -411,6 +438,9 @@ function createBlankItem(
 
     amountQty:
       "0",
+
+    uom:
+      "",
 
     packagingSizeAmount:
       "0",
@@ -485,6 +515,9 @@ function createInitialState(
                 quantityToInput(
                   item.amount_qty_snapshot
                 ),
+
+              uom:
+                item.uom,
 
               packagingSizeAmount:
                 quantityToInput(
@@ -1696,6 +1729,9 @@ export default function NormalOrderForm({
                 amountQty:
                   "0",
 
+                uom:
+                  "" as const,
+
                 packagingSizeAmount:
                   "0",
 
@@ -1766,6 +1802,9 @@ export default function NormalOrderForm({
                 quantityToInput(
                   product.amount_qty
                 ),
+
+              uom:
+                product.uom,
 
               packagingSizeAmount:
                 quantityToInput(
@@ -1946,6 +1985,13 @@ export default function NormalOrderForm({
 
       if (
         !isEditMode &&
+        !item.uom
+      ) {
+        return `Select a Product UOM for row ${index + 1}.`;
+      }
+
+      if (
+        !isEditMode &&
         !isValidPositiveDecimal(
           item.packagingSizeAmount
         )
@@ -2071,6 +2117,9 @@ export default function NormalOrderForm({
 
                       amountQty:
                         item.amountQty.trim(),
+
+                      uom:
+                        item.uom,
 
                       packagingSizeAmount:
                         item.packagingSizeAmount.trim(),
@@ -2490,6 +2539,7 @@ export default function NormalOrderForm({
                   : getEditableProductPackagingGuide(
                       selectedProduct,
                       item.amountQty,
+                      item.uom,
                       item.packagingSizeAmount,
                       item.packagingUom
                     );
@@ -2609,17 +2659,75 @@ export default function NormalOrderForm({
                         UOM
                       </label>
 
-                      <input
-                        id={`normal-order-uom-${item.rowKey}`}
-                        type="text"
-                        readOnly
-                        tabIndex={-1}
-                        value={
-                          selectedProduct?.uom ??
-                          "Auto"
-                        }
-                        className="h-11 w-full cursor-default rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm font-bold text-zinc-600 outline-none"
-                      />
+                      {isEditMode ? (
+                        <input
+                          id={`normal-order-uom-${item.rowKey}`}
+                          type="text"
+                          readOnly
+                          tabIndex={-1}
+                          value={
+                            selectedProduct?.uom ??
+                            "Auto"
+                          }
+                          className="h-11 w-full cursor-default rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm font-bold text-zinc-600 outline-none"
+                        />
+                      ) : (
+                        <div className="relative">
+                          <select
+                            id={`normal-order-uom-${item.rowKey}`}
+                            value={
+                              item.uom
+                            }
+                            onChange={(
+                              event
+                            ) =>
+                              updateItem(
+                                item.rowKey,
+                                {
+                                  uom:
+                                    event.target.value as
+                                      | NormalOrderUom
+                                      | "",
+                                }
+                              )
+                            }
+                            disabled={
+                              isSaving ||
+                              !selectedProduct
+                            }
+                            className="h-11 w-full appearance-none rounded-xl border border-zinc-200 bg-white px-4 pr-10 text-sm font-bold uppercase text-zinc-700 outline-none transition focus:border-zinc-400 focus:ring-4 focus:ring-zinc-100 disabled:cursor-not-allowed disabled:bg-zinc-50"
+                          >
+                            <option value="">
+                              Select
+                            </option>
+
+                            {UOM_OPTIONS.map(
+                              (
+                                option
+                              ) => (
+                                <option
+                                  key={
+                                    option.value
+                                  }
+                                  value={
+                                    option.value
+                                  }
+                                >
+                                  {
+                                    option.label
+                                  }
+                                </option>
+                              )
+                            )}
+                          </select>
+
+                          <ChevronDown
+                            size={16}
+                            aria-hidden="true"
+                            className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400"
+                          />
+                        </div>
+                      )}
                     </div>
 
                     {/* =====================================
@@ -2791,7 +2899,8 @@ export default function NormalOrderForm({
                             />
 
                             <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold uppercase text-amber-700">
-                              {selectedProduct.uom}
+                              {item.uom ||
+                                selectedProduct.uom}
                             </span>
                           </div>
                         </div>
