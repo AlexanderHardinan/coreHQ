@@ -40,6 +40,12 @@ export type NormalOrderItemInput = {
   requestedQty: string;
 };
 
+export type NormalOrderCreateItemInput =
+  NormalOrderItemInput & {
+    packagingSizeAmount: string;
+    packagingUom: NormalOrderPackagingUom;
+  };
+
 export type NormalOrderProductOption = {
   id: string;
   sku: string;
@@ -713,6 +719,31 @@ function normalizeNonNegativeDecimal(
 }
 
 // =========================================================
+// POSITIVE DECIMAL
+// =========================================================
+//
+// Product packaging size must be greater than zero.
+// =========================================================
+
+function normalizePositiveDecimal(
+  value: unknown
+): string | null {
+  const normalized =
+    normalizeNonNegativeDecimal(
+      value
+    );
+
+  if (
+    normalized === null ||
+    normalized === "0"
+  ) {
+    return null;
+  }
+
+  return normalized;
+}
+
+// =========================================================
 // PAGE
 // =========================================================
 
@@ -873,6 +904,139 @@ function parseNormalOrderItems(
 }
 
 // =========================================================
+// PARSE CREATE ORDER ITEMS
+// =========================================================
+//
+// Create mode accepts editable Product packaging details.
+// Update mode continues using parseNormalOrderItems() so the
+// existing Normal Order edit contract remains unchanged.
+// =========================================================
+
+function parseNormalOrderCreateItems(
+  value:
+    | FormDataEntryValue
+    | null
+): NormalOrderCreateItemInput[] | null {
+  if (
+    typeof value !==
+    "string"
+  ) {
+    return null;
+  }
+
+  let parsed:
+    unknown;
+
+  try {
+    parsed =
+      JSON.parse(value);
+  } catch {
+    return null;
+  }
+
+  if (
+    !Array.isArray(
+      parsed
+    ) ||
+    parsed.length === 0
+  ) {
+    return null;
+  }
+
+  const productIds =
+    new Set<string>();
+
+  const result:
+    NormalOrderCreateItemInput[] =
+    [];
+
+  for (
+    const rawItem of
+    parsed
+  ) {
+    if (
+      typeof rawItem !==
+        "object" ||
+      rawItem === null
+    ) {
+      return null;
+    }
+
+    const candidate =
+      rawItem as {
+        productId?: unknown;
+        onHandQty?: unknown;
+        requestedQty?: unknown;
+        packagingSizeAmount?: unknown;
+        packagingUom?: unknown;
+      };
+
+    const productId =
+      normalizeUuid(
+        typeof candidate.productId ===
+          "string"
+          ? candidate.productId
+          : null
+      );
+
+    const onHandQty =
+      normalizeNonNegativeDecimal(
+        candidate.onHandQty
+      );
+
+    const requestedQty =
+      normalizeNonNegativeDecimal(
+        candidate.requestedQty
+      );
+
+    const packagingSizeAmount =
+      normalizePositiveDecimal(
+        candidate.packagingSizeAmount
+      );
+
+    const packagingUom =
+      normalizePackagingUom(
+        candidate.packagingUom
+      );
+
+    if (
+      !productId ||
+      onHandQty ===
+        null ||
+      requestedQty ===
+        null ||
+      packagingSizeAmount ===
+        null ||
+      !packagingUom
+    ) {
+      return null;
+    }
+
+    if (
+      productIds.has(
+        productId
+      )
+    ) {
+      return null;
+    }
+
+    productIds.add(
+      productId
+    );
+
+    result.push({
+      productId,
+      onHandQty,
+      requestedQty,
+      packagingSizeAmount,
+      packagingUom,
+    });
+  }
+
+  return result;
+}
+
+// =========================================================
 // DATABASE ERROR MAPPING
 // =========================================================
 
@@ -989,6 +1153,22 @@ function mapNormalOrderDatabaseError(
     )
   ) {
     return "Add at least one Product to the Normal Order.";
+  }
+
+  if (
+    normalized.includes(
+      "packaging size"
+    )
+  ) {
+    return "Enter a valid Packaging Size greater than zero.";
+  }
+
+  if (
+    normalized.includes(
+      "packaging uom"
+    )
+  ) {
+    return "Select a valid Packaging UOM.";
   }
 
   return "Unable to save Normal Order. Please try again.";
@@ -2177,7 +2357,7 @@ export async function createNormalOrderAction(
       );
 
     const items =
-      parseNormalOrderItems(
+      parseNormalOrderCreateItems(
         formData.get(
           "items"
         )
@@ -2191,7 +2371,7 @@ export async function createNormalOrderAction(
           false,
 
         message:
-          "Add at least one valid Product. Each row requires Product, On Hand Qty, and Order Request Qty.",
+          "Add at least one valid Product. Each row requires Product, On Hand Qty, Order Request Qty, Packaging Size, and Packaging UOM.",
       };
     }
 
@@ -2223,6 +2403,12 @@ export async function createNormalOrderAction(
 
           requested_qty:
             item.requestedQty,
+
+          packaging_size_amount:
+            item.packagingSizeAmount,
+
+          packaging_uom:
+            item.packagingUom,
         })
       );
 
@@ -2231,13 +2417,10 @@ export async function createNormalOrderAction(
         savedOrderId,
       error,
     } = await supabase.rpc(
-      "save_normal_order",
+      "create_normal_order_with_packaging",
       {
         p_location_id:
           location.id,
-
-        p_order_id:
-          null,
 
         p_order_date:
           orderDate,
@@ -2292,6 +2475,10 @@ export async function createNormalOrderAction(
     }
 
     revalidateNormalOrderPages();
+
+    revalidatePath(
+      "/products"
+    );
 
     const order =
       await getNormalOrderById(

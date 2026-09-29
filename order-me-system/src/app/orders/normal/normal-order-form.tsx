@@ -34,6 +34,7 @@ import {
   createNormalOrderAction,
   getNormalOrderProductOptions,
   updateNormalOrderAction,
+  type NormalOrderPackagingUom,
   type NormalOrderProductOption,
   type NormalOrderRecord,
   type NormalOrderStatus,
@@ -68,6 +69,12 @@ type NormalOrderFormItem = {
   onHandQty: string;
 
   requestedQty: string;
+
+  packagingSizeAmount: string;
+
+  packagingUom:
+    | NormalOrderPackagingUom
+    | "";
 };
 
 type NormalOrderFormState = {
@@ -134,6 +141,40 @@ const STATUS_OPTIONS: {
   {
     value: "cancelled",
     label: "Cancelled",
+  },
+];
+
+const PACKAGING_UOM_OPTIONS: {
+  value: NormalOrderPackagingUom;
+  label: string;
+}[] = [
+  {
+    value: "bottle",
+    label: "Bottle",
+  },
+  {
+    value: "box",
+    label: "Box",
+  },
+  {
+    value: "pack",
+    label: "Pack",
+  },
+  {
+    value: "can",
+    label: "Can",
+  },
+  {
+    value: "kilo",
+    label: "Kilo",
+  },
+  {
+    value: "liter",
+    label: "Liter",
+  },
+  {
+    value: "tray",
+    label: "Tray",
   },
 ];
 
@@ -271,6 +312,70 @@ function getProductPackagingGuide(
   };
 }
 
+function getEditableProductPackagingGuide(
+  product:
+    | ProductCatalogRecord
+    | undefined,
+  packagingSizeAmount: string,
+  packagingUom:
+    | NormalOrderPackagingUom
+    | ""
+): {
+  productSize: string;
+  packaging: string;
+  guide: string;
+} | null {
+  if (
+    !product ||
+    typeof product.amount_qty !==
+      "number" ||
+    !Number.isFinite(
+      product.amount_qty
+    ) ||
+    product.amount_qty <=
+      0 ||
+    !packagingUom
+  ) {
+    return null;
+  }
+
+  const packagingSize =
+    Number(
+      packagingSizeAmount
+    );
+
+  if (
+    !Number.isFinite(
+      packagingSize
+    ) ||
+    packagingSize <=
+      0
+  ) {
+    return null;
+  }
+
+  const amountQty =
+    formatCatalogQuantity(
+      product.amount_qty
+    );
+
+  const formattedPackagingSize =
+    formatCatalogQuantity(
+      packagingSize
+    );
+
+  return {
+    productSize:
+      `${amountQty} ${product.uom}`,
+
+    packaging:
+      `${formattedPackagingSize} / ${packagingUom}`,
+
+    guide:
+      `1 ${packagingUom} = ${formattedPackagingSize} × ${amountQty} ${product.uom}`,
+  };
+}
+
 // =========================================================
 // BLANK ROW
 // =========================================================
@@ -292,6 +397,12 @@ function createBlankItem(
 
     requestedQty:
       "0",
+
+    packagingSizeAmount:
+      "0",
+
+    packagingUom:
+      "",
   };
 }
 
@@ -355,6 +466,14 @@ function createInitialState(
                 quantityToInput(
                   item.requested_qty
                 ),
+
+              packagingSizeAmount:
+                quantityToInput(
+                  item.packaging_size_amount_snapshot
+                ),
+
+              packagingUom:
+                item.packaging_uom_snapshot,
             })
           )
         : [
@@ -428,8 +547,17 @@ function createInitialProductCatalog(
           category_name:
             item.category_name_snapshot,
 
+          amount_qty:
+            item.amount_qty_snapshot,
+
           uom:
             item.uom,
+
+          packaging_size_amount:
+            item.packaging_size_amount_snapshot,
+
+          packaging_uom:
+            item.packaging_uom_snapshot,
 
           is_active:
             true,
@@ -547,6 +675,22 @@ function isValidNonNegativeDecimal(
     ) &&
     numeric >= 0
   );
+}
+
+function isValidPositiveDecimal(
+  value: string
+): boolean {
+  if (
+    !isValidNonNegativeDecimal(
+      value
+    )
+  ) {
+    return false;
+  }
+
+  return Number(
+    value.trim()
+  ) > 0;
 }
 
 // =========================================================
@@ -1526,6 +1670,16 @@ export default function NormalOrderForm({
         {
           productId:
             "",
+
+          ...(isEditMode
+            ? {}
+            : {
+                packagingSizeAmount:
+                  "0",
+
+                packagingUom:
+                  "" as const,
+              }),
         }
       );
 
@@ -1582,6 +1736,19 @@ export default function NormalOrderForm({
       {
         productId:
           product.id,
+
+        ...(isEditMode
+          ? {}
+          : {
+              packagingSizeAmount:
+                quantityToInput(
+                  product.packaging_size_amount
+                ),
+
+              packagingUom:
+                product.packaging_uom ??
+                "",
+            }),
       }
     );
   }
@@ -1740,6 +1907,22 @@ export default function NormalOrderForm({
       ) {
         return `Enter a valid Order Request Qty for row ${index + 1}.`;
       }
+
+      if (
+        !isEditMode &&
+        !isValidPositiveDecimal(
+          item.packagingSizeAmount
+        )
+      ) {
+        return `Enter a valid Packaging Size greater than zero for row ${index + 1}.`;
+      }
+
+      if (
+        !isEditMode &&
+        !item.packagingUom
+      ) {
+        return `Select a Packaging UOM for row ${index + 1}.`;
+      }
     }
 
     return null;
@@ -1828,16 +2011,34 @@ export default function NormalOrderForm({
             form.items.map(
               (
                 item
-              ) => ({
-                productId:
-                  item.productId,
+              ) =>
+                isEditMode
+                  ? {
+                      productId:
+                        item.productId,
 
-                onHandQty:
-                  item.onHandQty.trim(),
+                      onHandQty:
+                        item.onHandQty.trim(),
 
-                requestedQty:
-                  item.requestedQty.trim(),
-              })
+                      requestedQty:
+                        item.requestedQty.trim(),
+                    }
+                  : {
+                      productId:
+                        item.productId,
+
+                      onHandQty:
+                        item.onHandQty.trim(),
+
+                      requestedQty:
+                        item.requestedQty.trim(),
+
+                      packagingSizeAmount:
+                        item.packagingSizeAmount.trim(),
+
+                      packagingUom:
+                        item.packagingUom,
+                    }
             )
           )
         );
@@ -2243,9 +2444,15 @@ export default function NormalOrderForm({
                 );
 
               const packagingDetails =
-                getProductPackagingGuide(
-                  selectedProduct
-                );
+                isEditMode
+                  ? getProductPackagingGuide(
+                      selectedProduct
+                    )
+                  : getEditableProductPackagingGuide(
+                      selectedProduct,
+                      item.packagingSizeAmount,
+                      item.packagingUom
+                    );
 
               return (
                 <div
@@ -2456,37 +2663,196 @@ export default function NormalOrderForm({
                     </div>
                   </div>
 
-                  {packagingDetails ? (
+                  {isEditMode ? (
+                    packagingDetails ? (
+                      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">
+                              Product Size
+                            </p>
+
+                            <p className="mt-1 text-sm font-bold text-zinc-900">
+                              {packagingDetails.productSize}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">
+                              Packaging
+                            </p>
+
+                            <p className="mt-1 text-sm font-bold text-zinc-900">
+                              {packagingDetails.packaging}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">
+                              Ordering Guide
+                            </p>
+
+                            <p className="mt-1 text-sm font-bold text-zinc-900">
+                              {packagingDetails.guide}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null
+                  ) : selectedProduct ? (
                     <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 p-4">
-                      <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">
+                          <p className="text-xs font-bold text-amber-900">
+                            Product Packaging
+                          </p>
+
+                          <p className="mt-1 text-[11px] leading-5 text-amber-800">
+                            Edit the packaging used for this Product. Saving the Normal Order updates the Product List as the single source of truth.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <div>
+                          <label
+                            htmlFor={`normal-order-product-size-${item.rowKey}`}
+                            className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700"
+                          >
                             Product Size
-                          </p>
+                          </label>
 
-                          <p className="mt-1 text-sm font-bold text-zinc-900">
-                            {packagingDetails.productSize}
-                          </p>
+                          <input
+                            id={`normal-order-product-size-${item.rowKey}`}
+                            type="text"
+                            readOnly
+                            tabIndex={-1}
+                            value={
+                              typeof selectedProduct.amount_qty ===
+                                "number" &&
+                              Number.isFinite(
+                                selectedProduct.amount_qty
+                              )
+                                ? `${formatCatalogQuantity(
+                                    selectedProduct.amount_qty
+                                  )} ${selectedProduct.uom}`
+                                : "—"
+                            }
+                            className="h-11 w-full cursor-default rounded-xl border border-amber-200 bg-white/70 px-4 text-sm font-bold text-zinc-700 outline-none"
+                          />
                         </div>
 
                         <div>
-                          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">
-                            Packaging
-                          </p>
+                          <label
+                            htmlFor={`normal-order-packaging-size-${item.rowKey}`}
+                            className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700"
+                          >
+                            Packaging Size
+                          </label>
 
-                          <p className="mt-1 text-sm font-bold text-zinc-900">
-                            {packagingDetails.packaging}
-                          </p>
+                          <input
+                            id={`normal-order-packaging-size-${item.rowKey}`}
+                            type="number"
+                            min="0.0001"
+                            max="99999999999999.9999"
+                            step="0.0001"
+                            inputMode="decimal"
+                            value={
+                              item.packagingSizeAmount
+                            }
+                            onChange={(
+                              event
+                            ) =>
+                              updateItem(
+                                item.rowKey,
+                                {
+                                  packagingSizeAmount:
+                                    event.target.value,
+                                }
+                              )
+                            }
+                            disabled={
+                              isSaving
+                            }
+                            className="h-11 w-full rounded-xl border border-amber-200 bg-white px-4 text-sm font-semibold text-zinc-950 outline-none transition focus:border-amber-400 focus:ring-4 focus:ring-amber-100 disabled:bg-zinc-50"
+                          />
                         </div>
 
                         <div>
-                          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">
+                          <label
+                            htmlFor={`normal-order-packaging-uom-${item.rowKey}`}
+                            className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700"
+                          >
+                            Packaging UOM
+                          </label>
+
+                          <div className="relative">
+                            <select
+                              id={`normal-order-packaging-uom-${item.rowKey}`}
+                              value={
+                                item.packagingUom
+                              }
+                              onChange={(
+                                event
+                              ) =>
+                                updateItem(
+                                  item.rowKey,
+                                  {
+                                    packagingUom:
+                                      event.target.value as
+                                        | NormalOrderPackagingUom
+                                        | "",
+                                  }
+                                )
+                              }
+                              disabled={
+                                isSaving
+                              }
+                              className="h-11 w-full appearance-none rounded-xl border border-amber-200 bg-white px-4 pr-10 text-sm font-semibold text-zinc-950 outline-none transition focus:border-amber-400 focus:ring-4 focus:ring-amber-100 disabled:bg-zinc-50"
+                            >
+                              <option value="">
+                                Select UOM
+                              </option>
+
+                              {PACKAGING_UOM_OPTIONS.map(
+                                (
+                                  option
+                                ) => (
+                                  <option
+                                    key={
+                                      option.value
+                                    }
+                                    value={
+                                      option.value
+                                    }
+                                  >
+                                    {
+                                      option.label
+                                    }
+                                  </option>
+                                )
+                              )}
+                            </select>
+
+                            <ChevronDown
+                              size={16}
+                              aria-hidden="true"
+                              className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-amber-700"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">
                             Ordering Guide
                           </p>
 
-                          <p className="mt-1 text-sm font-bold text-zinc-900">
-                            {packagingDetails.guide}
-                          </p>
+                          <div className="flex min-h-11 items-center rounded-xl border border-amber-200 bg-white/70 px-4 py-2.5">
+                            <p className="text-sm font-bold leading-5 text-zinc-900">
+                              {packagingDetails?.guide ??
+                                "Complete packaging details"}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </div>
