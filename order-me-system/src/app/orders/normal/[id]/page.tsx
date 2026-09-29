@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import {
 
-  notFound,
+  notFound,
 
 } from "next/navigation";
 
@@ -12,23 +12,23 @@ import {
 
 import {
 
-  ArrowLeft,
+  ArrowLeft,
 
-  CalendarDays,
+  CalendarDays,
 
-  ClipboardList,
+  ClipboardList,
 
-  Clock3,
+  Clock3,
 
-  Download,
+  Download,
 
-  MapPin,
+  MapPin,
 
-  Package,
+  Package,
 
-  Pencil,
+  Pencil,
 
-  UserRound,
+  UserRound,
 
 } from "lucide-react";
 
@@ -36,9 +36,9 @@ import {
 
 import {
 
-  getNormalOrderById,
+  getNormalOrderById,
 
-  type NormalOrderStatus,
+  type NormalOrderStatus,
 
 } from "@/app/orders/normal/actions";
 
@@ -50,7 +50,7 @@ import AppShell from "@/components/app-shell";
 
 import {
 
-  requireOperationalSession,
+  requireOperationalSession,
 
 } from "@/lib/auth/require-operational-session";
 
@@ -66,11 +66,11 @@ import {
 
 type NormalOrderViewPageProps = {
 
-  params: Promise<{
+  params: Promise<{
 
-    id: string;
+    id: string;
 
-  }>;
+  }>;
 
 };
 
@@ -86,45 +86,45 @@ type NormalOrderViewPageProps = {
 
 function formatQuantity(
 
-  value: number
+  value: number
 
 ): string {
 
-  if (
+  if (
 
-    !Number.isFinite(
+    !Number.isFinite(
 
-      value
+      value
 
-    )
+    )
 
-  ) {
+  ) {
 
-    return "—";
+    return "—";
 
-  }
-
-
-
-  return new Intl.NumberFormat(
-
-    "en-US",
-
-    {
-
-      minimumFractionDigits:
-
-        0,
+  }
 
 
 
-      maximumFractionDigits:
+  return new Intl.NumberFormat(
 
-        4,
+    "en-US",
 
-    }
+    {
 
-  ).format(value);
+      minimumFractionDigits:
+
+        0,
+
+
+
+      maximumFractionDigits:
+
+        4,
+
+    }
+
+  ).format(value);
 
 }
 
@@ -140,131 +140,131 @@ function formatQuantity(
 
 function formatDate(
 
-  value: string
+  value: string
 
 ): string {
 
-  const parts =
+  const parts =
 
-    value.split("-");
+    value.split("-");
 
 
 
-  if (
+  if (
 
-    parts.length !== 3
+    parts.length !== 3
 
-  ) {
+  ) {
 
-    return value;
+    return value;
 
-  }
+  }
 
 
 
-  const year =
+  const year =
 
-    Number(
+    Number(
 
-      parts[0]
+      parts[0]
 
-    );
+    );
 
 
 
-  const month =
+  const month =
 
-    Number(
+    Number(
 
-      parts[1]
+      parts[1]
 
-    );
+    );
 
 
 
-  const day =
+  const day =
 
-    Number(
+    Number(
 
-      parts[2]
+      parts[2]
 
-    );
+    );
 
 
 
-  if (
+  if (
 
-    !Number.isInteger(
+    !Number.isInteger(
 
-      year
+      year
 
-    ) ||
+    ) ||
 
-    !Number.isInteger(
+    !Number.isInteger(
 
-      month
+      month
 
-    ) ||
+    ) ||
 
-    !Number.isInteger(
+    !Number.isInteger(
 
-      day
+      day
 
-    )
+    )
 
-  ) {
+  ) {
 
-    return value;
+    return value;
 
-  }
+  }
 
 
 
-  const date =
+  const date =
 
-    new Date(
+    new Date(
 
-      year,
+      year,
 
-      month - 1,
+      month - 1,
 
-      day
+      day
 
-    );
+    );
 
 
 
-  if (
+  if (
 
-    Number.isNaN(
+    Number.isNaN(
 
-      date.getTime()
+      date.getTime()
 
-    )
+    )
 
-  ) {
+  ) {
 
-    return value;
+    return value;
 
-  }
+  }
 
 
 
-  return new Intl.DateTimeFormat(
+  return new Intl.DateTimeFormat(
 
-    "en",
+    "en",
 
-    {
+    {
 
-      year: "numeric",
+      year: "numeric",
 
-      month: "long",
+      month: "long",
 
-      day: "2-digit",
+      day: "2-digit",
 
-    }
+    }
 
-  ).format(date);
+  ).format(date);
 
 }
 
@@ -280,51 +280,51 @@ function formatDate(
 
 function formatDateTime(
 
-  value: string
+  value: string
 
 ): string {
 
-  const date =
+  const date =
 
-    new Date(value);
-
-
-
-  if (
-
-    Number.isNaN(
-
-      date.getTime()
-
-    )
-
-  ) {
-
-    return "—";
-
-  }
+    new Date(value);
 
 
 
-  return new Intl.DateTimeFormat(
+  if (
 
-    "en",
+    Number.isNaN(
 
-    {
+      date.getTime()
 
-      year: "numeric",
+    )
 
-      month: "long",
+  ) {
 
-      day: "2-digit",
+    return "—";
 
-      hour: "2-digit",
+  }
 
-      minute: "2-digit",
 
-    }
 
-  ).format(date);
+  return new Intl.DateTimeFormat(
+
+    "en",
+
+    {
+
+      year: "numeric",
+
+      month: "long",
+
+      day: "2-digit",
+
+      hour: "2-digit",
+
+      minute: "2-digit",
+
+    }
+
+  ).format(date);
 
 }
 
@@ -340,39 +340,39 @@ function formatDateTime(
 
 function getStatusLabel(
 
-  status:
+  status:
 
-    NormalOrderStatus
+    NormalOrderStatus
 
 ): string {
 
-  switch (status) {
+  switch (status) {
 
-    case "submitted":
+    case "submitted":
 
-      return "Submitted";
-
-
-
-    case "completed":
-
-      return "Completed";
+      return "Submitted";
 
 
 
-    case "cancelled":
+    case "completed":
 
-      return "Cancelled";
+      return "Completed";
 
 
 
-    case "draft":
+    case "cancelled":
 
-    default:
+      return "Cancelled";
 
-      return "Draft";
 
-  }
+
+    case "draft":
+
+    default:
+
+      return "Draft";
+
+  }
 
 }
 
@@ -388,39 +388,39 @@ function getStatusLabel(
 
 function getStatusClasses(
 
-  status:
+  status:
 
-    NormalOrderStatus
+    NormalOrderStatus
 
 ): string {
 
-  switch (status) {
+  switch (status) {
 
-    case "submitted":
+    case "submitted":
 
-      return "bg-blue-50 text-blue-700 border-blue-100";
-
-
-
-    case "completed":
-
-      return "bg-emerald-50 text-emerald-700 border-emerald-100";
+      return "bg-blue-50 text-blue-700 border-blue-100";
 
 
 
-    case "cancelled":
+    case "completed":
 
-      return "bg-red-50 text-red-700 border-red-100";
+      return "bg-emerald-50 text-emerald-700 border-emerald-100";
 
 
 
-    case "draft":
+    case "cancelled":
 
-    default:
+      return "bg-red-50 text-red-700 border-red-100";
 
-      return "bg-amber-50 text-amber-700 border-amber-100";
 
-  }
+
+    case "draft":
+
+    default:
+
+      return "bg-amber-50 text-amber-700 border-amber-100";
+
+  }
 
 }
 
@@ -436,1366 +436,1366 @@ function getStatusClasses(
 
 export default async function NormalOrderViewPage({
 
-  params,
+  params,
 
 }: NormalOrderViewPageProps) {
 
-  // =======================================================
+  // =======================================================
 
-  // VERIFY OPERATIONAL SESSION
+  // VERIFY OPERATIONAL SESSION
 
-  // =======================================================
+  // =======================================================
 
 
 
-  const activeLocation =
+  const activeLocation =
 
-    await requireOperationalSession();
+    await requireOperationalSession();
 
 
 
-  // =======================================================
+  // =======================================================
 
-  // READ ORDER ID
+  // READ ORDER ID
 
-  // =======================================================
+  // =======================================================
 
 
 
-  const {
+  const {
 
-    id,
+    id,
 
-  } = await params;
+  } = await params;
 
 
 
-  // =======================================================
+  // =======================================================
 
-  // LOAD LOCATION-SCOPED ORDER
+  // LOAD LOCATION-SCOPED ORDER
 
-  // =======================================================
+  // =======================================================
 
 
 
-  const order =
+  const order =
 
-    await getNormalOrderById(
+    await getNormalOrderById(
 
-      id
+      id
 
-    );
+    );
 
 
 
-  if (!order) {
+  if (!order) {
 
-    notFound();
+    notFound();
 
-  }
+  }
 
 
 
-  // =======================================================
+  // =======================================================
 
-  // PAGE
+  // PAGE
 
-  // =======================================================
+  // =======================================================
 
 
 
-  return (
+  return (
 
-    \<AppShell
+    <AppShell
 
-      activeLocation={
+      activeLocation={
 
-        activeLocation
+        activeLocation
 
-      }
+      }
 
-    >
+    >
 
-      \<div className="space-y-6">
+      <div className="space-y-6">
 
-        {/\* =================================================
+        {/* =================================================
 
-            PAGE HEADER
+            PAGE HEADER
 
-        ================================================= \*/}
+        ================================================= */}
 
 
 
-        \<section className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+        <section className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
 
-          \<div>
+          <div>
 
-            \<div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
 
-              \<ClipboardList
+              <ClipboardList
 
-                size={17}
+                size={17}
 
-                className="text-amber-700"
+                className="text-amber-700"
 
-                aria-hidden="true"
+                aria-hidden="true"
 
-              />
+              />
 
 
 
-              \<p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-700">
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-700">
 
-                Order Management
+                Order Management
 
-              \</p>
+              </p>
 
-            \</div>
+            </div>
 
 
 
-            \<h1 className="mt-2 text-3xl font-bold tracking-tight text-zinc-950">
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-zinc-950">
 
-              Normal Order Details
+              Normal Order Details
 
-            \</h1>
+            </h1>
 
 
 
-            \<p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
 
-              Review the complete historical Product ordering
+              Review the complete historical Product ordering
 
-              record for the current operational location.
+              record for the current operational location.
 
-            \</p>
+            </p>
 
-          \</div>
+          </div>
 
 
 
-          \<div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
 
-            {/\* =============================================
+            {/* =============================================
 
-                LOCATION
+                LOCATION
 
-            ============================================= \*/}
+            ============================================= */}
 
 
 
-            \<div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 shadow-sm">
+            <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 shadow-sm">
 
-              \<MapPin
+              <MapPin
 
-                size={14}
+                size={14}
 
-                aria-hidden="true"
+                aria-hidden="true"
 
-              />
+              />
 
 
 
-              {activeLocation.name}
+              {activeLocation.name}
 
 
 
-              \<span className="text-zinc-400">
+              <span className="text-zinc-400">
 
-                {activeLocation.code}
+                {activeLocation.code}
 
-              \</span>
+              </span>
 
-            \</div>
+            </div>
 
 
 
-            {/\* =============================================
+            {/* =============================================
 
-                STATUS
+                STATUS
 
-            ============================================= \*/}
+            ============================================= */}
 
 
 
-            \<span
+            <span
 
-              className={\`inline-flex items-center rounded-full border px-4 py-2 text-xs font-bold ${getStatusClasses(
+              className={`inline-flex items-center rounded-full border px-4 py-2 text-xs font-bold ${getStatusClasses(
 
-                order.status
+                order.status
 
-              )}\`}
+              )}`}
 
-            >
+            >
 
-              {getStatusLabel(
+              {getStatusLabel(
 
-                order.status
+                order.status
 
-              )}
+              )}
 
-            \</span>
+            </span>
 
-          \</div>
+          </div>
 
-        \</section>
+        </section>
 
 
 
-        {/\* =================================================
+        {/* =================================================
 
-            ORDER HEADER CARD
+            ORDER HEADER CARD
 
-        ================================================= \*/}
+        ================================================= */}
 
 
 
-        \<section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
 
-          \<div className="border-b border-zinc-200 p-5 sm:p-6">
+          <div className="border-b border-zinc-200 p-5 sm:p-6">
 
-            \<div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
 
-              \<div className="flex min-w-0 items-center gap-4">
+              <div className="flex min-w-0 items-center gap-4">
 
-                \<div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-zinc-950 text-white">
+                <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-zinc-950 text-white">
 
-                  \<ClipboardList
+                  <ClipboardList
 
-                    size={24}
+                    size={24}
 
-                    aria-hidden="true"
+                    aria-hidden="true"
 
-                  />
+                  />
 
-                \</div>
+                </div>
 
 
 
-                \<div className="min-w-0">
+                <div className="min-w-0">
 
-                  \<p className="text-xs font-bold uppercase tracking-[0.12em] text-zinc-400">
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-zinc-400">
 
-                    Normal Order Number
+                    Normal Order Number
 
-                  \</p>
+                  </p>
 
 
 
-                  \<h2 className="mt-1 break-all font-mono text-xl font-bold text-zinc-950 sm:text-2xl">
+                  <h2 className="mt-1 break-all font-mono text-xl font-bold text-zinc-950 sm:text-2xl">
 
-                    {order.order_number}
+                    {order.order_number}
 
-                  \</h2>
+                  </h2>
 
-                \</div>
+                </div>
 
-              \</div>
+              </div>
 
 
 
-              \<div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2">
 
-                \<Link
+                <Link
 
-                  href="/orders/normal"
+                  href="/orders/normal"
 
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
 
-                >
+                >
 
-                  \<ArrowLeft
+                  <ArrowLeft
 
-                    size={16}
+                    size={16}
 
-                    aria-hidden="true"
+                    aria-hidden="true"
 
-                  />
+                  />
 
 
 
-                  Back
+                  Back
 
-                \</Link>
+                </Link>
 
 
 
-                \<a
+                <a
 
-                  href={\`/api/orders/normal/${order.id}/pdf\`}
+                  href={`/api/orders/normal/${order.id}/pdf`}
 
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
 
-                >
+                >
 
-                  \<Download
+                  <Download
 
-                    size={16}
+                    size={16}
 
-                    aria-hidden="true"
+                    aria-hidden="true"
 
-                  />
+                  />
 
 
 
-                  Export PDF
+                  Export PDF
 
-                \</a>
+                </a>
 
 
 
-                \<Link
+                <Link
 
-                  href={\`/orders/normal/${order.id}/edit\`}
+                  href={`/orders/normal/${order.id}/edit`}
 
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white transition hover:bg-zinc-800"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-zinc-950 px-4 text-sm font-semibold text-white transition hover:bg-zinc-800"
 
-                >
+                >
 
-                  \<Pencil
+                  <Pencil
 
-                    size={15}
+                    size={15}
 
-                    aria-hidden="true"
+                    aria-hidden="true"
 
-                  />
+                  />
 
 
 
-                  Edit Order
+                  Edit Order
 
-                \</Link>
+                </Link>
 
-              \</div>
+              </div>
 
-            \</div>
+            </div>
 
-          \</div>
+          </div>
 
 
 
-          {/\* =================================================
+          {/* =================================================
 
-              ORDER SUMMARY
+              ORDER SUMMARY
 
-          ================================================= \*/}
+          ================================================= */}
 
 
 
-          \<div className="grid gap-px bg-zinc-200 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-px bg-zinc-200 sm:grid-cols-2 xl:grid-cols-4">
 
-            {/\* ===============================================
+            {/* ===============================================
 
-                DATE
+                DATE
 
-            =============================================== \*/}
+            =============================================== */}
 
 
 
-            \<div className="bg-white p-5 sm:p-6">
+            <div className="bg-white p-5 sm:p-6">
 
-              \<div className="flex items-center gap-2 text-zinc-400">
+              <div className="flex items-center gap-2 text-zinc-400">
 
-                \<CalendarDays
+                <CalendarDays
 
-                  size={15}
+                  size={15}
 
-                  aria-hidden="true"
+                  aria-hidden="true"
 
-                />
+                />
 
 
 
-                \<p className="text-xs font-bold uppercase tracking-[0.12em]">
+                <p className="text-xs font-bold uppercase tracking-[0.12em]">
 
-                  Order Date
+                  Order Date
 
-                \</p>
+                </p>
 
-              \</div>
+              </div>
 
 
 
-              \<p className="mt-3 text-base font-bold text-zinc-950">
+              <p className="mt-3 text-base font-bold text-zinc-950">
 
-                {formatDate(
+                {formatDate(
 
-                  order.order_date
+                  order.order_date
 
-                )}
+                )}
 
-              \</p>
+              </p>
 
-            \</div>
+            </div>
 
 
 
-            {/\* ===============================================
+            {/* ===============================================
 
-                ORDERED BY
+                ORDERED BY
 
-            =============================================== \*/}
+            =============================================== */}
 
 
 
-            \<div className="bg-white p-5 sm:p-6">
+            <div className="bg-white p-5 sm:p-6">
 
-              \<div className="flex items-center gap-2 text-zinc-400">
+              <div className="flex items-center gap-2 text-zinc-400">
 
-                \<UserRound
+                <UserRound
 
-                  size={15}
+                  size={15}
 
-                  aria-hidden="true"
+                  aria-hidden="true"
 
-                />
+                />
 
 
 
-                \<p className="text-xs font-bold uppercase tracking-[0.12em]">
+                <p className="text-xs font-bold uppercase tracking-[0.12em]">
 
-                  Ordered By
+                  Ordered By
 
-                \</p>
+                </p>
 
-              \</div>
+              </div>
 
 
 
-              \<p className="mt-3 text-base font-bold text-zinc-950">
+              <p className="mt-3 text-base font-bold text-zinc-950">
 
-                {order.ordered_by}
+                {order.ordered_by}
 
-              \</p>
+              </p>
 
-            \</div>
+            </div>
 
 
 
-            {/\* ===============================================
+            {/* ===============================================
 
-                PRODUCTS
+                PRODUCTS
 
-            =============================================== \*/}
+            =============================================== */}
 
 
 
-            \<div className="bg-white p-5 sm:p-6">
+            <div className="bg-white p-5 sm:p-6">
 
-              \<div className="flex items-center gap-2 text-zinc-400">
+              <div className="flex items-center gap-2 text-zinc-400">
 
-                \<Package
+                <Package
 
-                  size={15}
+                  size={15}
 
-                  aria-hidden="true"
+                  aria-hidden="true"
 
-                />
+                />
 
 
 
-                \<p className="text-xs font-bold uppercase tracking-[0.12em]">
+                <p className="text-xs font-bold uppercase tracking-[0.12em]">
 
-                  Products
+                  Products
 
-                \</p>
+                </p>
 
-              \</div>
+              </div>
 
 
 
-              \<p className="mt-3 text-base font-bold text-zinc-950">
+              <p className="mt-3 text-base font-bold text-zinc-950">
 
-                {order.items.length}
+                {order.items.length}
 
-              \</p>
+              </p>
 
-            \</div>
+            </div>
 
 
 
-            {/\* ===============================================
+            {/* ===============================================
 
-                STATUS
+                STATUS
 
-            =============================================== \*/}
+            =============================================== */}
 
 
 
-            \<div className="bg-white p-5 sm:p-6">
+            <div className="bg-white p-5 sm:p-6">
 
-              \<div className="flex items-center gap-2 text-zinc-400">
+              <div className="flex items-center gap-2 text-zinc-400">
 
-                \<Clock3
+                <Clock3
 
-                  size={15}
+                  size={15}
 
-                  aria-hidden="true"
+                  aria-hidden="true"
 
-                />
+                />
 
 
 
-                \<p className="text-xs font-bold uppercase tracking-[0.12em]">
+                <p className="text-xs font-bold uppercase tracking-[0.12em]">
 
-                  Status
+                  Status
 
-                \</p>
+                </p>
 
-              \</div>
+              </div>
 
 
 
-              \<p className="mt-3 text-base font-bold text-zinc-950">
+              <p className="mt-3 text-base font-bold text-zinc-950">
 
-                {getStatusLabel(
+                {getStatusLabel(
 
-                  order.status
+                  order.status
 
-                )}
+                )}
 
-              \</p>
+              </p>
 
-            \</div>
+            </div>
 
-          \</div>
+          </div>
 
-        \</section>
+        </section>
 
 
 
-        {/\* =================================================
+        {/* =================================================
 
-            ORDER ITEMS
+            ORDER ITEMS
 
-        ================================================= \*/}
+        ================================================= */}
 
 
 
-        \<section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
 
-          \<div className="border-b border-zinc-200 p-5 sm:p-6">
+          <div className="border-b border-zinc-200 p-5 sm:p-6">
 
-            \<div className="flex items-start gap-3">
+            <div className="flex items-start gap-3">
 
-              \<div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-zinc-100 text-zinc-700">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-zinc-100 text-zinc-700">
 
-                \<Package
+                <Package
 
-                  size={18}
+                  size={18}
 
-                  aria-hidden="true"
+                  aria-hidden="true"
 
-                />
+                />
 
-              \</div>
+              </div>
 
 
 
-              \<div>
+              <div>
 
-                \<h2 className="text-base font-bold text-zinc-950">
+                <h2 className="text-base font-bold text-zinc-950">
 
-                  Ordered Products
+                  Ordered Products
 
-                \</h2>
+                </h2>
 
 
 
-                \<p className="mt-1 text-sm leading-6 text-zinc-500">
+                <p className="mt-1 text-sm leading-6 text-zinc-500">
 
-                  Historical Product information captured when
+                  Historical Product information captured when
 
-                  this Normal Order was saved.
+                  this Normal Order was saved.
 
-                \</p>
+                </p>
 
-              \</div>
+              </div>
 
-            \</div>
+            </div>
 
-          \</div>
+          </div>
 
 
 
-          {order.items.length >
+          {order.items.length >
 
-          0 ? (
+          0 ? (
 
-            <>
+            <>
 
-              {/\* =============================================
+              {/* =============================================
 
-                  DESKTOP TABLE
+                  DESKTOP TABLE
 
-              ============================================= \*/}
+              ============================================= */}
 
 
 
-              \<div className="hidden overflow-x-auto lg:block">
+              <div className="hidden overflow-x-auto lg:block">
 
-                \<table className="w-full min-w-[1450px] border-collapse">
+                <table className="w-full min-w-[1450px] border-collapse">
 
-                  \<thead className="bg-zinc-50">
+                  <thead className="bg-zinc-50">
 
-                    \<tr className="border-b border-zinc-200">
+                    <tr className="border-b border-zinc-200">
 
-                      \<th className="w-16 px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
+                      <th className="w-16 px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
 
-                        #
+                        #
 
-                      \</th>
+                      </th>
 
 
 
-                      \<th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
+                      <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
 
-                        SKU
+                        SKU
 
-                      \</th>
+                      </th>
 
 
 
-                      \<th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
+                      <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
 
-                        Product
+                        Product
 
-                      \</th>
+                      </th>
 
 
 
-                      \<th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
+                      <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
 
-                        Category
+                        Category
 
-                      \</th>
+                      </th>
 
 
 
-                      \<th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
+                      <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
 
-                        Product Size
+                        Product Size
 
-                      \</th>
+                      </th>
 
 
 
-                      \<th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
+                      <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
 
-                        Packaging
+                        Packaging
 
-                      \</th>
+                      </th>
 
 
 
-                      \<th className="min-w-[250px] px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
+                      <th className="min-w-[250px] px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
 
-                        Ordering Guide
+                        Ordering Guide
 
-                      \</th>
+                      </th>
 
 
 
-                      \<th className="px-5 py-3 text-right text-xs font-bold uppercase tracking-wide text-zinc-500">
+                      <th className="px-5 py-3 text-right text-xs font-bold uppercase tracking-wide text-zinc-500">
 
-                        On Hand Qty
+                        On Hand Qty
 
-                      \</th>
+                      </th>
 
 
 
-                      \<th className="px-5 py-3 text-right text-xs font-bold uppercase tracking-wide text-zinc-500">
+                      <th className="px-5 py-3 text-right text-xs font-bold uppercase tracking-wide text-zinc-500">
 
-                        Order Request Qty
+                        Order Request Qty
 
-                      \</th>
+                      </th>
 
 
 
-                      \<th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
+                      <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-wide text-zinc-500">
 
-                        UOM
+                        UOM
 
-                      \</th>
+                      </th>
 
-                    \</tr>
+                    </tr>
 
-                  \</thead>
+                  </thead>
 
 
 
-                  \<tbody>
+                  <tbody>
 
-                    {order.items.map(
+                    {order.items.map(
 
-                      (
+                      (
 
-                        item,
+                        item,
 
-                        index
+                        index
 
-                      ) => (
+                      ) => (
 
-                        \<tr
+                        <tr
 
-                          key={
+                          key={
 
-                            item.id
+                            item.id
 
-                          }
+                          }
 
-                          className="border-b border-zinc-100 last:border-b-0"
+                          className="border-b border-zinc-100 last:border-b-0"
 
-                        >
+                        >
 
-                          \<td className="px-5 py-4 text-sm font-semibold text-zinc-400">
+                          <td className="px-5 py-4 text-sm font-semibold text-zinc-400">
 
-                            {index + 1}
+                            {index + 1}
 
-                          \</td>
+                          </td>
 
 
 
-                          \<td className="whitespace-nowrap px-5 py-4">
+                          <td className="whitespace-nowrap px-5 py-4">
 
-                            \<span className="rounded-lg bg-zinc-100 px-2.5 py-1.5 font-mono text-xs font-bold text-zinc-700">
+                            <span className="rounded-lg bg-zinc-100 px-2.5 py-1.5 font-mono text-xs font-bold text-zinc-700">
 
-                              {
+                              {
 
-                                item.sku_snapshot
+                                item.sku_snapshot
 
-                              }
+                              }
 
-                            \</span>
+                            </span>
 
-                          \</td>
+                          </td>
 
 
 
-                          \<td className="px-5 py-4">
+                          <td className="px-5 py-4">
 
-                            \<p className="text-sm font-semibold text-zinc-950">
+                            <p className="text-sm font-semibold text-zinc-950">
 
-                              {
+                              {
 
-                                item.product_name_snapshot
+                                item.product_name_snapshot
 
-                              }
+                              }
 
-                            \</p>
+                            </p>
 
-                          \</td>
+                          </td>
 
 
 
-                          \<td className="px-5 py-4">
+                          <td className="px-5 py-4">
 
-                            \<p className="text-sm font-medium text-zinc-600">
+                            <p className="text-sm font-medium text-zinc-600">
 
-                              {
+                              {
 
-                                item.category_name_snapshot
+                                item.category_name_snapshot
 
-                              }
+                              }
 
-                            \</p>
+                            </p>
 
-                          \</td>
+                          </td>
 
 
 
-                          \<td className="whitespace-nowrap px-5 py-4">
+                          <td className="whitespace-nowrap px-5 py-4">
 
-                            \<p className="text-sm font-bold text-zinc-800">
+                            <p className="text-sm font-bold text-zinc-800">
 
-                              {formatQuantity(
+                              {formatQuantity(
 
-                                item.amount_qty_snapshot
+                                item.amount_qty_snapshot
 
-                              )}{" "}
+                              )}{" "}
 
-                              {item.uom}
+                              {item.uom}
 
-                            \</p>
+                            </p>
 
-                          \</td>
+                          </td>
 
 
 
-                          \<td className="whitespace-nowrap px-5 py-4">
+                          <td className="whitespace-nowrap px-5 py-4">
 
-                            \<p className="text-sm font-bold text-zinc-800">
+                            <p className="text-sm font-bold text-zinc-800">
 
-                              {formatQuantity(
+                              {formatQuantity(
 
-                                item.packaging_size_amount_snapshot
+                                item.packaging_size_amount_snapshot
 
-                              )}{" / "}
+                              )}{" / "}
 
-                              {item.packaging_uom_snapshot}
+                              {item.packaging_uom_snapshot}
 
-                            \</p>
+                            </p>
 
-                          \</td>
+                          </td>
 
 
 
-                          \<td className="px-5 py-4">
+                          <td className="px-5 py-4">
 
-                            \<p className="text-sm font-semibold text-amber-800">
+                            <p className="text-sm font-semibold text-amber-800">
 
-                              1 {item.packaging_uom_snapshot} ={" "}
+                              1 {item.packaging_uom_snapshot} ={" "}
 
-                              {formatQuantity(
+                              {formatQuantity(
 
-                                item.packaging_size_amount_snapshot
+                                item.packaging_size_amount_snapshot
 
-                              )}{" × "}
+                              )}{" × "}
 
-                              {formatQuantity(
+                              {formatQuantity(
 
-                                item.amount_qty_snapshot
+                                item.amount_qty_snapshot
 
-                              )}{" "}
+                              )}{" "}
 
-                              {item.uom}
+                              {item.uom}
 
-                            \</p>
+                            </p>
 
-                          \</td>
+                          </td>
 
 
 
-                          \<td className="whitespace-nowrap px-5 py-4 text-right text-sm font-semibold text-zinc-700">
+                          <td className="whitespace-nowrap px-5 py-4 text-right text-sm font-semibold text-zinc-700">
 
-                            {formatQuantity(
+                            {formatQuantity(
 
-                              item.on_hand_qty
+                              item.on_hand_qty
 
-                            )}
+                            )}
 
-                          \</td>
+                          </td>
 
 
 
-                          \<td className="whitespace-nowrap px-5 py-4 text-right text-sm font-bold text-zinc-950">
+                          <td className="whitespace-nowrap px-5 py-4 text-right text-sm font-bold text-zinc-950">
 
-                            {formatQuantity(
+                            {formatQuantity(
 
-                              item.requested_qty
+                              item.requested_qty
 
-                            )}
+                            )}
 
-                          \</td>
+                          </td>
 
 
 
-                          \<td className="whitespace-nowrap px-5 py-4 text-sm font-bold text-zinc-700">
+                          <td className="whitespace-nowrap px-5 py-4 text-sm font-bold text-zinc-700">
 
-                            {
+                            {
 
-                              item.packaging_uom_snapshot
+                              item.packaging_uom_snapshot
 
-                            }
+                            }
 
-                          \</td>
+                          </td>
 
-                        \</tr>
+                        </tr>
 
-                      )
+                      )
 
-                    )}
+                    )}
 
-                  \</tbody>
+                  </tbody>
 
-                \</table>
+                </table>
 
-              \</div>
+              </div>
 
 
 
-              {/\* =============================================
+              {/* =============================================
 
-                  MOBILE / TABLET CARDS
+                  MOBILE / TABLET CARDS
 
-              ============================================= \*/}
+              ============================================= */}
 
 
 
-              \<div className="divide-y divide-zinc-100 lg:hidden">
+              <div className="divide-y divide-zinc-100 lg:hidden">
 
-                {order.items.map(
+                {order.items.map(
 
-                  (
+                  (
 
-                    item,
+                    item,
 
-                    index
+                    index
 
-                  ) => (
+                  ) => (
 
-                    \<article
+                    <article
 
-                      key={
+                      key={
 
-                        item.id
+                        item.id
 
-                      }
+                      }
 
-                      className="p-5"
+                      className="p-5"
 
-                    >
+                    >
 
-                      \<div className="flex items-start gap-3">
+                      <div className="flex items-start gap-3">
 
-                        \<div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-zinc-100 text-xs font-bold text-zinc-600">
+                        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-zinc-100 text-xs font-bold text-zinc-600">
 
-                          {index + 1}
+                          {index + 1}
 
-                        \</div>
+                        </div>
 
 
 
-                        \<div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1">
 
-                          \<div className="flex flex-col gap-1">
+                          <div className="flex flex-col gap-1">
 
-                            \<p className="text-sm font-bold text-zinc-950">
+                            <p className="text-sm font-bold text-zinc-950">
 
-                              {
+                              {
 
-                                item.product_name_snapshot
+                                item.product_name_snapshot
 
-                              }
+                              }
 
-                            \</p>
+                            </p>
 
 
 
-                            \<p className="font-mono text-xs font-semibold text-zinc-500">
+                            <p className="font-mono text-xs font-semibold text-zinc-500">
 
-                              {
+                              {
 
-                                item.sku_snapshot
+                                item.sku_snapshot
 
-                              }
+                              }
 
-                            \</p>
+                            </p>
 
-                          \</div>
+                          </div>
 
 
 
-                          \<div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
+                          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
 
-                            \<div>
+                            <div>
 
-                              \<p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
+                              <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
 
-                                Category
+                                Category
 
-                              \</p>
+                              </p>
 
 
 
-                              \<p className="mt-1 text-xs font-semibold text-zinc-700">
+                              <p className="mt-1 text-xs font-semibold text-zinc-700">
 
-                                {
+                                {
 
-                                  item.category_name_snapshot
+                                  item.category_name_snapshot
 
-                                }
+                                }
 
-                              \</p>
+                              </p>
 
-                            \</div>
+                            </div>
 
 
 
-                            \<div>
+                            <div>
 
-                              \<p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
+                              <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
 
-                                Product Size
+                                Product Size
 
-                              \</p>
+                              </p>
 
 
 
-                              \<p className="mt-1 text-sm font-bold text-zinc-800">
+                              <p className="mt-1 text-sm font-bold text-zinc-800">
 
-                                {formatQuantity(
+                                {formatQuantity(
 
-                                  item.amount_qty_snapshot
+                                  item.amount_qty_snapshot
 
-                                )}{" "}
+                                )}{" "}
 
-                                {item.uom}
+                                {item.uom}
 
-                              \</p>
+                              </p>
 
-                            \</div>
+                            </div>
 
 
 
-                            \<div>
+                            <div>
 
-                              \<p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
+                              <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
 
-                                Packaging
+                                Packaging
 
-                              \</p>
+                              </p>
 
 
 
-                              \<p className="mt-1 text-sm font-bold text-zinc-800">
+                              <p className="mt-1 text-sm font-bold text-zinc-800">
 
-                                {formatQuantity(
+                                {formatQuantity(
 
-                                  item.packaging_size_amount_snapshot
+                                  item.packaging_size_amount_snapshot
 
-                                )}{" / "}
+                                )}{" / "}
 
-                                {item.packaging_uom_snapshot}
+                                {item.packaging_uom_snapshot}
 
-                              \</p>
+                              </p>
 
-                            \</div>
+                            </div>
 
 
 
-                            \<div>
+                            <div>
 
-                              \<p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
+                              <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
 
-                                On Hand
+                                On Hand
 
-                              \</p>
+                              </p>
 
 
 
-                              \<p className="mt-1 text-sm font-semibold text-zinc-800">
+                              <p className="mt-1 text-sm font-semibold text-zinc-800">
 
-                                {formatQuantity(
+                                {formatQuantity(
 
-                                  item.on_hand_qty
+                                  item.on_hand_qty
 
-                                )}
+                                )}
 
-                              \</p>
+                              </p>
 
-                            \</div>
+                            </div>
 
 
 
-                            \<div>
+                            <div>
 
-                              \<p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
+                              <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
 
-                                Requested
+                                Requested
 
-                              \</p>
+                              </p>
 
 
 
-                              \<p className="mt-1 text-sm font-bold text-zinc-950">
+                              <p className="mt-1 text-sm font-bold text-zinc-950">
 
-                                {formatQuantity(
+                                {formatQuantity(
 
-                                  item.requested_qty
+                                  item.requested_qty
 
-                                )}
+                                )}
 
-                              \</p>
+                              </p>
 
-                            \</div>
+                            </div>
 
 
 
-                            \<div>
+                            <div>
 
-                              \<p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
+                              <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
 
-                                UOM
+                                UOM
 
-                              \</p>
+                              </p>
 
 
 
-                              \<p className="mt-1 text-sm font-bold text-zinc-800">
+                              <p className="mt-1 text-sm font-bold text-zinc-800">
 
-                                {
+                                {
 
-                                  item.packaging_uom_snapshot
+                                  item.packaging_uom_snapshot
 
-                                }
+                                }
 
-                              \</p>
+                              </p>
 
-                            \</div>
+                            </div>
 
-                          \</div>
+                          </div>
 
 
 
-                          \<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+                          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
 
-                            \<p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">
 
-                              Ordering Guide
+                              Ordering Guide
 
-                            \</p>
+                            </p>
 
 
 
-                            \<p className="mt-1 text-sm font-bold text-zinc-900">
+                            <p className="mt-1 text-sm font-bold text-zinc-900">
 
-                              1 {item.packaging_uom_snapshot} ={" "}
+                              1 {item.packaging_uom_snapshot} ={" "}
 
-                              {formatQuantity(
+                              {formatQuantity(
 
-                                item.packaging_size_amount_snapshot
+                                item.packaging_size_amount_snapshot
 
-                              )}{" × "}
+                              )}{" × "}
 
-                              {formatQuantity(
+                              {formatQuantity(
 
-                                item.amount_qty_snapshot
+                                item.amount_qty_snapshot
 
-                              )}{" "}
+                              )}{" "}
 
-                              {item.uom}
+                              {item.uom}
 
-                            \</p>
+                            </p>
 
-                          \</div>
+                          </div>
 
-                        \</div>
+                        </div>
 
-                      \</div>
+                      </div>
 
-                    \</article>
+                    </article>
 
-                  )
+                  )
 
-                )}
+                )}
 
-              \</div>
+              </div>
 
-            \</>
+            </>
 
-          ) : (
+          ) : (
 
-            \<div className="px-6 py-14 text-center">
+            <div className="px-6 py-14 text-center">
 
-              \<div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-zinc-100 text-zinc-500">
+              <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-zinc-100 text-zinc-500">
 
-                \<Package
+                <Package
 
-                  size={20}
+                  size={20}
 
-                  aria-hidden="true"
+                  aria-hidden="true"
 
-                />
+                />
 
-              \</div>
+              </div>
 
 
 
-              \<p className="mt-4 text-sm font-bold text-zinc-950">
+              <p className="mt-4 text-sm font-bold text-zinc-950">
 
-                No Product rows available
+                No Product rows available
 
-              \</p>
+              </p>
 
 
 
-              \<p className="mt-2 text-sm text-zinc-500">
+              <p className="mt-2 text-sm text-zinc-500">
 
-                This Normal Order currently contains no saved
+                This Normal Order currently contains no saved
 
-                Product records.
+                Product records.
 
-              \</p>
+              </p>
 
-            \</div>
+            </div>
 
-          )}
+          )}
 
-        \</section>
+        </section>
 
 
 
-        {/\* =================================================
+        {/* =================================================
 
-            RECORD INFORMATION
+            RECORD INFORMATION
 
-        ================================================= \*/}
+        ================================================= */}
 
 
 
-        \<section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
 
-          \<div className="border-b border-zinc-200 p-5 sm:p-6">
+          <div className="border-b border-zinc-200 p-5 sm:p-6">
 
-            \<h2 className="text-base font-bold text-zinc-950">
+            <h2 className="text-base font-bold text-zinc-950">
 
-              Record Information
+              Record Information
 
-            \</h2>
+            </h2>
 
 
 
-            \<p className="mt-1 text-sm text-zinc-500">
+            <p className="mt-1 text-sm text-zinc-500">
 
-              Database timestamps for this Normal Order.
+              Database timestamps for this Normal Order.
 
-            \</p>
+            </p>
 
-          \</div>
+          </div>
 
 
 
-          \<div className="grid gap-px bg-zinc-200 sm:grid-cols-2">
+          <div className="grid gap-px bg-zinc-200 sm:grid-cols-2">
 
-            \<div className="bg-white p-5 sm:p-6">
+            <div className="bg-white p-5 sm:p-6">
 
-              \<p className="text-xs font-bold uppercase tracking-[0.12em] text-zinc-400">
+              <p className="text-xs font-bold uppercase tracking-[0.12em] text-zinc-400">
 
-                Created
+                Created
 
-              \</p>
+              </p>
 
 
 
-              \<p className="mt-3 text-sm font-semibold text-zinc-800">
+              <p className="mt-3 text-sm font-semibold text-zinc-800">
 
-                {formatDateTime(
+                {formatDateTime(
 
-                  order.created_at
+                  order.created_at
 
-                )}
+                )}
 
-              \</p>
+              </p>
 
-            \</div>
+            </div>
 
 
 
-            \<div className="bg-white p-5 sm:p-6">
+            <div className="bg-white p-5 sm:p-6">
 
-              \<p className="text-xs font-bold uppercase tracking-[0.12em] text-zinc-400">
+              <p className="text-xs font-bold uppercase tracking-[0.12em] text-zinc-400">
 
-                Last Updated
+                Last Updated
 
-              \</p>
+              </p>
 
 
 
-              \<p className="mt-3 text-sm font-semibold text-zinc-800">
+              <p className="mt-3 text-sm font-semibold text-zinc-800">
 
-                {formatDateTime(
+                {formatDateTime(
 
-                  order.updated_at
+                  order.updated_at
 
-                )}
+                )}
 
-              \</p>
+              </p>
 
-            \</div>
+            </div>
 
-          \</div>
+          </div>
 
-        \</section>
+        </section>
 
 
 
-        {/\* =================================================
+        {/* =================================================
 
-            ACTIONS
+            ACTIONS
 
-        ================================================= \*/}
+        ================================================= */}
 
 
 
-        \<section className="flex flex-col-reverse gap-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-end sm:p-6">
+        <section className="flex flex-col-reverse gap-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-end sm:p-6">
 
-          \<Link
+          <Link
 
-            href="/orders/normal"
+            href="/orders/normal"
 
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
 
-          >
+          >
 
-            \<ArrowLeft
+            <ArrowLeft
 
-              size={16}
+              size={16}
 
-              aria-hidden="true"
+              aria-hidden="true"
 
-            />
+            />
 
 
 
-            Back to Normal Orders
+            Back to Normal Orders
 
-          \</Link>
+          </Link>
 
 
 
-          \<a
+          <a
 
-            href={\`/api/orders/normal/${order.id}/pdf\`}
+            href={`/api/orders/normal/${order.id}/pdf`}
 
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50"
 
-          >
+          >
 
-            \<Download
+            <Download
 
-              size={16}
+              size={16}
 
-              aria-hidden="true"
+              aria-hidden="true"
 
-            />
+            />
 
 
 
-            Export PDF
+            Export PDF
 
-          \</a>
+          </a>
 
 
 
-          \<Link
+          <Link
 
-            href={\`/orders/normal/${order.id}/edit\`}
+            href={`/orders/normal/${order.id}/edit`}
 
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-zinc-950 px-5 text-sm font-semibold text-white transition hover:bg-zinc-800"
 
-          >
+          >
 
-            \<Pencil
+            <Pencil
 
-              size={16}
+              size={16}
 
-              aria-hidden="true"
+              aria-hidden="true"
 
-            />
+            />
 
 
 
-            Edit Normal Order
+            Edit Normal Order
 
-          \</Link>
+          </Link>
 
-        \</section>
+        </section>
 
-      \</div>
+      </div>
 
-    \</AppShell>
+    </AppShell>
 
-  );
+  );
 
 }
