@@ -2648,7 +2648,7 @@ export default function NormalOrderForm({
                     </div>
 
                     {/* =====================================
-                        UOM
+                        ORDER UOM
                     ===================================== */}
 
                     <div>
@@ -2659,75 +2659,18 @@ export default function NormalOrderForm({
                         UOM
                       </label>
 
-                      {isEditMode ? (
-                        <input
-                          id={`normal-order-uom-${item.rowKey}`}
-                          type="text"
-                          readOnly
-                          tabIndex={-1}
-                          value={
-                            selectedProduct?.uom ??
-                            "Auto"
-                          }
-                          className="h-11 w-full cursor-default rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm font-bold text-zinc-600 outline-none"
-                        />
-                      ) : (
-                        <div className="relative">
-                          <select
-                            id={`normal-order-uom-${item.rowKey}`}
-                            value={
-                              item.uom
-                            }
-                            onChange={(
-                              event
-                            ) =>
-                              updateItem(
-                                item.rowKey,
-                                {
-                                  uom:
-                                    event.target.value as
-                                      | NormalOrderUom
-                                      | "",
-                                }
-                              )
-                            }
-                            disabled={
-                              isSaving ||
-                              !selectedProduct
-                            }
-                            className="h-11 w-full appearance-none rounded-xl border border-zinc-200 bg-white px-4 pr-10 text-sm font-bold uppercase text-zinc-700 outline-none transition focus:border-zinc-400 focus:ring-4 focus:ring-zinc-100 disabled:cursor-not-allowed disabled:bg-zinc-50"
-                          >
-                            <option value="">
-                              Select
-                            </option>
-
-                            {UOM_OPTIONS.map(
-                              (
-                                option
-                              ) => (
-                                <option
-                                  key={
-                                    option.value
-                                  }
-                                  value={
-                                    option.value
-                                  }
-                                >
-                                  {
-                                    option.label
-                                  }
-                                </option>
-                              )
-                            )}
-                          </select>
-
-                          <ChevronDown
-                            size={16}
-                            aria-hidden="true"
-                            className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400"
-                          />
-                        </div>
-                      )}
+                      <input
+                        id={`normal-order-uom-${item.rowKey}`}
+                        type="text"
+                        readOnly
+                        tabIndex={-1}
+                        value={
+                          item.packagingUom
+                            ? item.packagingUom.toUpperCase()
+                            : "Auto"
+                        }
+                        className="h-11 w-full cursor-default rounded-xl border border-zinc-200 bg-zinc-50 px-4 text-sm font-bold uppercase text-zinc-600 outline-none"
+                      />
                     </div>
 
                     {/* =====================================
@@ -2861,7 +2804,7 @@ export default function NormalOrderForm({
                         </div>
                       </div>
 
-                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                         <div>
                           <label
                             htmlFor={`normal-order-product-size-${item.rowKey}`}
@@ -2902,6 +2845,70 @@ export default function NormalOrderForm({
                               {item.uom ||
                                 selectedProduct.uom}
                             </span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor={`normal-order-product-uom-${item.rowKey}`}
+                            className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700"
+                          >
+                            Product UOM
+                          </label>
+
+                          <div className="relative">
+                            <select
+                              id={`normal-order-product-uom-${item.rowKey}`}
+                              value={
+                                item.uom
+                              }
+                              onChange={(
+                                event
+                              ) =>
+                                updateItem(
+                                  item.rowKey,
+                                  {
+                                    uom:
+                                      event.target.value as
+                                        | NormalOrderUom
+                                        | "",
+                                  }
+                                )
+                              }
+                              disabled={
+                                isSaving
+                              }
+                              className="h-11 w-full appearance-none rounded-xl border border-amber-200 bg-white px-4 pr-10 text-sm font-semibold uppercase text-zinc-950 outline-none transition focus:border-amber-400 focus:ring-4 focus:ring-amber-100 disabled:bg-zinc-50"
+                            >
+                              <option value="">
+                                Select UOM
+                              </option>
+
+                              {UOM_OPTIONS.map(
+                                (
+                                  option
+                                ) => (
+                                  <option
+                                    key={
+                                      option.value
+                                    }
+                                    value={
+                                      option.value
+                                    }
+                                  >
+                                    {
+                                      option.label
+                                    }
+                                  </option>
+                                )
+                              )}
+                            </select>
+
+                            <ChevronDown
+                              size={16}
+                              aria-hidden="true"
+                              className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-amber-700"
+                            />
                           </div>
                         </div>
 
