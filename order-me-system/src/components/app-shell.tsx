@@ -27,7 +27,6 @@ import {
   PanelLeftOpen,
   ShieldCheck,
   ShoppingCart,
-  Sparkles,
   Volume2,
   Trash2,
   X,
@@ -696,7 +695,12 @@ export default function AppShell({
           <div className="w-[min(92vw,390px)] overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-2xl shadow-zinc-950/15">
             <div className="flex items-center gap-3 border-b border-amber-100 bg-gradient-to-r from-amber-50 via-white to-white px-4 py-4">
               <div className="relative grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-zinc-950 text-amber-300 shadow-lg">
-                <Sparkles size={22} className={assistantSpeaking ? "animate-pulse" : ""} />
+                <span
+                  aria-hidden="true"
+                  className={`text-[26px] leading-none ${assistantSpeaking ? "animate-pulse" : ""}`}
+                >
+                  👩‍🍳
+                </span>
                 <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
               </div>
               <div className="min-w-0 flex-1">
@@ -814,7 +818,12 @@ export default function AppShell({
           className="relative grid h-16 w-16 place-items-center rounded-full border-4 border-white bg-zinc-950 text-amber-300 shadow-2xl shadow-zinc-950/25 transition hover:scale-105 active:scale-95"
           aria-label="Open Order Me AI"
         >
-          <Sparkles size={25} className={assistantSpeaking ? "animate-pulse" : ""} />
+          <span
+            aria-hidden="true"
+            className={`text-[31px] leading-none ${assistantSpeaking ? "animate-pulse" : ""}`}
+          >
+            👩‍🍳
+          </span>
           <span className="absolute right-0 top-0 h-4 w-4 rounded-full border-2 border-white bg-emerald-500" />
         </button>
       </div>
