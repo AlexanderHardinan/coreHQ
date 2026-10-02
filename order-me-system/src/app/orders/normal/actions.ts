@@ -1769,13 +1769,54 @@ async function getAiNormalOrderProductCandidates(
   const supabase =
     createAdminClient();
 
+  const searchTerms =
+    Array.from(
+      new Set(
+        normalizedNames.flatMap(
+          (name) => {
+            const normalizedName =
+              normalizeAiProductName(
+                name
+              );
+
+            const tokens =
+              getAiProductNameTokens(
+                normalizedName
+              ).filter(
+                (token) =>
+                  token.length >= 2
+              );
+
+            return [
+              normalizedName,
+              ...tokens,
+            ].filter(Boolean);
+          }
+        )
+      )
+    );
+
+  if (
+    searchTerms.length ===
+    0
+  ) {
+    return [];
+  }
+
   const searchFilters =
-    normalizedNames.flatMap(
-      (
-        name
-      ) => {
+    searchTerms.flatMap(
+      (term) => {
+        const safeTerm =
+          normalizePostgrestSearch(
+            term
+          );
+
+        if (!safeTerm) {
+          return [];
+        }
+
         const pattern =
-          `%${name}%`;
+          `%${safeTerm}%`;
 
         return [
           `name.ilike.${pattern}`,
@@ -1783,6 +1824,13 @@ async function getAiNormalOrderProductCandidates(
         ];
       }
     );
+
+  if (
+    searchFilters.length ===
+    0
+  ) {
+    return [];
+  }
 
   const {
     data,
