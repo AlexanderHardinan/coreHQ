@@ -21,7 +21,9 @@ import {
   ClipboardList,
   Hash,
   Loader2,
+  Mic,
   PackageSearch,
+  Sparkles,
   Plus,
   Save,
   Search,
@@ -33,7 +35,9 @@ import {
 import {
   createNormalOrderAction,
   getNormalOrderProductOptions,
+  resolveNormalOrderAiCommandAction,
   updateNormalOrderAction,
+  type NormalOrderAiResolvedItem,
   type NormalOrderPackagingUom,
   type NormalOrderProductOption,
   type NormalOrderRecord,
@@ -1381,6 +1385,49 @@ function ProductSearchPicker({
 }
 
 // =========================================================
+// AI VOICE HANDOFF
+// =========================================================
+
+type BrowserSpeechRecognitionResult = {
+  isFinal: boolean;
+  0: {
+    transcript: string;
+  };
+};
+
+type BrowserSpeechRecognitionEvent = {
+  resultIndex: number;
+  results: ArrayLike<BrowserSpeechRecognitionResult>;
+};
+
+type BrowserSpeechRecognitionErrorEvent = {
+  error: string;
+};
+
+type BrowserSpeechRecognition = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onstart: (() => void) | null;
+  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
+  onerror: ((event: BrowserSpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+};
+
+type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+
+type VoiceWindow = Window &
+  typeof globalThis & {
+    SpeechRecognition?: BrowserSpeechRecognitionConstructor;
+    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
+  };
+
+const ORDER_SESSION_NAME_KEY = "order-me:normal-order:ordered-by";
+
+// =========================================================
 // COMPONENT
 // =========================================================
 
@@ -1405,6 +1452,52 @@ export default function NormalOrderForm({
     useTransition();
 
   const [
+    isAiProcessing,
+    startAiTransition,
+  ] =
+    useTransition();
+
+  const [
+    aiCommand,
+    setAiCommand,
+  ] =
+    useState(
+      ""
+    );
+
+  const [
+    aiMessage,
+    setAiMessage,
+  ] =
+    useState<
+      string | null
+    >(
+      null
+    );
+
+  const [
+    isVoiceListening,
+    setIsVoiceListening,
+  ] =
+    useState(false);
+
+  const [
+    voiceSupported,
+    setVoiceSupported,
+  ] =
+    useState(true);
+
+  const voiceRecognitionRef =
+    useRef<BrowserSpeechRecognition | null>(
+      null
+    );
+
+  const aiCommandProcessorRef =
+    useRef<(command: string) => void>(
+      () => undefined
+    );
+
+  const [
     form,
     setForm,
   ] =
@@ -1414,6 +1507,175 @@ export default function NormalOrderForm({
           order
         )
     );
+
+  useEffect(() => {
+    if (
+      isEditMode ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+
+    const capturedName =
+      window.sessionStorage
+        .getItem(ORDER_SESSION_NAME_KEY)
+        ?.trim()
+        .replace(/\s+/g, " ") ??
+      "";
+
+    if (!capturedName) {
+      return;
+    }
+
+    setForm((current) => ({
+      ...current,
+      orderedBy:
+        current.orderedBy.trim() ||
+        capturedName,
+    }));
+
+    window.sessionStorage.removeItem(
+      ORDER_SESSION_NAME_KEY
+    );
+
+    const message = `${capturedName}, what would you like to order? Tap the microphone and tell me the products and quantities you need.`;
+    setAiMessage(message);
+
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+
+      const utterance =
+        new SpeechSynthesisUtterance(
+          message
+        );
+
+      utterance.rate = 0.95;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+
+      window.setTimeout(() => {
+        window.speechSynthesis.speak(
+          utterance
+        );
+      }, 350);
+    }
+  }, [isEditMode]);
+
+  useEffect(() => {
+    if (
+      isEditMode ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+
+    const voiceWindow =
+      window as VoiceWindow;
+
+    const Recognition =
+      voiceWindow.SpeechRecognition ??
+      voiceWindow.webkitSpeechRecognition;
+
+    if (!Recognition) {
+      setVoiceSupported(false);
+      return;
+    }
+
+    setVoiceSupported(true);
+
+    const recognition =
+      new Recognition();
+
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang =
+      navigator.language || "en-US";
+
+    recognition.onstart = () => {
+      setIsVoiceListening(true);
+      setAiMessage(
+        "Listening... Tell me what you would like to order."
+      );
+    };
+
+    recognition.onresult = (event) => {
+      let transcript = "";
+      let hasFinalResult = false;
+
+      for (
+        let index = event.resultIndex;
+        index < event.results.length;
+        index += 1
+      ) {
+        const result =
+          event.results[index];
+
+        transcript +=
+          result[0]?.transcript ?? "";
+
+        if (result.isFinal) {
+          hasFinalResult = true;
+        }
+      }
+
+      const normalizedTranscript =
+        transcript
+          .trim()
+          .replace(/\s+/g, " ");
+
+      if (!normalizedTranscript) {
+        return;
+      }
+
+      setAiCommand(
+        normalizedTranscript
+      );
+
+      if (hasFinalResult) {
+        recognition.stop();
+        aiCommandProcessorRef.current(
+          normalizedTranscript
+        );
+      }
+    };
+
+    recognition.onerror = (event) => {
+      setIsVoiceListening(false);
+
+      const message =
+        event.error === "not-allowed" ||
+        event.error === "service-not-allowed"
+          ? "Microphone permission is required for voice ordering. You can still type your order instruction."
+          : event.error === "no-speech"
+            ? "I did not hear an order. Tap the microphone and try again."
+            : "Voice recognition could not capture the order. Please try again or type the instruction.";
+
+      setAiMessage(message);
+    };
+
+    recognition.onend = () => {
+      setIsVoiceListening(false);
+    };
+
+    voiceRecognitionRef.current =
+      recognition;
+
+    return () => {
+      recognition.onstart = null;
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      recognition.abort();
+
+      if (
+        voiceRecognitionRef.current ===
+        recognition
+      ) {
+        voiceRecognitionRef.current =
+          null;
+      }
+    };
+  }, [isEditMode]);
 
   const [
     productCatalog,
@@ -1881,6 +2143,408 @@ export default function NormalOrderForm({
         };
       }
     );
+  }
+
+  // =======================================================
+  // AI ORDER ASSISTANT
+  // =======================================================
+
+  function createAiFormItem(
+    product: NormalOrderProductOption,
+    requestedQty: number
+  ): NormalOrderFormItem {
+    return {
+      rowKey:
+        `ai-${Date.now()}-${product.id}-${Math.random()
+          .toString(36)
+          .slice(2)}`,
+
+      productId:
+        product.id,
+
+      onHandQty:
+        "0",
+
+      requestedQty:
+        quantityToInput(
+          requestedQty
+        ),
+
+      amountQty:
+        quantityToInput(
+          product.amount_qty
+        ),
+
+      uom:
+        product.uom,
+
+      packagingSizeAmount:
+        quantityToInput(
+          product.packaging_size_amount
+        ),
+
+      packagingUom:
+        product.packaging_uom ??
+        "",
+    };
+  }
+
+  function applyAiResolvedItems(
+    resolvedItems:
+      NormalOrderAiResolvedItem[],
+    clearOrder: boolean
+  ) {
+    const matchedItems =
+      resolvedItems.filter(
+        (
+          item
+        ) =>
+          item.matchStatus ===
+            "matched" &&
+          item.product
+      );
+
+    setProductCatalog(
+      (
+        current
+      ) =>
+        mergeProductOptions(
+          current,
+          matchedItems
+            .map(
+              (
+                item
+              ) =>
+                item.product
+            )
+            .filter(
+              (
+                product
+              ): product is NormalOrderProductOption =>
+                Boolean(
+                  product
+                )
+            )
+        )
+    );
+
+    setForm(
+      (
+        current
+      ) => {
+        let nextItems =
+          clearOrder
+            ? []
+            : current.items.filter(
+                (
+                  item
+                ) =>
+                  Boolean(
+                    item.productId
+                  )
+              );
+
+        for (
+          const resolved of
+          matchedItems
+        ) {
+          const product =
+            resolved.product;
+
+          if (
+            !product
+          ) {
+            continue;
+          }
+
+          if (
+            resolved.operation ===
+            "remove"
+          ) {
+            nextItems =
+              nextItems.filter(
+                (
+                  item
+                ) =>
+                  item.productId !==
+                  product.id
+              );
+
+            continue;
+          }
+
+          const existingIndex =
+            nextItems.findIndex(
+              (
+                item
+              ) =>
+                item.productId ===
+                product.id
+            );
+
+          const requestedQty =
+            resolved.requestedQty;
+
+          if (
+            requestedQty ===
+              null ||
+            !Number.isFinite(
+              requestedQty
+            ) ||
+            requestedQty <
+              0
+          ) {
+            continue;
+          }
+
+          if (
+            existingIndex >=
+            0
+          ) {
+            nextItems =
+              nextItems.map(
+                (
+                  item,
+                  index
+                ) =>
+                  index ===
+                  existingIndex
+                    ? {
+                        ...item,
+
+                        requestedQty:
+                          quantityToInput(
+                            requestedQty
+                          ),
+                      }
+                    : item
+              );
+
+            continue;
+          }
+
+          nextItems = [
+            ...nextItems,
+            createAiFormItem(
+              product,
+              requestedQty
+            ),
+          ];
+        }
+
+        return {
+          ...current,
+
+          items:
+            nextItems.length >
+            0
+              ? nextItems
+              : [
+                  createBlankItem(
+                    0
+                  ),
+                ],
+        };
+      }
+    );
+  }
+
+  function processAiCommand(
+    commandInput: string
+  ) {
+    const command =
+      commandInput
+        .trim()
+        .replace(
+          /\s+/g,
+          " "
+        );
+
+    if (
+      !command ||
+      isAiProcessing ||
+      isSaving ||
+      isEditMode
+    ) {
+      return;
+    }
+
+    setAiMessage(
+      null
+    );
+
+    startAiTransition(
+      async () => {
+        const result =
+          await resolveNormalOrderAiCommandAction(
+            command
+          );
+
+        if (
+          !result.success
+        ) {
+          setAiMessage(
+            result.message
+          );
+
+          toast.error(
+            "AI Order Assistant",
+            result.message
+          );
+
+          return;
+        }
+
+        const items =
+          result.items ??
+          [];
+
+        applyAiResolvedItems(
+          items,
+          Boolean(
+            result.clearOrder
+          )
+        );
+
+        const ambiguous =
+          items.filter(
+            (
+              item
+            ) =>
+              item.matchStatus ===
+              "ambiguous"
+          );
+
+        const notFound =
+          items.filter(
+            (
+              item
+            ) =>
+              item.matchStatus ===
+              "not_found"
+          );
+
+        const details = [
+          ambiguous.length >
+          0
+            ? `Needs selection: ${ambiguous
+                .map(
+                  (
+                    item
+                  ) =>
+                    item.requestedProductName
+                )
+                .join(", ")}`
+            : null,
+
+          notFound.length >
+          0
+            ? `Not found: ${notFound
+                .map(
+                  (
+                    item
+                  ) =>
+                    item.requestedProductName
+                )
+                .join(", ")}`
+            : null,
+        ].filter(
+          (
+            value
+          ): value is string =>
+            Boolean(
+              value
+            )
+        );
+
+        const message =
+          details.length >
+          0
+            ? `${result.message}. ${details.join(". ")}`
+            : result.message;
+
+        setAiMessage(
+          message
+        );
+
+        setAiCommand(
+          ""
+        );
+
+        if (
+          typeof window !== "undefined" &&
+          "speechSynthesis" in window
+        ) {
+          window.speechSynthesis.cancel();
+
+          const utterance =
+            new SpeechSynthesisUtterance(
+              message
+            );
+
+          utterance.rate = 0.95;
+          utterance.pitch = 1;
+          utterance.volume = 1;
+          window.speechSynthesis.speak(
+            utterance
+          );
+        }
+
+        toast.success(
+          "AI Order Assistant",
+          message
+        );
+      }
+    );
+  }
+
+  aiCommandProcessorRef.current =
+    processAiCommand;
+
+  function handleAiCommand() {
+    processAiCommand(
+      aiCommand
+    );
+  }
+
+  function toggleVoiceOrder() {
+    if (
+      isSaving ||
+      isAiProcessing ||
+      isEditMode
+    ) {
+      return;
+    }
+
+    const recognition =
+      voiceRecognitionRef.current;
+
+    if (!recognition) {
+      setAiMessage(
+        "Voice ordering is not supported by this browser. You can still type your order instruction."
+      );
+      return;
+    }
+
+    if (isVoiceListening) {
+      recognition.stop();
+      return;
+    }
+
+    if (
+      typeof window !== "undefined" &&
+      "speechSynthesis" in window
+    ) {
+      window.speechSynthesis.cancel();
+    }
+
+    try {
+      recognition.start();
+    } catch {
+      setAiMessage(
+        "The microphone is already starting. Please wait a moment and try again."
+      );
+    }
   }
 
   // =======================================================
@@ -2388,6 +3052,158 @@ export default function NormalOrderForm({
           </div>
         </div>
       </section>
+
+      {!isEditMode ? (
+        <section className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
+          <div className="border-b border-amber-100 bg-amber-50/60 p-5 sm:p-6">
+            <div className="flex items-start gap-3">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-500 text-white shadow-sm">
+                <Sparkles
+                  size={20}
+                  aria-hidden="true"
+                />
+              </div>
+
+              <div>
+                <h2 className="text-base font-bold text-zinc-950">
+                  AI Order Assistant
+                </h2>
+
+                <p className="mt-1 text-sm leading-6 text-zinc-600">
+                  Tell the assistant what you need. Matched Products are added to this order for your review before saving.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-5 sm:p-6">
+            <label
+              htmlFor="normal-order-ai-command"
+              className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-zinc-500"
+            >
+              Order Instruction
+            </label>
+
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch">
+              <textarea
+                id="normal-order-ai-command"
+                value={
+                  aiCommand
+                }
+                onChange={(
+                  event
+                ) =>
+                  setAiCommand(
+                    event.target.value
+                  )
+                }
+                onKeyDown={(
+                  event
+                ) => {
+                  if (
+                    event.key ===
+                      "Enter" &&
+                    !event.shiftKey
+                  ) {
+                    event.preventDefault();
+                    handleAiCommand();
+                  }
+                }}
+                disabled={
+                  isSaving ||
+                  isAiProcessing
+                }
+                maxLength={2000}
+                rows={3}
+                placeholder="Example: Order 10 kilos chicken breast, 5 boxes avocado, and 6 bottles olive oil."
+                className="min-h-24 flex-1 resize-y rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm leading-6 text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-100 disabled:cursor-not-allowed disabled:bg-zinc-50"
+              />
+
+              <button
+                type="button"
+                onClick={
+                  toggleVoiceOrder
+                }
+                disabled={
+                  isSaving ||
+                  isAiProcessing ||
+                  !voiceSupported
+                }
+                className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-5 py-3 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 lg:min-w-40 ${
+                  isVoiceListening
+                    ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                    : "border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                }`}
+              >
+                {isVoiceListening ? (
+                  <Loader2
+                    size={16}
+                    className="animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Mic
+                    size={16}
+                    aria-hidden="true"
+                  />
+                )}
+
+                {isVoiceListening
+                  ? "Listening..."
+                  : voiceSupported
+                    ? "Speak Order"
+                    : "Voice Unavailable"}
+              </button>
+
+              <button
+                type="button"
+                onClick={
+                  handleAiCommand
+                }
+                disabled={
+                  isSaving ||
+                  isAiProcessing ||
+                  !aiCommand.trim()
+                }
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-zinc-950 px-5 py-3 text-sm font-bold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 lg:min-w-44"
+              >
+                {isAiProcessing ? (
+                  <Loader2
+                    size={16}
+                    className="animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Sparkles
+                    size={16}
+                    aria-hidden="true"
+                  />
+                )}
+
+                {isAiProcessing
+                  ? "Processing..."
+                  : "Apply to Order"}
+              </button>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs leading-5 text-zinc-500">
+                Speak Order listens once and applies the final voice instruction automatically. Enter applies typed instructions. Shift + Enter adds a new line. The order is not saved automatically.
+              </p>
+
+              <span className="text-[11px] font-semibold text-zinc-400">
+                {aiCommand.length}/2000
+              </span>
+            </div>
+
+            {aiMessage ? (
+              <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm font-medium leading-6 text-zinc-700">
+                {aiMessage}
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       {/* ===================================================
           PRODUCT ORDER TABLE

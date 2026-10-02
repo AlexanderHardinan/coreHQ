@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  parseNormalOrderCommand,
+} from "@/lib/ai/normal-order-assistant";
+
+import {
   requireDatabaseLocation,
 } from "@/lib/location/database-location";
 
@@ -119,6 +123,38 @@ export type NormalOrderListRecord = {
 
   created_at: string;
   updated_at: string;
+};
+
+export type NormalOrderAiMatchStatus =
+  | "matched"
+  | "ambiguous"
+  | "not_found";
+
+export type NormalOrderAiResolvedItem = {
+  operation:
+    | "add"
+    | "update"
+    | "remove"
+    | "clear";
+
+  requestedProductName: string;
+  requestedQty: number | null;
+  requestedUnit: string | null;
+
+  matchStatus: NormalOrderAiMatchStatus;
+
+  product?: NormalOrderProductOption;
+
+  candidates?: NormalOrderProductOption[];
+};
+
+export type NormalOrderAiActionResult = {
+  success: boolean;
+  message: string;
+
+  clearOrder?: boolean;
+
+  items?: NormalOrderAiResolvedItem[];
 };
 
 export type NormalOrderActionResult = {
@@ -1439,6 +1475,715 @@ export async function getNormalOrderProductOptions(
         product.is_active,
     })
   );
+}
+
+// =========================================================
+// AI NORMAL ORDER PRODUCT RESOLUTION
+// =========================================================
+//
+// AI only interprets the user's natural-language instruction.
+//
+// Product identity, Product ID, Product UOM, packaging details,
+// category, and active/location availability are resolved here
+// from the trusted database.
+//
+// This action never creates, updates, or deletes an order.
+// =========================================================
+
+const MAX_AI_ORDER_ITEMS =
+  50;
+
+const MAX_AI_PRODUCT_CANDIDATES =
+  200;
+
+function normalizeAiProductName(
+  value: string
+): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(
+      /[^a-z0-9]+/g,
+      " "
+    )
+    .replace(
+      /\s+/g,
+      " "
+    )
+    .trim();
+}
+
+function getAiProductNameTokens(
+  value: string
+): string[] {
+  return normalizeAiProductName(
+    value
+  )
+    .split(" ")
+    .filter(Boolean);
+}
+
+function scoreAiProductMatch(
+  requestedName: string,
+  product:
+    Pick<
+      NormalOrderProductOption,
+      "name" | "sku"
+    >
+): number {
+  const requested =
+    normalizeAiProductName(
+      requestedName
+    );
+
+  const productName =
+    normalizeAiProductName(
+      product.name
+    );
+
+  const sku =
+    normalizeAiProductName(
+      product.sku
+    );
+
+  if (
+    !requested ||
+    !productName
+  ) {
+    return 0;
+  }
+
+  if (
+    productName ===
+    requested
+  ) {
+    return 1000;
+  }
+
+  if (
+    sku &&
+    sku ===
+      requested
+  ) {
+    return 950;
+  }
+
+  const requestedTokens =
+    getAiProductNameTokens(
+      requested
+    );
+
+  const productTokens =
+    new Set(
+      getAiProductNameTokens(
+        productName
+      )
+    );
+
+  if (
+    requestedTokens.length ===
+    0
+  ) {
+    return 0;
+  }
+
+  const matchedTokens =
+    requestedTokens.filter(
+      (
+        token
+      ) =>
+        productTokens.has(
+          token
+        )
+    ).length;
+
+  const coverage =
+    matchedTokens /
+    requestedTokens.length;
+
+  let score =
+    coverage * 700;
+
+  if (
+    productName.includes(
+      requested
+    )
+  ) {
+    score +=
+      180;
+  }
+
+  if (
+    requested.includes(
+      productName
+    )
+  ) {
+    score +=
+      120;
+  }
+
+  if (
+    productName.startsWith(
+      requested
+    )
+  ) {
+    score +=
+      60;
+  }
+
+  return score;
+}
+
+function resolveAiProductMatch(
+  requestedName: string,
+  products:
+    NormalOrderProductOption[]
+): {
+  matchStatus:
+    NormalOrderAiMatchStatus;
+
+  product?:
+    NormalOrderProductOption;
+
+  candidates?:
+    NormalOrderProductOption[];
+} {
+  const ranked =
+    products
+      .map(
+        (
+          product
+        ) => ({
+          product,
+
+          score:
+            scoreAiProductMatch(
+              requestedName,
+              product
+            ),
+        })
+      )
+      .filter(
+        (
+          entry
+        ) =>
+          entry.score >=
+          500
+      )
+      .sort(
+        (
+          a,
+          b
+        ) =>
+          b.score -
+          a.score ||
+          a.product.name.localeCompare(
+            b.product.name
+          )
+      );
+
+  if (
+    ranked.length ===
+    0
+  ) {
+    return {
+      matchStatus:
+        "not_found",
+    };
+  }
+
+  const best =
+    ranked[0];
+
+  const second =
+    ranked[1];
+
+  if (
+    best.score >=
+      950 ||
+    !second ||
+    best.score -
+      second.score >=
+      120
+  ) {
+    return {
+      matchStatus:
+        "matched",
+
+      product:
+        best.product,
+    };
+  }
+
+  return {
+    matchStatus:
+      "ambiguous",
+
+    candidates:
+      ranked
+        .slice(
+          0,
+          5
+        )
+        .map(
+          (
+            entry
+          ) =>
+            entry.product
+        ),
+  };
+}
+
+async function getAiNormalOrderProductCandidates(
+  locationId: string,
+  requestedNames:
+    string[]
+): Promise<
+  NormalOrderProductOption[]
+> {
+  const normalizedNames =
+    Array.from(
+      new Set(
+        requestedNames
+          .map(
+            (
+              name
+            ) =>
+              normalizePostgrestSearch(
+                normalizeSearch(
+                  name
+                )
+              )
+          )
+          .filter(Boolean)
+      )
+    );
+
+  if (
+    normalizedNames.length ===
+    0
+  ) {
+    return [];
+  }
+
+  const supabase =
+    createAdminClient();
+
+  const searchFilters =
+    normalizedNames.flatMap(
+      (
+        name
+      ) => {
+        const pattern =
+          `%${name}%`;
+
+        return [
+          `name.ilike.${pattern}`,
+          `sku.ilike.${pattern}`,
+        ];
+      }
+    );
+
+  const {
+    data,
+    error,
+  } = await supabase
+    .from(
+      "products"
+    )
+    .select(
+      `
+        id,
+        sku,
+        name,
+        category_id,
+        amount_qty,
+        uom,
+        packaging_size_amount,
+        packaging_uom,
+        is_active
+      `
+    )
+    .eq(
+      "location_id",
+      locationId
+    )
+    .eq(
+      "is_active",
+      true
+    )
+    .or(
+      searchFilters.join(
+        ","
+      )
+    )
+    .order(
+      "name",
+      {
+        ascending:
+          true,
+      }
+    )
+    .limit(
+      MAX_AI_PRODUCT_CANDIDATES
+    );
+
+  if (error) {
+    console.error(
+      "Order Me AI Product candidate lookup failed:",
+      error.message
+    );
+
+    throw new Error(
+      "Unable to resolve AI order products."
+    );
+  }
+
+  const products =
+    (
+      data ??
+      []
+    ) as ProductDatabaseRow[];
+
+  const categoryIds =
+    Array.from(
+      new Set(
+        products.map(
+          (
+            product
+          ) =>
+            product.category_id
+        )
+      )
+    );
+
+  const categoryMap =
+    new Map<
+      string,
+      string
+    >();
+
+  if (
+    categoryIds.length >
+    0
+  ) {
+    const {
+      data:
+        categoryData,
+      error:
+        categoryError,
+    } = await supabase
+      .from(
+        "categories"
+      )
+      .select(
+        "id, name"
+      )
+      .eq(
+        "location_id",
+        locationId
+      )
+      .in(
+        "id",
+        categoryIds
+      );
+
+    if (
+      categoryError
+    ) {
+      console.error(
+        "Order Me AI Product category lookup failed:",
+        categoryError.message
+      );
+
+      throw new Error(
+        "Unable to resolve AI Product categories."
+      );
+    }
+
+    for (
+      const category of
+      (
+        categoryData ??
+        []
+      ) as CategoryDatabaseRow[]
+    ) {
+      categoryMap.set(
+        category.id,
+        category.name
+      );
+    }
+  }
+
+  return products.map(
+    (
+      product
+    ) => ({
+      id:
+        product.id,
+
+      sku:
+        product.sku,
+
+      name:
+        product.name,
+
+      category_id:
+        product.category_id,
+
+      category_name:
+        categoryMap.get(
+          product.category_id
+        ) ??
+        "Uncategorized",
+
+      amount_qty:
+        toSafeNumber(
+          product.amount_qty
+        ),
+
+      uom:
+        normalizeUom(
+          product.uom
+        ) ??
+        "pc",
+
+      packaging_size_amount:
+        toSafeNumber(
+          product.packaging_size_amount
+        ),
+
+      packaging_uom:
+        normalizePackagingUom(
+          product.packaging_uom
+        ) ??
+        undefined,
+
+      is_active:
+        product.is_active,
+    })
+  );
+}
+
+export async function resolveNormalOrderAiCommandAction(
+  command: string
+): Promise<
+  NormalOrderAiActionResult
+> {
+  try {
+    const location =
+      await requireDatabaseLocation();
+
+    const parsed =
+      await parseNormalOrderCommand(
+        command
+      );
+
+    if (
+      !parsed.success
+    ) {
+      return {
+        success:
+          false,
+
+        message:
+          parsed.message,
+      };
+    }
+
+    const intent =
+      parsed.intent;
+
+    if (
+      intent.items.length >
+      MAX_AI_ORDER_ITEMS
+    ) {
+      return {
+        success:
+          false,
+
+        message:
+          `The AI Order Assistant can process up to ${MAX_AI_ORDER_ITEMS} products in one instruction.`,
+      };
+    }
+
+    if (
+      intent.clearOrder
+    ) {
+      return {
+        success:
+          true,
+
+        message:
+          intent.message ||
+          "Clear the current order.",
+
+        clearOrder:
+          true,
+
+        items:
+          [],
+      };
+    }
+
+    const actionableItems =
+      intent.items.filter(
+        (
+          item
+        ) =>
+          item.operation !==
+          "clear"
+      );
+
+    if (
+      actionableItems.length ===
+      0
+    ) {
+      return {
+        success:
+          false,
+
+        message:
+          intent.message ||
+          "No products were identified in that instruction.",
+      };
+    }
+
+    const products =
+      await getAiNormalOrderProductCandidates(
+        location.id,
+        actionableItems.map(
+          (
+            item
+          ) =>
+            item.productName
+        )
+      );
+
+    const resolvedItems:
+      NormalOrderAiResolvedItem[] =
+      actionableItems.map(
+        (
+          item
+        ) => {
+          const resolution =
+            resolveAiProductMatch(
+              item.productName,
+              products
+            );
+
+          return {
+            operation:
+              item.operation,
+
+            requestedProductName:
+              item.productName,
+
+            requestedQty:
+              item.quantity,
+
+            requestedUnit:
+              item.unit,
+
+            matchStatus:
+              resolution.matchStatus,
+
+            product:
+              resolution.product,
+
+            candidates:
+              resolution.candidates,
+          };
+        }
+      );
+
+    const matchedCount =
+      resolvedItems.filter(
+        (
+          item
+        ) =>
+          item.matchStatus ===
+          "matched"
+      ).length;
+
+    const ambiguousCount =
+      resolvedItems.filter(
+        (
+          item
+        ) =>
+          item.matchStatus ===
+          "ambiguous"
+      ).length;
+
+    const notFoundCount =
+      resolvedItems.filter(
+        (
+          item
+        ) =>
+          item.matchStatus ===
+          "not_found"
+      ).length;
+
+    const summaryParts =
+      [
+        matchedCount >
+        0
+          ? `${matchedCount} matched`
+          : null,
+
+        ambiguousCount >
+        0
+          ? `${ambiguousCount} need selection`
+          : null,
+
+        notFoundCount >
+        0
+          ? `${notFoundCount} not found`
+          : null,
+      ].filter(
+        (
+          value
+        ): value is string =>
+          Boolean(
+            value
+          )
+      );
+
+    return {
+      success:
+        true,
+
+      message:
+        summaryParts.length >
+        0
+          ? summaryParts.join(
+              ", "
+            )
+          : intent.message ||
+            "Order instruction processed.",
+
+      clearOrder:
+        false,
+
+      items:
+        resolvedItems,
+    };
+  } catch (error) {
+    console.error(
+      "Order Me AI Normal Order command failed:",
+      error instanceof Error
+        ? error.message
+        : "Unknown AI Normal Order command error"
+    );
+
+    return {
+      success:
+        false,
+
+      message:
+        "Unable to process the AI order instruction. Please try again.",
+    };
+  }
 }
 
 // =========================================================

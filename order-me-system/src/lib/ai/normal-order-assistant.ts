@@ -22,6 +22,18 @@ export type NormalOrderAiRequestedItem = {
   unit: string | null;
 };
 
+export type NormalOrderAiContextItem = {
+  productName: string;
+
+  quantity: number;
+
+  unit: string | null;
+};
+
+export type NormalOrderAiContext = {
+  items: NormalOrderAiContextItem[];
+};
+
 export type NormalOrderAiIntent = {
   items: NormalOrderAiRequestedItem[];
 
@@ -51,6 +63,9 @@ const MAX_COMMAND_LENGTH =
   2000;
 
 const MAX_ITEMS =
+  50;
+
+const MAX_CONTEXT_ITEMS =
   50;
 
 // =========================================================
@@ -338,6 +353,92 @@ function parseAiResponse(
 }
 
 // =========================================================
+// CURRENT ORDER CONTEXT
+// =========================================================
+
+function normalizeContext(
+  value:
+    | NormalOrderAiContext
+    | undefined
+): NormalOrderAiContext {
+  if (
+    !value ||
+    !Array.isArray(
+      value.items
+    )
+  ) {
+    return {
+      items: [],
+    };
+  }
+
+  const items:
+    NormalOrderAiContextItem[] =
+    [];
+
+  for (
+    const rawItem of
+    value.items.slice(
+      0,
+      MAX_CONTEXT_ITEMS
+    )
+  ) {
+    const productName =
+      normalizeText(
+        rawItem.productName,
+        200
+      );
+
+    const quantity =
+      normalizeQuantity(
+        rawItem.quantity
+      );
+
+    const unit =
+      rawItem.unit === null
+        ? null
+        : normalizeText(
+            rawItem.unit,
+            50
+          ) || null;
+
+    if (
+      !productName ||
+      quantity === null
+    ) {
+      continue;
+    }
+
+    items.push({
+      productName,
+      quantity,
+      unit,
+    });
+  }
+
+  return {
+    items,
+  };
+}
+
+function buildParserInput(
+  command: string,
+  context: NormalOrderAiContext
+): string {
+  if (
+    context.items.length ===
+    0
+  ) {
+    return command;
+  }
+
+  return JSON.stringify({
+    currentOrder: context.items,
+    command,
+  });
+}
+
+// =========================================================
 // SYSTEM INSTRUCTIONS
 // =========================================================
 
@@ -434,8 +535,47 @@ If the user does not specify a unit, return null for unit.
 If the user requests a product but gives no quantity for an add
 or update instruction, do not invent a quantity.
 
-If a command is conversational, interpret the requested operation
-only. Database matching happens elsewhere.
+The input may be either a plain user command or a JSON object with:
+- currentOrder: products already present in the current draft order
+- command: the user's newest spoken or typed instruction
+
+When currentOrder is supplied, use it only to understand conversational
+references and follow-up corrections.
+
+Examples:
+
+Current order contains chicken breast and avocado.
+"Make chicken 15 kilos"
+
+means:
+- update chicken breast, quantity 15, unit kg
+
+Current order contains only chicken breast.
+"Make that 15 kilos"
+
+means:
+- update chicken breast, quantity 15, unit kg
+
+Current order contains chicken breast and salmon.
+"Make that 15 kilos"
+
+is ambiguous because more than one product could be referenced. Do not
+invent a product. Return no item and explain briefly that the product
+needs to be named.
+
+If the user says "remove it", "change that", "add another", or uses
+another pronoun, resolve it only when the current order context makes the
+reference unambiguous. Never guess between multiple possible products.
+
+The productName in a resolved update or remove operation should use the
+actual product name supplied in currentOrder whenever context resolved the
+reference. This allows the application to match the trusted database item.
+
+Current order context is reference-only. Never return every current-order
+product as a new add operation merely because it appears in the context.
+Only return changes requested by the newest command.
+
+Database matching still happens elsewhere.
 
 Do not treat greetings, questions, or unrelated conversation as
 order items.
@@ -544,7 +684,8 @@ const ORDER_INTENT_SCHEMA = {
 // =========================================================
 
 export async function parseNormalOrderCommand(
-  command: string
+  command: string,
+  context?: NormalOrderAiContext
 ): Promise<NormalOrderAiResult> {
   const normalizedCommand =
     normalizeCommand(
@@ -565,6 +706,17 @@ export async function parseNormalOrderCommand(
     const openai =
       getOpenAiClient();
 
+    const normalizedContext =
+      normalizeContext(
+        context
+      );
+
+    const parserInput =
+      buildParserInput(
+        normalizedCommand,
+        normalizedContext
+      );
+
     const response =
       await openai.responses.create({
         model:
@@ -574,7 +726,7 @@ export async function parseNormalOrderCommand(
           SYSTEM_INSTRUCTIONS,
 
         input:
-          normalizedCommand,
+          parserInput,
 
         text: {
           format: {
