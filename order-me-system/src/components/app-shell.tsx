@@ -1,5 +1,4 @@
 "use client";
-
 import {
   type ReactNode,
   useEffect,
@@ -31,11 +30,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-
 import LogoutButton from "@/app/logout-button";
 import SwitchLocationButton from "@/app/switch-location-button";
-
-
 type SpeechRecognitionEventLike = Event & {
   results: {
     length: number;
@@ -74,12 +70,10 @@ type ActiveLocation = {
   code: "FOR" | "FUS";
   name: "Forza" | "Fusion";
 };
-
 type AppShellProps = {
   children: ReactNode;
   activeLocation: ActiveLocation;
 };
-
 type NavigationItem = {
   label: string;
   href?: string;
@@ -90,7 +84,6 @@ type NavigationItem = {
     icon: ReactNode;
   }[];
 };
-
 const navigation: NavigationItem[] = [
   {
     label: "Dashboard",
@@ -145,7 +138,6 @@ const navigation: NavigationItem[] = [
     icon: <Trash2 size={18} />,
   },
 ];
-
 export default function AppShell({
   children,
   activeLocation,
@@ -163,12 +155,63 @@ export default function AppShell({
   const hasGreetedRef = useRef(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const navigationTimeoutRef = useRef<number | null>(null);
+  const preferredAssistantVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
     if (hour < 12) return "Good morning";
     if (hour < 18) return "Good afternoon";
     return "Good evening";
   }, []);
+  function selectPreferredAssistantVoice(voices: SpeechSynthesisVoice[]) {
+    if (voices.length === 0) return null;
+
+    const preferredNamePatterns = [
+      /microsoft aria/i,
+      /microsoft jenny/i,
+      /microsoft zira/i,
+      /google.*female/i,
+      /samantha/i,
+      /victoria/i,
+      /karen/i,
+      /moira/i,
+      /tessa/i,
+      /serena/i,
+      /sonia/i,
+      /hazel/i,
+      /ava/i,
+      /susan/i,
+      /female/i,
+    ];
+
+    for (const pattern of preferredNamePatterns) {
+      const preferred = voices.find(
+        (voice) =>
+          /^en(?:-|$)/i.test(voice.lang) &&
+          pattern.test(voice.name),
+      );
+
+      if (preferred) return preferred;
+    }
+
+    return (
+      voices.find(
+        (voice) =>
+          /^en-US$/i.test(voice.lang) &&
+          voice.default,
+      ) ??
+      voices.find((voice) => /^en-US$/i.test(voice.lang)) ??
+      voices.find(
+        (voice) =>
+          /^en(?:-|$)/i.test(voice.lang) &&
+          voice.default,
+      ) ??
+      voices.find((voice) => /^en(?:-|$)/i.test(voice.lang)) ??
+      voices.find((voice) => voice.default) ??
+      voices[0] ??
+      null
+    );
+  }
+
   function speakAssistant(message: string) {
     setAssistantMessage(message);
     if (
@@ -179,15 +222,61 @@ export default function AppShell({
       return;
     }
     window.speechSynthesis.cancel();
+
+    const availableVoices = window.speechSynthesis.getVoices();
+    const preferredVoice =
+      preferredAssistantVoiceRef.current ??
+      selectPreferredAssistantVoice(availableVoices);
+
+    if (preferredVoice) {
+      preferredAssistantVoiceRef.current = preferredVoice;
+    }
+
     const utterance = new SpeechSynthesisUtterance(message);
-    utterance.rate = 0.95;
-    utterance.pitch = 1;
+
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+      utterance.lang = preferredVoice.lang;
+    } else {
+      utterance.lang = "en-US";
+    }
+
+    utterance.rate = 0.9;
+    utterance.pitch = 1.05;
     utterance.volume = 1;
     utterance.onstart = () => setAssistantSpeaking(true);
     utterance.onend = () => setAssistantSpeaking(false);
     utterance.onerror = () => setAssistantSpeaking(false);
     window.speechSynthesis.speak(utterance);
   }
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      !("speechSynthesis" in window)
+    ) {
+      return;
+    }
+
+    const loadPreferredVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      preferredAssistantVoiceRef.current =
+        selectPreferredAssistantVoice(voices);
+    };
+
+    loadPreferredVoice();
+    window.speechSynthesis.addEventListener(
+      "voiceschanged",
+      loadPreferredVoice,
+    );
+
+    return () => {
+      window.speechSynthesis.removeEventListener(
+        "voiceschanged",
+        loadPreferredVoice,
+      );
+    };
+  }, []);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     let isNormalOrderHandoff = false;
@@ -339,34 +428,26 @@ export default function AppShell({
       }
     };
   }, []);
-
   const [mobileOpen, setMobileOpen] =
     useState(false);
-
   const [sidebarCollapsed, setSidebarCollapsed] =
     useState(false);
-
   const [productsOpen, setProductsOpen] =
     useState(true);
-
   const [ordersOpen, setOrdersOpen] =
     useState(true);
-
   function isActive(href: string) {
     if (href === "/dashboard") {
       return pathname === "/dashboard";
     }
-
     return (
       pathname === href ||
       pathname.startsWith(`${href}/`)
     );
   }
-
   function closeMobileNavigation() {
     setMobileOpen(false);
   }
-
   function renderNavigation(
     mobile = false
   ) {
@@ -379,7 +460,6 @@ export default function AppShell({
           ) {
             const expanded =
               mobile || productsOpen;
-
             return (
               <div key={item.label}>
                 <button
@@ -393,13 +473,11 @@ export default function AppShell({
                 >
                   <span className="flex items-center gap-3">
                     {item.icon}
-
                     {!sidebarCollapsed ||
                     mobile
                       ? item.label
                       : null}
                   </span>
-
                   {!sidebarCollapsed ||
                   mobile ? (
                     expanded ? (
@@ -413,7 +491,6 @@ export default function AppShell({
                     )
                   ) : null}
                 </button>
-
                 {expanded &&
                 (!sidebarCollapsed ||
                   mobile) ? (
@@ -441,7 +518,6 @@ export default function AppShell({
                           {
                             child.icon
                           }
-
                           {
                             child.label
                           }
@@ -453,14 +529,12 @@ export default function AppShell({
               </div>
             );
           }
-
           if (
             item.label === "Orders" &&
             item.children
           ) {
             const expanded =
               mobile || ordersOpen;
-
             return (
               <div key={item.label}>
                 <button
@@ -474,13 +548,11 @@ export default function AppShell({
                 >
                   <span className="flex items-center gap-3">
                     {item.icon}
-
                     {!sidebarCollapsed ||
                     mobile
                       ? item.label
                       : null}
                   </span>
-
                   {!sidebarCollapsed ||
                   mobile ? (
                     expanded ? (
@@ -494,7 +566,6 @@ export default function AppShell({
                     )
                   ) : null}
                 </button>
-
                 {expanded &&
                 (!sidebarCollapsed ||
                   mobile) ? (
@@ -522,7 +593,6 @@ export default function AppShell({
                           {
                             child.icon
                           }
-
                           {
                             child.label
                           }
@@ -534,11 +604,9 @@ export default function AppShell({
               </div>
             );
           }
-
           if (!item.href) {
             return null;
           }
-
           return (
             <Link
               key={item.href}
@@ -553,7 +621,6 @@ export default function AppShell({
               }`}
             >
               {item.icon}
-
               {!sidebarCollapsed ||
               mobile
                 ? item.label
@@ -564,7 +631,6 @@ export default function AppShell({
       </nav>
     );
   }
-
   return (
     <div className="min-h-dvh bg-zinc-50 text-zinc-950">
       <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/95 backdrop-blur">
@@ -579,54 +645,40 @@ export default function AppShell({
           >
             <Menu size={20} />
           </button>
-
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-bold text-zinc-950">
               Order Me System by Forza
             </p>
-
             <p className="truncate text-xs text-zinc-500">
               Human and Technology
               System
             </p>
           </div>
-
           <div className="hidden items-center gap-2 md:flex">
             <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-700">
               <MapPin size={14} />
-
               Current Location:
-
               <span className="text-zinc-950">
                 {activeLocation.name}
               </span>
             </div>
-
             <SwitchLocationButton />
-
             <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-600">
               <ShieldCheck size={14} />
-
               Secure Session
             </div>
-
             <LogoutButton />
           </div>
         </div>
-
         <div className="flex flex-wrap gap-2 border-t border-zinc-100 px-4 py-2 md:hidden">
           <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold text-zinc-700">
             <MapPin size={14} />
-
             {activeLocation.name}
           </div>
-
           <SwitchLocationButton />
-
           <LogoutButton />
         </div>
       </header>
-
       <div className="flex">
         <aside
           className={`sticky top-16 hidden h-[calc(100dvh-4rem)] shrink-0 border-r border-zinc-200 bg-white transition-[width] duration-200 lg:flex lg:flex-col ${
@@ -662,31 +714,26 @@ export default function AppShell({
               )}
             </button>
           </div>
-
           <div className="flex-1 overflow-y-auto p-3">
             {renderNavigation()}
           </div>
-
           {!sidebarCollapsed ? (
             <div className="border-t border-zinc-100 p-4">
               <p className="text-xs font-semibold text-zinc-500">
                 {activeLocation.name}
               </p>
-
               <p className="mt-1 text-[11px] text-zinc-400">
                 {activeLocation.code}
               </p>
             </div>
           ) : null}
         </aside>
-
         <main className="min-w-0 flex-1">
           <div className="mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8">
             {children}
           </div>
         </main>
       </div>
-
       {/* ===================================================
           GLOBAL AI ASSISTANT
       =================================================== */}
@@ -833,18 +880,15 @@ export default function AppShell({
             <p className="font-semibold text-zinc-700">
               Order Me System by Forza
             </p>
-
             <p className="mt-1">
               Human and Technology System
             </p>
           </div>
-
           <p>
             Developed by Chef Alex
           </p>
         </div>
       </footer>
-
       {mobileOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
           <button
@@ -855,19 +899,16 @@ export default function AppShell({
               setMobileOpen(false)
             }
           />
-
           <aside className="absolute inset-y-0 left-0 flex w-[min(88vw,330px)] flex-col bg-white shadow-2xl">
             <div className="flex min-h-16 items-center justify-between border-b border-zinc-200 px-4">
               <div>
                 <p className="text-sm font-bold text-zinc-950">
                   Order Me System
                 </p>
-
                 <p className="mt-1 text-xs text-zinc-500">
                   {activeLocation.name}
                 </p>
               </div>
-
               <button
                 type="button"
                 onClick={() =>
@@ -881,22 +922,17 @@ export default function AppShell({
                 <X size={18} />
               </button>
             </div>
-
             <div className="flex-1 overflow-y-auto p-4">
               {renderNavigation(true)}
             </div>
-
             <div className="space-y-3 border-t border-zinc-200 p-4">
               <div className="flex items-center gap-2 text-xs font-semibold text-zinc-700">
                 <MapPin size={14} />
-
                 Current Location:
                 {activeLocation.name}
               </div>
-
               <div className="flex flex-wrap gap-2">
                 <SwitchLocationButton />
-
                 <LogoutButton />
               </div>
             </div>
