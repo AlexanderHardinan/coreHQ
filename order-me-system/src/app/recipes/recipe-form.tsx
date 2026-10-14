@@ -434,7 +434,7 @@ function isValidPositiveDecimal(
 
   if (
 
-    !/^\d{1,14}(?:\\.\d{1,4})?$/.test(
+    !/^\d{1,14}(?:\.\d{1,4})?$/.test(
 
       normalized
 
@@ -936,7 +936,7 @@ export default function RecipeForm({
 
     const timeout =
 
-      window\.setTimeout(
+      window.setTimeout(
 
         async () => {
 
@@ -1048,7 +1048,7 @@ export default function RecipeForm({
 
     return () => {
 
-      window\.clearTimeout(
+      window.clearTimeout(
 
         timeout
 
